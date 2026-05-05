@@ -31,7 +31,7 @@ html{-webkit-text-size-adjust:100%}
 body{background:var(--bg);font-family:var(--font-body);color:var(--text);min-height:100vh;font-size:14px;-webkit-tap-highlight-color:transparent}
 button{cursor:pointer;font-family:var(--font-body);border:none;background:none;touch-action:manipulation}
 input,select,textarea{font-family:var(--font-body);font-size:16px;color:var(--text)} /* 16px evita zoom automático no iOS */
-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a7060' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:32px!important}
+select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a7060' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:32px!important;background-color:var(--surface)}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--border-soft)}
 ::-webkit-scrollbar-thumb{background:var(--muted);border-radius:3px}
@@ -166,7 +166,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
   background:transparent;color:var(--muted);
   pointer-events:none;
   user-select:none;
-  position:relative; /* so note dot is positioned relative to the colored square */
+  position:relative;overflow:hidden;
 }
 .cell-inner.filled{border:none}
 .cell-inner.locked{opacity:.45}
@@ -234,6 +234,53 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .note-field:focus{outline:none;border-color:var(--primary-mid)}
 .picker-note-section{margin-top:16px;padding-top:16px;border-top:1px solid var(--border-soft)}
 .obs-list-badge{font-size:11px;color:#c2410c;font-style:italic;margin-top:3px}
+
+/* CONTRACT TYPE BADGE */
+.contract-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em;vertical-align:middle;margin-left:4px}
+.contract-fixo{background:#dbeafe;color:#1d4ed8}
+.contract-pacote{background:#fef3c7;color:#92400e}
+.contract-freelancer{background:#fce7f3;color:#9d174d}
+
+/* CUSTOM SELECT DROPDOWN */
+.custom-select{position:relative;flex:1;min-width:160px}
+.custom-select-btn{width:100%;height:36px;padding:0 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;font-family:var(--font-body);transition:border-color .15s,color .15s}
+.custom-select-btn:hover,.custom-select-btn.open{border-color:var(--primary);color:var(--primary)}
+.custom-select-btn svg{flex-shrink:0;transition:transform .15s}
+.custom-select-btn.open svg{transform:rotate(180deg)}
+.custom-select-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);overflow:hidden}
+.custom-select-opt{padding:10px 14px;font-size:13px;cursor:pointer;display:flex;align-items:center;transition:background .1s}
+.custom-select-opt:hover{background:var(--surface2)}
+.custom-select-opt.selected{font-weight:700;color:var(--primary);background:#e6f4ed}
+
+/* TIME-SHIFT — pill shape, vivid color */
+.cell-inner.time-shift{
+  border-radius:22px;
+}
+/* Status shifts — matte/frosted + smaller, centered */
+.cell-inner.filled:not(.time-shift){
+  border-radius:6px;
+  filter:saturate(.65) brightness(.95);
+  width:calc(100% - 10px);
+  height:32px;
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+}
+
+/* DESELECT BUTTON */
+.deselect-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:700;background:#1c1917;color:#fff;border:2px solid #1c1917;cursor:pointer;transition:opacity .15s}
+.deselect-btn:hover{opacity:.8}
+
+/* EMPLOYEE HISTORY */
+.history-entry{padding:10px 0;border-bottom:1px solid var(--border-soft)}
+.history-entry:last-child{border-bottom:none}
+.history-date{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.history-shift{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:5px;font-family:var(--font-mono);font-size:11px;font-weight:700;margin-bottom:4px}
+.history-note{color:var(--muted);font-style:italic;font-size:12px}
+
+/* CPF */
+.cpf-warning{font-size:11px;color:var(--red);margin-top:4px}
 .color-picker{display:flex;flex-wrap:wrap;gap:8px}
 .color-dot{width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;transition:box-shadow .12s}
 .color-dot.selected{box-shadow:0 0 0 3px var(--surface),0 0 0 5px currentColor}
@@ -759,7 +806,16 @@ function renderSchedule(){
   let secOptions='<option value="all">Todos os setores</option>';
   state.data.sectors.slice().sort((a,b)=>a.order-b.order).forEach(s=>{secOptions+=`<option value="${s.id}"${state.filterSector===s.id?' selected':''}>${s.name}</option>`});
   controls.innerHTML=`
-    <select style="flex:1;min-width:140px" onchange="setFilterSector(this.value)">${secOptions}</select>
+    <div class="custom-select" id="sector-dropdown">
+      <button class="custom-select-btn" onclick="toggleSectorDropdown(event)">
+        <span id="sector-label">${state.filterSector==='all'?'Todos os setores':(state.data.sectors.find(s=>s.id===state.filterSector)||{}).name||'Todos os setores'}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="custom-select-menu" id="sector-menu" style="display:none">
+        <div class="custom-select-opt${state.filterSector==='all'?' selected':''}" onclick="pickSector('all')">Todos os setores</div>
+        ${state.data.sectors.slice().sort((a,b)=>a.order-b.order).map(s=>`<div class="custom-select-opt${state.filterSector===s.id?' selected':''}" onclick="pickSector('${s.id}')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:7px"></span>${s.name}</div>`).join('')}
+      </div>
+    </div>
     <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="copyPrevWeek()">${svgIcon(ICONS.copy)} Copiar anterior</button>
     <button class="btn btn-danger btn-sm" style="flex:1;justify-content:center" onclick="clearWeek()">${svgIcon(ICONS.refresh)} Limpar</button>
   `;
@@ -767,12 +823,16 @@ function renderSchedule(){
   // Stamps bar
   const stampsBar=document.createElement('div');
   stampsBar.className='stamps-bar';
-  let stampsHtml=`<div class="stamps-label">Preenchimento rápido ${state.activeStampId?`<button onclick="clearStamp()" style="font-size:11px;color:var(--muted);text-decoration:underline">desmarcar</button>`:''}</div><div class="stamps">`;
+  let stampsHtml=`<div class="stamps-label">Preenchimento rápido</div><div class="stamps">`;
   state.data.shiftTypes.slice().sort((a,b)=>a.order-b.order).forEach(st=>{
     const active=state.activeStampId===st.id&&!state.eraseMode;
     stampsHtml+=`<button class="stamp${active?' active':''}" style="background:${st.color};color:${contrastText(st.color)};border-color:${st.color}" onclick="setStamp('${st.id}')"><span class="stamp-code">${st.code}</span>${st.name}</button>`;
   });
-  stampsHtml+=`<button class="eraser-btn${state.eraseMode?' active':''}" onclick="toggleErase()">${svgIcon(ICONS.erase)} Apagar</button></div>`;
+  stampsHtml+=`<button class="eraser-btn${state.eraseMode?' active':''}" onclick="toggleErase()">${svgIcon(ICONS.erase)} Apagar</button>`;
+  if(state.activeStampId&&!state.eraseMode){
+    stampsHtml+=`<button class="deselect-btn" onclick="clearStamp()">✕ Desmarcar turno selecionado</button>`;
+  }
+  stampsHtml+=`</div>`;
   stampsBar.innerHTML=stampsHtml;
 
   // Grid
@@ -875,8 +935,11 @@ function renderSchedule(){
       const nameTd=document.createElement('td');
       const bh=emp.bankHours||0;
       const bhHtml=bh!==0?`<span class="bh-badge ${bh>0?'bh-pos':'bh-neg'}">${fmtBankHours(bh)}</span>`:'';
+      const contractLabels={fixo:'Fixo',pacote:'Pacote',freelancer:'Freelancer'};
+      const contractClasses={fixo:'contract-fixo',pacote:'contract-pacote',freelancer:'contract-freelancer'};
+      const contractHtml=emp.contract&&emp.contract!=='fixo'?`<span class="contract-badge ${contractClasses[emp.contract]||''}">${contractLabels[emp.contract]||emp.contract}</span>`:'';
       const obsHtml=emp.obs?`<div class="emp-obs" title="${emp.obs}">📌 ${emp.obs}</div>`:'';
-      nameTd.innerHTML=`<div class="emp-name">${emp.name}${bhHtml}</div>${emp.role?`<div class="emp-role">${emp.role}</div>`:''}${obsHtml}`;
+      nameTd.innerHTML=`<div class="emp-name">${emp.name}${bhHtml}</div>${emp.role||emp.contract?`<div class="emp-role">${emp.role||''}${emp.contract?` ${contractHtml}`:''}</div>`:''}${obsHtml}`;
       row.appendChild(nameTd);
 
       weekDates.forEach((d,i)=>{
@@ -901,7 +964,12 @@ function renderSchedule(){
         if(shift)innerClasses.push('filled');
         if(locked)innerClasses.push('locked');
         inner.className=innerClasses.join(' ');
-        if(shift){inner.style.background=shift.color;inner.style.color=contrastText(shift.color);inner.textContent=shift.code}
+        if(shift){
+          inner.style.background=shift.color;
+          inner.style.color=contrastText(shift.color);
+          inner.textContent=shift.code;
+          if(shift.kind==='time')inner.classList.add('time-shift');
+        }
         else{inner.style.color='var(--muted)';inner.textContent=locked?'':'+'}
         if(note){
           const dot=document.createElement('div');
@@ -970,6 +1038,33 @@ function prevWeek(){state.weekStart=addDays(state.weekStart,-7);render()}
 function nextWeek(){state.weekStart=addDays(state.weekStart,7);render()}
 function goToday(){state.weekStart=startOfWeek(new Date());render()}
 function setFilterSector(v){state.filterSector=v;render()}
+
+function toggleSectorDropdown(e){
+  e.stopPropagation();
+  const menu=document.getElementById('sector-menu');
+  const btn=document.querySelector('.custom-select-btn');
+  if(!menu)return;
+  const isOpen=menu.style.display!=='none';
+  menu.style.display=isOpen?'none':'block';
+  if(btn)btn.classList.toggle('open',!isOpen);
+}
+
+function pickSector(id){
+  state.filterSector=id;
+  const menu=document.getElementById('sector-menu');
+  const btn=document.querySelector('.custom-select-btn');
+  if(menu)menu.style.display='none';
+  if(btn)btn.classList.remove('open');
+  render();
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click',()=>{
+  const menu=document.getElementById('sector-menu');
+  const btn=document.querySelector('.custom-select-btn');
+  if(menu)menu.style.display='none';
+  if(btn)btn.classList.remove('open');
+});
 function setStamp(id){state.activeStampId=id;state.eraseMode=false;render()}
 function clearStamp(){state.activeStampId=null;render()}
 function toggleErase(){state.eraseMode=!state.eraseMode;if(state.eraseMode)state.activeStampId=null;render()}
@@ -1137,16 +1232,20 @@ function renderEmployees(){
       const sec=sm[emp.sectorId]||{};
       const bh=emp.bankHours||0;
       const bhBadge=bh!==0?`<span class="bh-badge ${bh>0?'bh-pos':'bh-neg'}">${fmtBankHours(bh)}</span>`:'';
+      const contractLabels2={fixo:'Fixo',pacote:'Pacote',freelancer:'Freelancer'};
+      const contractClasses2={fixo:'contract-fixo',pacote:'contract-pacote',freelancer:'contract-freelancer'};
+      const cBadge=emp.contract&&emp.contract!=='fixo'?`<span class="contract-badge ${contractClasses2[emp.contract]||''}">${contractLabels2[emp.contract]||''}</span>`:'';
       const item=document.createElement('div');
       item.className='emp-list-item';
       item.innerHTML=`
         <div class="emp-bar" style="background:${sec.color||'#ccc'}"></div>
         <div class="emp-info">
-          <div class="emp-list-name">${emp.name}${!emp.active?'<span class="badge-inactive">Inativo</span>':''}${bhBadge}</div>
-          <div class="emp-list-role">${emp.role?emp.role+' · ':''}<span style="color:${sec.color||'var(--muted)'};font-weight:500">${sec.name||'Sem setor'}</span></div>
+          <div class="emp-list-name">${emp.name}${!emp.active?'<span class="badge-inactive">Inativo</span>':''}${bhBadge}${cBadge}</div>
+          <div class="emp-list-role">${emp.role?emp.role+' · ':''}<span style="color:${sec.color||'var(--muted)'};font-weight:500">${sec.name||'Sem setor'}</span>${emp.cpf?` · <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">${emp.cpf}</span>`:''}</div>
           ${emp.obs?`<div class="obs-list-badge">📌 ${emp.obs}</div>`:''}
         </div>
         <div class="action-btns">
+          <button class="icon-btn" title="Histórico" onclick="openEmpHistory('${emp.id}')" style="font-size:15px">📋</button>
           <button class="icon-btn" title="${emp.active?'Desativar':'Ativar'}" onclick="toggleEmpActive('${emp.id}')" style="font-size:11px;font-weight:500;color:var(--muted);width:auto;padding:0 8px">${emp.active?'Desativar':'Ativar'}</button>
           <button class="icon-btn" title="Editar" onclick="openEmpModal('${emp.id}')">${svgIcon(ICONS.edit,15)}</button>
           <button class="icon-btn red" title="Remover" onclick="deleteEmp('${emp.id}')">${svgIcon(ICONS.trash,15)}</button>
@@ -1179,20 +1278,45 @@ function openEmpModal(id){
   let secOptions='';
   state.data.sectors.slice().sort((a,b)=>a.order-b.order).forEach(s=>{secOptions+=`<option value="${s.id}"${emp&&emp.sectorId===s.id?' selected':''}>${s.name}</option>`});
   const bhVal=emp&&emp.bankHours?fmtBankHours(emp.bankHours):'';
+  const contract=emp?emp.contract||'fixo':'fixo';
   const html=`
-    <div class="modal-header"><div class="modal-title">${emp?'Editar':'Novo'} colaborador</div><button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button></div>
-    <div class="field" style="margin-bottom:12px"><label class="label">Nome</label><input class="input" id="emp-name" value="${emp?emp.name:''}" autofocus></div>
-    <div class="field" style="margin-bottom:12px"><label class="label">Função (opcional)</label><input class="input" id="emp-role" value="${emp?emp.role||'':''}" placeholder="Ex: Salva-vidas, Cozinheiro…"></div>
-    <div class="field" style="margin-bottom:12px"><label class="label">Setor</label><select class="input" id="emp-sector">${secOptions}</select></div>
-    <div class="field" style="margin-bottom:12px">
-      <label class="label">Banco de horas</label>
-      <input class="input" id="emp-bh" value="${bhVal}" placeholder="Ex: +4:00 ou -1:30"
-        style="font-family:var(--font-mono)">
-      <span style="font-size:11px;color:var(--muted);margin-top:4px">Use + para saldo positivo e - para negativo</span>
+    <div class="modal-header">
+      <div class="modal-title">${emp?'Editar':'Novo'} colaborador</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${emp?`<button class="btn btn-ghost btn-sm" onclick="openEmpHistory('${emp.id}')">${svgIcon(ICONS.bar,15)} Histórico</button>`:''}
+        <button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="field"><label class="label">Nome</label><input class="input" id="emp-name" value="${emp?emp.name:''}" autofocus></div>
+      <div class="field">
+        <label class="label">CPF (opcional)</label>
+        <input class="input" id="emp-cpf" value="${emp?emp.cpf||'':''}" placeholder="000.000.000-00" oninput="checkCpfDuplicate('${id||''}')">
+        <div class="cpf-warning" id="cpf-warning" style="display:none">⚠️ CPF já cadastrado para outro colaborador</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="field"><label class="label">Função (opcional)</label><input class="input" id="emp-role" value="${emp?emp.role||'':''}" placeholder="Ex: Salva-vidas…"></div>
+      <div class="field"><label class="label">Setor</label><select class="input" id="emp-sector">${secOptions}</select></div>
     </div>
     <div class="field" style="margin-bottom:12px">
-      <label class="label">Observação do colaborador (opcional)</label>
-      <input class="input" id="emp-obs" value="${emp?emp.obs||'':''}" placeholder="Ex: Só pode folgar na terça">
+      <label class="label">Tipo de contrato</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <button id="ct-fixo" class="btn${contract==='fixo'?' btn-primary':' btn-ghost'}" onclick="setContract('fixo')">Fixo</button>
+        <button id="ct-pacote" class="btn${contract==='pacote'?' btn-primary':' btn-ghost'}" onclick="setContract('pacote')">Pacote</button>
+        <button id="ct-freelancer" class="btn${contract==='freelancer'?' btn-primary':' btn-ghost'}" onclick="setContract('freelancer')">Freelancer</button>
+      </div>
+    </div>
+    <input type="hidden" id="emp-contract" value="${contract}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="field">
+        <label class="label">Banco de horas</label>
+        <input class="input" id="emp-bh" value="${bhVal}" placeholder="+4:00 ou -1:30" style="font-family:var(--font-mono)">
+      </div>
+      <div class="field">
+        <label class="label">Observação (opcional)</label>
+        <input class="input" id="emp-obs" value="${emp?emp.obs||'':''}" placeholder="Ex: Só pode folgar na terça">
+      </div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px"><input type="checkbox" id="emp-active" ${!emp||emp.active?'checked':''}> Colaborador ativo</label>
     <div class="modal-actions">
@@ -1203,18 +1327,78 @@ function openEmpModal(id){
   openModal(html,true);
 }
 
+function setContract(type){
+  document.getElementById('emp-contract').value=type;
+  ['fixo','pacote','freelancer'].forEach(t=>{
+    const btn=document.getElementById('ct-'+t);
+    if(btn)btn.className='btn '+(t===type?'btn-primary':'btn-ghost');
+  });
+}
+
+function checkCpfDuplicate(currentId){
+  const cpf=document.getElementById('emp-cpf').value.replace(/\D/g,'');
+  const warn=document.getElementById('cpf-warning');
+  if(!cpf||cpf.length<11){warn.style.display='none';return}
+  const dup=state.data.employees.find(e=>e.id!==currentId&&(e.cpf||'').replace(/\D/g,'')===cpf);
+  warn.style.display=dup?'block':'none';
+}
+function openEmpHistory(id){
+  const emp=state.data.employees.find(e=>e.id===id);
+  if(!emp)return;
+  const shm=shiftMap();
+
+  // Collect all entries for this employee across all dates
+  const entries=[];
+  Object.entries(state.data.schedule).forEach(([ds,dayData])=>{
+    if(!dayData[id])return;
+    const shiftId=getCellShiftId(dayData[id]);
+    const note=getCellNote(dayData[id]);
+    if(shiftId||note)entries.push({ds,shiftId,note});
+  });
+  entries.sort((a,b)=>b.ds.localeCompare(a.ds));
+
+  let histHtml=`<div class="modal-header"><div class="modal-title">Histórico · ${emp.name}</div><button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button></div>`;
+  if(!entries.length){
+    histHtml+=`<div class="history-empty">Nenhum registro encontrado para este colaborador.</div>`;
+  }else{
+    histHtml+=`<div style="max-height:380px;overflow-y:auto;padding-right:4px">`;
+    entries.forEach(({ds,shiftId,note})=>{
+      const [y,m,d]=ds.split('-').map(Number);
+      const dt=new Date(y,m-1,d);
+      const dayName=DAY_NAMES_FULL[(dt.getDay()+6)%7];
+      const dateLabel=`${dayName}, ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
+      const st=shiftId?shm[shiftId]:null;
+      histHtml+=`<div class="history-entry">
+        <div class="history-date">${dateLabel}</div>
+        ${st?`<div class="history-shift" style="background:${st.color};color:${contrastText(st.color)}">${st.code} ${st.name}</div>`:''}
+        ${note?`<div class="history-note">📝 ${note}</div>`:''}
+      </div>`;
+    });
+    histHtml+=`</div>`;
+  }
+  histHtml+=`<div class="modal-actions"><button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Fechar</button></div>`;
+  openModal(histHtml,true);
+}
+
 function saveEmp(id){
   const name=document.getElementById('emp-name').value.trim();
   if(!name)return;
+  const cpfRaw=document.getElementById('emp-cpf').value.replace(/\D/g,'');
+  if(cpfRaw&&cpfRaw.length===11){
+    const dup=state.data.employees.find(e=>e.id!==id&&(e.cpf||'').replace(/\D/g,'')===cpfRaw);
+    if(dup){alert(`CPF já cadastrado para: ${dup.name}`);return}
+  }
   const existing=id?state.data.employees.find(e=>e.id===id):null;
   const emp={
     id:id||newId('emp'),
     name,
     role:document.getElementById('emp-role').value.trim(),
     sectorId:document.getElementById('emp-sector').value,
+    contract:document.getElementById('emp-contract').value||'fixo',
     active:document.getElementById('emp-active').checked,
     bankHours:parseBankHoursInput(document.getElementById('emp-bh').value),
     obs:document.getElementById('emp-obs').value.trim(),
+    cpf:document.getElementById('emp-cpf').value.trim(),
   };
   if(id){state.data.employees=state.data.employees.map(e=>e.id===id?emp:e)}
   else{state.data.employees.push(emp)}
@@ -1322,9 +1506,19 @@ function openShiftModal(id){
   const st=id?state.data.shiftTypes.find(s=>s.id===id):null;
   const curKind=st?st.kind:'status';
   const curColor=st?st.color:PRESET_COLORS[2];
+  const usedColors=new Set(state.data.shiftTypes.filter(s=>!id||s.id!==id).map(s=>s.color));
   let colorPicker='<div class="color-picker">';
-  PRESET_COLORS.forEach(c=>{colorPicker+=`<div class="color-dot${c===curColor?' selected':''}" style="background:${c};color:${c}" onclick="pickShiftColor('${c}')" data-color="${c}">${c===curColor?'✓':''}</div>`});
+  PRESET_COLORS.forEach(c=>{
+    const inUse=usedColors.has(c);
+    const usedBy=inUse?state.data.shiftTypes.find(s=>s.color===c&&(!id||s.id!==id)):null;
+    const tooltip=inUse?`Usada em: ${usedBy?usedBy.name:'outro turno'}`:'Disponível';
+    colorPicker+=`<div class="color-dot${c===curColor?' selected':''}" style="background:${c};color:${c};outline:${inUse?'2px dashed rgba(255,255,255,.5)':'none'};outline-offset:-3px" onclick="pickShiftColor('${c}')" data-color="${c}" title="${tooltip}">`;
+    if(c===curColor)colorPicker+='✓';
+    else if(inUse)colorPicker+=`<span style="font-size:10px;opacity:.7">●</span>`;
+    colorPicker+='</div>';
+  });
   colorPicker+='</div>';
+  colorPicker+=`<div style="font-size:11px;color:var(--muted);margin-top:6px">As cores com <b>●</b> já estão sendo usadas por outro turno</div>`;
   const html=`
     <div class="modal-header"><div class="modal-title">${st?'Editar':'Novo'} tipo de turno</div><button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button></div>
     <div class="field" style="margin-bottom:12px"><label class="label">Tipo</label>
