@@ -281,6 +281,19 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 
 /* CPF */
 .cpf-warning{font-size:11px;color:var(--red);margin-top:4px}
+
+/* VERSION HISTORY */
+.version-item{padding:12px 16px;border-bottom:1px solid var(--border-soft);display:flex;align-items:flex-start;gap:12px}
+.version-item:last-child{border-bottom:none}
+.version-item:hover{background:var(--surface2)}
+.version-dot{width:10px;height:10px;border-radius:50%;background:var(--border);flex-shrink:0;margin-top:5px}
+.version-dot.auto{background:#0ea5e9}
+.version-dot.manual{background:#15803d}
+.version-info{flex:1;min-width:0}
+.version-time{font-weight:600;font-size:13px}
+.version-label{font-size:12px;color:var(--muted);margin-top:2px}
+.version-restore-btn{font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);color:var(--primary);background:transparent;cursor:pointer;white-space:nowrap;transition:all .12s}
+.version-restore-btn:hover{background:var(--primary);color:#fff}
 .color-picker{display:flex;flex-wrap:wrap;gap:8px}
 .color-dot{width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;transition:box-shadow .12s}
 .color-dot.selected{box-shadow:0 0 0 3px var(--surface),0 0 0 5px currentColor}
@@ -424,6 +437,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
       <button class="tab" onclick="switchTab('setores')">🏷️ Setores</button>
       <button class="tab" onclick="switchTab('turnos')">🕐 Tipos de Turno</button>
       <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
+      <button class="tab" onclick="switchTab('versoes')">🕘 Versões</button>
     </nav>
   </header>
   <main id="main"></main>
@@ -527,6 +541,8 @@ let state = {
   empFilterSector: 'all',
   empShowInactive: false,
   saveTimer: null,
+  undoStack: [], // snapshots de data antes de cada mudança
+  redoStack: [], // snapshots para refazer
 };
 
 // ===================== HELPERS =====================
@@ -557,6 +573,45 @@ const ICONS={
   erase:'<path d="m7 21-4.3-4.3a2 2 0 0 1 0-2.83l9.6-9.6a2 2 0 0 1 2.83 0l3.73 3.73a2 2 0 0 1 0 2.83L13 21"/><path d="M6 13.5 10.5 18"/><line x1="2" x2="22" y1="21" y2="21"/>',
   bar:'<line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/>',
 };
+
+// ===================== UNDO / REDO =====================
+const MAX_UNDO = 30;
+
+function pushUndo(){
+  state.undoStack.push(JSON.stringify(state.data));
+  if(state.undoStack.length > MAX_UNDO) state.undoStack.shift();
+  state.redoStack = [];
+}
+
+function undo(){
+  if(!state.undoStack.length) return;
+  state.redoStack.push(JSON.stringify(state.data));
+  state.data = JSON.parse(state.undoStack.pop());
+  saveData(); render();
+  flashUndoBtn('undo');
+}
+
+function redo(){
+  if(!state.redoStack.length) return;
+  state.undoStack.push(JSON.stringify(state.data));
+  state.data = JSON.parse(state.redoStack.pop());
+  saveData(); render();
+  flashUndoBtn('redo');
+}
+
+function flashUndoBtn(type){
+  const btn=document.getElementById('btn-'+type);
+  if(!btn)return;
+  btn.style.background='var(--primary)';btn.style.color='#fff';
+  setTimeout(()=>{btn.style.background='';btn.style.color='';},300);
+}
+
+document.addEventListener('keydown',e=>{
+  const ctrl=e.ctrlKey||e.metaKey;
+  if(!ctrl)return;
+  if(e.key==='z'&&!e.shiftKey){e.preventDefault();undo();}
+  if((e.key==='z'&&e.shiftKey)||e.key==='y'){e.preventDefault();redo();}
+});
 
 // ===================== FIREBASE CONFIG =====================
 const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
@@ -731,7 +786,10 @@ function saveData(){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(state.data)
       });
-      if(res.ok){showSave('saved');setTimeout(()=>showSave('idle'),1500)}
+      if(res.ok){
+        showSave('saved');setTimeout(()=>showSave('idle'),1500);
+        maybeAutoSnapshot();
+      }
       else{showSave('error');_ignoreNextSync=false}
     }catch(e){
       showSave('offline');
@@ -757,12 +815,148 @@ function showSave(status){
   el.innerHTML=text?`<span>${icon}</span><span>${text}</span>`:'';
 }
 
-// ===================== ROUTING =====================
+// ===================== VERSION HISTORY =====================
+const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
+const MAX_SNAPSHOTS = 50;
+let _lastAutoSnapshot = 0;
+
+// Cria um snapshot e salva no Firebase
+async function createSnapshot(label, type='manual'){
+  const id = 'snap-' + Date.now();
+  const snapshot = {
+    id, label, type,
+    timestamp: Date.now(),
+    data: JSON.parse(JSON.stringify(state.data)),
+  };
+  try{
+    await fetch(`${FB_SNAPSHOTS}/${id}.json`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(snapshot)
+    });
+    // Limpa snapshots antigos se passar do limite
+    pruneSnapshots();
+  }catch(e){ console.error('Snapshot error',e) }
+  return id;
+}
+
+// Auto-snapshot a cada 30 minutos se houver mudanças
+function maybeAutoSnapshot(){
+  const now=Date.now();
+  if(now - _lastAutoSnapshot > 30*60*1000){
+    _lastAutoSnapshot=now;
+    createSnapshot('Salvo automático — '+fmtTimestamp(now),'auto');
+  }
+}
+
+async function pruneSnapshots(){
+  try{
+    const res=await fetch(`${FB_SNAPSHOTS}.json?shallow=true`);
+    if(!res.ok)return;
+    const keys=await res.json();
+    if(!keys)return;
+    const sorted=Object.keys(keys).sort();
+    if(sorted.length>MAX_SNAPSHOTS){
+      const toDelete=sorted.slice(0,sorted.length-MAX_SNAPSHOTS);
+      await Promise.all(toDelete.map(k=>fetch(`${FB_SNAPSHOTS}/${k}.json`,{method:'DELETE'})));
+    }
+  }catch(e){}
+}
+
+async function restoreSnapshot(id){
+  if(!confirm('Restaurar esta versão? O estado atual será salvo como backup antes de restaurar.'))return;
+  try{
+    // Salva backup antes de restaurar
+    await createSnapshot('Backup antes de restaurar — '+fmtTimestamp(Date.now()),'manual');
+    // Busca snapshot
+    const res=await fetch(`${FB_SNAPSHOTS}/${id}.json`);
+    if(!res.ok){alert('Erro ao buscar snapshot');return}
+    const snap=await res.json();
+    if(!snap||!snap.data){alert('Snapshot inválido');return}
+    pushUndo();
+    state.data=migrateData(snap.data,true);
+    saveData();
+    render();
+    alert('✅ Versão restaurada com sucesso!');
+  }catch(e){alert('Erro ao restaurar: '+e.message)}
+}
+
+function fmtTimestamp(ts){
+  const d=new Date(ts);
+  const date=`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  const time=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return `${date} às ${time}`;
+}
+
+function renderVersions(){
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <div class="page-header">
+      <div><div class="page-title">Histórico de Versões</div><div class="page-sub">Snapshots automáticos a cada 30 min + manuais. Máximo ${MAX_SNAPSHOTS} versões.</div></div>
+      <button class="btn btn-primary" onclick="manualSnapshot()">📸 Salvar versão agora</button>
+    </div>
+    <div id="versions-list" class="card" style="overflow:hidden">
+      <div style="padding:40px;text-align:center;color:var(--muted)">
+        <div style="font-size:24px;margin-bottom:8px">🔄</div>
+        <div>Carregando versões…</div>
+      </div>
+    </div>
+  `;
+
+  // Carrega async depois que o div já está no DOM
+  setTimeout(()=>loadVersionsList(), 0);
+
+  return div;
+}
+
+async function loadVersionsList(){
+  const list=document.getElementById('versions-list');
+  if(!list)return;
+  try{
+    const res=await fetch(`${FB_SNAPSHOTS}.json`);
+    const data=res.ok?await res.json():null;
+
+    if(!data||!Object.keys(data).length){
+      list.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:24px;margin-bottom:8px">📭</div><div>Nenhuma versão salva ainda.<br>Clique em "Salvar versão agora" para criar a primeira.</div></div>`;
+      return;
+    }
+
+    const snaps=Object.values(data).sort((a,b)=>b.timestamp-a.timestamp);
+    list.innerHTML='';
+    snaps.forEach(snap=>{
+      const item=document.createElement('div');
+      item.className='version-item';
+      const isAuto=snap.type==='auto';
+      item.innerHTML=`
+        <div class="version-dot ${isAuto?'auto':'manual'}"></div>
+        <div class="version-info">
+          <div class="version-time">${fmtTimestamp(snap.timestamp)}</div>
+          <div class="version-label">${isAuto?'🤖 Automático':'👤 Manual'} · ${snap.label||''}</div>
+        </div>
+        <button class="version-restore-btn" onclick="restoreSnapshot('${snap.id}')">Restaurar</button>
+      `;
+      list.appendChild(item);
+    });
+  }catch(e){
+    if(list)list.innerHTML=`<div style="padding:20px;color:var(--red)">Erro ao carregar versões: ${e.message}</div>`;
+  }
+}
+
+async function manualSnapshot(){
+  const label=prompt('Nome desta versão (opcional):','');
+  if(label===null)return; // cancelou
+  showSave('saving');
+  await createSnapshot(label||'Versão manual — '+fmtTimestamp(Date.now()),'manual');
+  showSave('saved');
+  setTimeout(()=>showSave('idle'),1500);
+  if(currentTab==='versoes')render();
+}
+
 let currentTab='escala';
 function switchTab(tab){
   currentTab=tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab')[['escala','colaboradores','setores','turnos','resumo'].indexOf(tab)].classList.add('active');
+  document.querySelectorAll('.tab')[['escala','colaboradores','setores','turnos','resumo','versoes'].indexOf(tab)].classList.add('active');
   render();
 }
 
@@ -777,6 +971,7 @@ function render(){
   else if(currentTab==='setores')main.appendChild(renderSectors());
   else if(currentTab==='turnos')main.appendChild(renderShiftTypes());
   else if(currentTab==='resumo')main.appendChild(renderSummary());
+  else if(currentTab==='versoes')main.appendChild(renderVersions());
 }
 
 // ===================== SCHEDULE =====================
@@ -798,6 +993,10 @@ function renderSchedule(){
     <div class="week-box"><div class="week-month">${monthLabel}</div><div class="week-range">${rangeLabel}</div></div>
     <button class="nav-btn" onclick="nextWeek()">${svgIcon(ICONS.right)}</button>
     <button class="today-btn" onclick="goToday()">Hoje</button>
+    <div style="margin-left:auto;display:flex;gap:4px">
+      <button id="btn-undo" class="nav-btn" onclick="undo()" title="Desfazer (Ctrl+Z)" style="opacity:${state.undoStack.length?1:.35}">${svgIcon('<path d="M3 7v6h6"/><path d="M3 13C5.33 7.33 10 4 16 4c4.42 0 8 3.58 8 8s-3.58 8-8 8H4"/>')}</button>
+      <button id="btn-redo" class="nav-btn" onclick="redo()" title="Refazer (Ctrl+Shift+Z)" style="opacity:${state.redoStack.length?1:.35}">${svgIcon('<path d="M21 7v6h-6"/><path d="M21 13C18.67 7.33 14 4 8 4c-4.42 0-8 3.58-8 8s3.58 8 8 8h12"/>')}</button>
+    </div>
   `;
 
   // Controls row
@@ -881,17 +1080,6 @@ function renderSchedule(){
 
     let html=`<div class="day-name">${DAY_NAMES[i]}</div><div class="day-num">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</div>`;
     if(done)html+=`<div class="done-label">✓ Concluído</div>`;
-
-    const counts=dayCounts[ds];
-    const cEntries=Object.entries(counts);
-    if(cEntries.length){
-      html+='<div class="day-counts">';
-      cEntries.forEach(([sid,cnt])=>{
-        const st=shm[sid];if(!st)return;
-        html+=`<span class="count-chip" style="background:${st.color};color:${contrastText(st.color)}">${st.code}·${cnt}</span>`;
-      });
-      html+='</div>';
-    }
     th.innerHTML=html;
     hrow.appendChild(th);
   });
@@ -914,9 +1102,37 @@ function renderSchedule(){
     weekDates.forEach(d=>{
       const ds=fmtDate(d);
       const locked=isSectorLocked(ds,sector.id);
+
+      // Count shifts for this sector on this day
+      const sectorCounts={};
+      emps.forEach(emp=>{
+        const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
+        const sid=getCellShiftId(rawVal);
+        if(sid)sectorCounts[sid]=(sectorCounts[sid]||0)+1;
+      });
+      const countEntries=Object.entries(sectorCounts);
+
       const td=document.createElement('td');
       td.className='sector-conclude-td';
       td.style.background=locked?'#f0fdf4':'var(--surface2)';
+
+      // Chips
+      if(countEntries.length){
+        const chipsDiv=document.createElement('div');
+        chipsDiv.className='day-counts';
+        chipsDiv.style.justifyContent='center';
+        chipsDiv.style.marginBottom='3px';
+        countEntries.forEach(([sid,cnt])=>{
+          const st=shm[sid];if(!st)return;
+          const chip=document.createElement('span');
+          chip.className='count-chip';
+          chip.style.cssText=`background:${st.color};color:${contrastText(st.color)}`;
+          chip.textContent=`${st.code}·${cnt}`;
+          chipsDiv.appendChild(chip);
+        });
+        td.appendChild(chipsDiv);
+      }
+
       const btn=document.createElement('button');
       btn.className='conclude-btn';
       btn.style.background=locked?'#15803d':sector.color;
@@ -1016,6 +1232,7 @@ function handleCellClick(ds,empId,sectorId){
 }
 
 function setScheduleCell(ds,empId,shiftId,note){
+  pushUndo();
   if(!state.data.schedule[ds])state.data.schedule[ds]={};
   if(shiftId===null||shiftId===undefined){
     delete state.data.schedule[ds][empId];
@@ -1027,6 +1244,7 @@ function setScheduleCell(ds,empId,shiftId,note){
 }
 
 function toggleSectorLock(ds,sectorId){
+  pushUndo();
   if(!state.data.lockedSectors[ds])state.data.lockedSectors[ds]=[];
   const arr=state.data.lockedSectors[ds];
   const idx=arr.indexOf(sectorId);
@@ -1070,6 +1288,7 @@ function clearStamp(){state.activeStampId=null;render()}
 function toggleErase(){state.eraseMode=!state.eraseMode;if(state.eraseMode)state.activeStampId=null;render()}
 
 function copyPrevWeek(){
+  pushUndo();
   const prev=addDays(state.weekStart,-7);
   for(let i=0;i<7;i++){
     const from=fmtDate(addDays(prev,i)),to=fmtDate(addDays(state.weekStart,i));
@@ -1080,6 +1299,7 @@ function copyPrevWeek(){
 
 function clearWeek(){
   if(!confirm('Limpar toda a escala desta semana?'))return;
+  pushUndo();
   for(let i=0;i<7;i++)delete state.data.schedule[fmtDate(addDays(state.weekStart,i))];
   saveData();render();
 }
@@ -1110,6 +1330,12 @@ function openCellPicker(ds,empId){
     <div class="picker-meta" style="margin-top:4px">${dateLabel}</div>
   </div>`;
 
+  // Note field — above shift options
+  html+=`<div class="picker-note-section" style="margin-top:0;padding-top:0;border-top:none;margin-bottom:16px">
+    <div class="label" style="margin-bottom:6px">📝 Observação do turno (opcional)</div>
+    <textarea id="picker-note" class="note-field" rows="2" placeholder="Ex: Saiu às 16h, cobriu folga de…">${curNote}</textarea>
+  </div>`;
+
   if(statusShifts.length){
     html+=`<div class="picker-section-label">Status</div><div class="picker-grid">`;
     statusShifts.forEach(st=>{
@@ -1135,12 +1361,6 @@ function openCellPicker(ds,empId){
     });
     html+=`</div>`;
   }
-
-  // Note field
-  html+=`<div class="picker-note-section">
-    <div class="label" style="margin-bottom:6px">📝 Observação do turno (opcional)</div>
-    <textarea id="picker-note" class="note-field" rows="2" placeholder="Ex: Saiu às 16h, cobriu folga de…">${curNote}</textarea>
-  </div>`;
 
   html+=`<div class="modal-actions" style="margin-top:12px">
     <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -1264,11 +1484,13 @@ function empFilterSector(v){state.empFilterSector=v;render()}
 function empToggleInactive(v){state.empShowInactive=v;render()}
 
 function toggleEmpActive(id){
+  pushUndo();
   state.data.employees=state.data.employees.map(e=>e.id===id?{...e,active:!e.active}:e);
   saveData();render();
 }
 function deleteEmp(id){
   if(!confirm('Remover este colaborador?'))return;
+  pushUndo();
   state.data.employees=state.data.employees.filter(e=>e.id!==id);
   saveData();render();
 }
@@ -1388,7 +1610,7 @@ function saveEmp(id){
     const dup=state.data.employees.find(e=>e.id!==id&&(e.cpf||'').replace(/\D/g,'')===cpfRaw);
     if(dup){alert(`CPF já cadastrado para: ${dup.name}`);return}
   }
-  const existing=id?state.data.employees.find(e=>e.id===id):null;
+  pushUndo();
   const emp={
     id:id||newId('emp'),
     name,
@@ -1433,6 +1655,7 @@ function deleteSector(id){
   const cnt=state.data.employees.filter(e=>e.sectorId===id).length;
   if(cnt>0){alert(`Este setor tem ${cnt} colaborador(es). Mova-os antes de remover.`);return}
   if(!confirm('Remover este setor?'))return;
+  pushUndo();
   state.data.sectors=state.data.sectors.filter(s=>s.id!==id);
   saveData();render();
 }
@@ -1467,6 +1690,7 @@ function pickColor(c){
 function saveSector(id){
   const name=document.getElementById('sec-name').value.trim();
   if(!name)return;
+  pushUndo();
   const sec={id:id||newId('sec'),name,color:document.getElementById('sec-color').value,order:id?(state.data.sectors.find(s=>s.id===id)||{}).order:state.data.sectors.length};
   if(id){state.data.sectors=state.data.sectors.map(s=>s.id===id?sec:s)}
   else{state.data.sectors.push(sec)}
@@ -1498,6 +1722,7 @@ function renderShiftTypes(){
 
 function deleteShift(id){
   if(!confirm('Remover este tipo de turno?'))return;
+  pushUndo();
   state.data.shiftTypes=state.data.shiftTypes.filter(s=>s.id!==id);
   saveData();render();
 }
@@ -1561,6 +1786,7 @@ function saveShift(id){
   const name=document.getElementById('shift-name').value.trim();
   const code=document.getElementById('shift-code').value.trim();
   if(!name||!code)return;
+  pushUndo();
   const kind=document.getElementById('shift-kind').value;
   const st={
     id:id||newId('st'),name,code,
