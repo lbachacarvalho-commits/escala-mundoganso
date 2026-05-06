@@ -282,7 +282,31 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 /* CPF */
 .cpf-warning{font-size:11px;color:var(--red);margin-top:4px}
 
-/* VERSION HISTORY */
+/* BANCO DE HORAS DASHBOARD */
+.bh-dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+@media(max-width:640px){.bh-dash-grid{grid-template-columns:1fr}}
+.bh-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.bh-card-header{padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between}
+.bh-card-title{font-family:var(--font-display);font-weight:700;font-size:1rem;color:var(--primary)}
+.bh-rank-item{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border-soft)}
+.bh-rank-item:last-child{border-bottom:none}
+.bh-rank-pos{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--muted);width:20px;text-align:center;flex-shrink:0}
+.bh-rank-pos.top1{color:#f59e0b}
+.bh-rank-pos.top2{color:#94a3b8}
+.bh-rank-pos.top3{color:#c2410c}
+.bh-rank-bar-wrap{flex:1;height:8px;background:var(--border-soft);border-radius:4px;overflow:hidden;min-width:60px}
+.bh-rank-bar{height:100%;border-radius:4px;transition:width .4s ease}
+.bh-rank-val{font-family:var(--font-mono);font-size:12px;font-weight:700;width:58px;text-align:right;flex-shrink:0}
+.bh-rank-name{font-size:13px;font-weight:500;min-width:90px;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bh-rank-sector{font-size:10px;color:var(--muted);margin-top:1px}
+
+/* HISTORY CHART */
+.bh-history-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px}
+.bh-history-header{padding:14px 16px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.bh-chart-area{padding:16px;overflow-x:auto}
+.bh-chart-svg{width:100%;min-width:500px;display:block}
+.bh-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bh-filter-row input[type=date]{padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);font-family:var(--font-body)}
 .version-item{padding:12px 16px;border-bottom:1px solid var(--border-soft);display:flex;align-items:flex-start;gap:12px}
 .version-item:last-child{border-bottom:none}
 .version-item:hover{background:var(--surface2)}
@@ -437,6 +461,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
       <button class="tab" onclick="switchTab('setores')">🏷️ Setores</button>
       <button class="tab" onclick="switchTab('turnos')">🕐 Tipos de Turno</button>
       <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
+      <button class="tab" onclick="switchTab('banco')">⏱ Banco de Horas</button>
       <button class="tab" onclick="switchTab('versoes')">🕘 Versões</button>
     </nav>
   </header>
@@ -815,7 +840,261 @@ function showSave(status){
   el.innerHTML=text?`<span>${icon}</span><span>${text}</span>`:'';
 }
 
-// ===================== VERSION HISTORY =====================
+// ===================== BANCO DE HORAS DASHBOARD =====================
+let bhFilterStart = '';
+let bhFilterEnd = '';
+
+function renderBancoHoras(){
+  const div=document.createElement('div');
+  const sm=sectorMap();
+  const activeEmps=state.data.employees.filter(e=>e.active);
+
+  // ---- Data prep ----
+  // Sort employees by bankHours (most positive first, then negative)
+  const empsSorted=[...activeEmps].sort((a,b)=>(b.bankHours||0)-(a.bankHours||0));
+  const maxAbs=Math.max(...empsSorted.map(e=>Math.abs(e.bankHours||0)),1);
+
+  // Sector totals
+  const sectorTotals={};
+  state.data.sectors.forEach(s=>{
+    const emps=activeEmps.filter(e=>e.sectorId===s.id);
+    sectorTotals[s.id]={
+      name:s.name, color:s.color,
+      total:emps.reduce((sum,e)=>sum+(e.bankHours||0),0),
+      count:emps.length,
+    };
+  });
+  const sectorsSorted=Object.values(sectorTotals).filter(s=>s.count>0).sort((a,b)=>b.total-a.total);
+  const maxSecAbs=Math.max(...sectorsSorted.map(s=>Math.abs(s.total)),1);
+
+  // History: for each date in schedule, compute sum of bankHours of employees who worked
+  // (we track how BH evolved — use current BH values as snapshot, and chart entries per date)
+  const allDates=Object.keys(state.data.schedule).sort();
+
+  // Apply date filter
+  const today=fmtDate(new Date());
+  const filterStart=bhFilterStart||allDates[0]||today;
+  const filterEnd=bhFilterEnd||today;
+  const filteredDates=allDates.filter(d=>d>=filterStart&&d<=filterEnd);
+
+  // For each date, count total hours worked (sum BH of people who had a time-shift)
+  const shm=shiftMap();
+  const historyData=filteredDates.map(ds=>{
+    const daySchedule=state.data.schedule[ds]||{};
+    let totalWorkedMin=0;
+    Object.entries(daySchedule).forEach(([empId,val])=>{
+      const sid=getCellShiftId(val);
+      if(!sid)return;
+      const st=shm[sid];
+      if(st&&st.kind==='time'){
+        // Count this person's BH contribution for that day
+        const emp=activeEmps.find(e=>e.id===empId);
+        if(emp)totalWorkedMin+=emp.bankHours||0;
+      }
+    });
+    return{date:ds,value:totalWorkedMin};
+  });
+
+  // ---- HTML ----
+  div.innerHTML=`<div class="page-title" style="margin-bottom:4px">Banco de Horas</div>
+    <div class="page-sub" style="margin-bottom:20px">Saldos atuais, rankings e histórico</div>`;
+
+  // Top cards row
+  const totalPos=activeEmps.filter(e=>(e.bankHours||0)>0).reduce((s,e)=>s+(e.bankHours||0),0);
+  const totalNeg=activeEmps.filter(e=>(e.bankHours||0)<0).reduce((s,e)=>s+(e.bankHours||0),0);
+  const totalGeral=activeEmps.reduce((s,e)=>s+(e.bankHours||0),0);
+
+  const statsRow=document.createElement('div');
+  statsRow.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px';
+  [
+    {label:'Saldo Total da Equipe',val:totalGeral,sub:`${activeEmps.length} colaboradores`},
+    {label:'Total Positivo',val:totalPos,sub:`${activeEmps.filter(e=>(e.bankHours||0)>0).length} pessoas com saldo +`},
+    {label:'Total Negativo',val:totalNeg,sub:`${activeEmps.filter(e=>(e.bankHours||0)<0).length} pessoas com saldo −`},
+  ].forEach(({label,val,sub})=>{
+    const isPos=val>=0;
+    const card=document.createElement('div');
+    card.className='bh-card';
+    card.style.padding='16px';
+    card.innerHTML=`
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">${label}</div>
+      <div style="font-family:var(--font-display);font-size:1.8rem;font-weight:800;color:${val===0?'var(--muted)':isPos?'#15803d':'#dc2626'}">${fmtBankHours(val)||'0:00'}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">${sub}</div>
+    `;
+    statsRow.appendChild(card);
+  });
+  div.appendChild(statsRow);
+
+  // Rankings row
+  const ranksRow=document.createElement('div');
+  ranksRow.className='bh-dash-grid';
+
+  // --- Rank by person ---
+  const rankEmpCard=document.createElement('div');
+  rankEmpCard.className='bh-card';
+  rankEmpCard.innerHTML=`<div class="bh-card-header"><div class="bh-card-title">Ranking por Colaborador</div><span style="font-size:11px;color:var(--muted)">${empsSorted.filter(e=>e.bankHours).length} com saldo</span></div>`;
+  const empList=document.createElement('div');
+  empList.style.maxHeight='360px';empList.style.overflowY='auto';
+  empsSorted.filter(e=>e.bankHours).forEach((emp,i)=>{
+    const bh=emp.bankHours||0;
+    const sec=sm[emp.sectorId]||{};
+    const pct=Math.round(Math.abs(bh)/maxAbs*100);
+    const posClass=i===0?'top1':i===1?'top2':i===2?'top3':'';
+    const item=document.createElement('div');
+    item.className='bh-rank-item';
+    item.innerHTML=`
+      <div class="bh-rank-pos ${posClass}">${i+1}</div>
+      <div style="flex:1;min-width:0">
+        <div class="bh-rank-name">${emp.name}</div>
+        <div class="bh-rank-sector" style="color:${sec.color||'var(--muted)'}">${sec.name||''}</div>
+        <div class="bh-rank-bar-wrap" style="margin-top:4px">
+          <div class="bh-rank-bar" style="width:${pct}%;background:${bh>=0?'#15803d':'#dc2626'}"></div>
+        </div>
+      </div>
+      <div class="bh-rank-val" style="color:${bh>=0?'#15803d':'#dc2626'}">${fmtBankHours(bh)}</div>
+    `;
+    empList.appendChild(item);
+  });
+  if(!empsSorted.some(e=>e.bankHours)){
+    empList.innerHTML=`<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">Nenhum banco de horas cadastrado ainda.</div>`;
+  }
+  rankEmpCard.appendChild(empList);
+  ranksRow.appendChild(rankEmpCard);
+
+  // --- Rank by sector ---
+  const rankSecCard=document.createElement('div');
+  rankSecCard.className='bh-card';
+  rankSecCard.innerHTML=`<div class="bh-card-header"><div class="bh-card-title">Ranking por Setor</div></div>`;
+  const secList=document.createElement('div');
+  sectorsSorted.forEach((sec,i)=>{
+    const pct=Math.round(Math.abs(sec.total)/maxSecAbs*100);
+    const posClass=i===0?'top1':i===1?'top2':i===2?'top3':'';
+    const item=document.createElement('div');
+    item.className='bh-rank-item';
+    item.innerHTML=`
+      <div class="bh-rank-pos ${posClass}">${i+1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:8px;height:8px;border-radius:50%;background:${sec.color};flex-shrink:0"></div>
+          <div class="bh-rank-name">${sec.name}</div>
+        </div>
+        <div class="bh-rank-sector">${sec.count} colaborador${sec.count!==1?'es':''}</div>
+        <div class="bh-rank-bar-wrap" style="margin-top:4px">
+          <div class="bh-rank-bar" style="width:${pct}%;background:${sec.total>=0?'#15803d':'#dc2626'}"></div>
+        </div>
+      </div>
+      <div class="bh-rank-val" style="color:${sec.total>=0?'#15803d':'#dc2626'}">${fmtBankHours(sec.total)}</div>
+    `;
+    secList.appendChild(item);
+  });
+  rankSecCard.appendChild(secList);
+  ranksRow.appendChild(rankSecCard);
+
+  div.appendChild(ranksRow);
+
+  // --- History chart ---
+  const histCard=document.createElement('div');
+  histCard.className='bh-history-card';
+
+  // Filter controls
+  const today2=fmtDate(new Date());
+  const defaultStart=allDates.length>0?allDates[Math.max(0,allDates.length-30)]:today2;
+  histCard.innerHTML=`
+    <div class="bh-history-header">
+      <div class="bh-card-title">Histórico de Banco de Horas por Data</div>
+      <div class="bh-filter-row">
+        <label style="font-size:12px;color:var(--muted)">De</label>
+        <input type="date" id="bh-start" value="${bhFilterStart||defaultStart}" onchange="setBhFilter()">
+        <label style="font-size:12px;color:var(--muted)">Até</label>
+        <input type="date" id="bh-end" value="${bhFilterEnd||today2}" onchange="setBhFilter()">
+        <button class="btn btn-ghost btn-sm" onclick="bhFilterStart='';bhFilterEnd='';render()">Limpar</button>
+      </div>
+    </div>
+    <div class="bh-chart-area" id="bh-chart-area"></div>
+  `;
+  div.appendChild(histCard);
+
+  // Render chart after DOM is ready
+  setTimeout(()=>renderBhChart(historyData,filteredDates),0);
+
+  return div;
+}
+
+function setBhFilter(){
+  bhFilterStart=document.getElementById('bh-start')?.value||'';
+  bhFilterEnd=document.getElementById('bh-end')?.value||'';
+  render();
+}
+
+function renderBhChart(data, dates){
+  const area=document.getElementById('bh-chart-area');
+  if(!area)return;
+
+  if(!data.length){
+    area.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)">Nenhum dado no período selecionado.</div>`;
+    return;
+  }
+
+  const W=800,H=220,PL=60,PR=20,PT=20,PB=40;
+  const chartW=W-PL-PR, chartH=H-PT-PB;
+
+  const values=data.map(d=>d.value);
+  const minV=Math.min(...values,0);
+  const maxV=Math.max(...values,0);
+  const range=Math.max(maxV-minV,1);
+
+  const xStep=chartW/(data.length-1||1);
+  const yZero=PT+chartH-((0-minV)/range)*chartH;
+
+  // Build SVG
+  let svg=`<svg viewBox="0 0 ${W} ${H}" class="bh-chart-svg" xmlns="http://www.w3.org/2000/svg">`;
+
+  // Grid lines
+  const steps=5;
+  for(let i=0;i<=steps;i++){
+    const v=minV+(range/steps)*i;
+    const y=PT+chartH-((v-minV)/range)*chartH;
+    svg+=`<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="#e8e3d8" stroke-width="1"/>`;
+    svg+=`<text x="${PL-6}" y="${y+4}" text-anchor="end" font-size="10" fill="#7a7060">${fmtBankHours(Math.round(v))}</text>`;
+  }
+
+  // Zero line
+  svg+=`<line x1="${PL}" y1="${yZero}" x2="${W-PR}" y2="${yZero}" stroke="#1a3a2a" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+
+  // Area fill
+  let areaPts=`${PL},${yZero}`;
+  data.forEach((d,i)=>{
+    const x=PL+i*xStep;
+    const y=PT+chartH-((d.value-minV)/range)*chartH;
+    areaPts+=` ${x},${y}`;
+  });
+  areaPts+=` ${PL+(data.length-1)*xStep},${yZero}`;
+  svg+=`<polygon points="${areaPts}" fill="rgba(21,128,61,.12)"/>`;
+
+  // Line
+  let linePts=data.map((d,i)=>{
+    const x=PL+i*xStep;
+    const y=PT+chartH-((d.value-minV)/range)*chartH;
+    return`${x},${y}`;
+  }).join(' ');
+  svg+=`<polyline points="${linePts}" fill="none" stroke="#15803d" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+
+  // Dots + labels (show every Nth to avoid crowding)
+  const showEvery=Math.ceil(data.length/12);
+  data.forEach((d,i)=>{
+    const x=PL+i*xStep;
+    const y=PT+chartH-((d.value-minV)/range)*chartH;
+    svg+=`<circle cx="${x}" cy="${y}" r="4" fill="${d.value>=0?'#15803d':'#dc2626'}" stroke="white" stroke-width="1.5"/>`;
+    if(i%showEvery===0||i===data.length-1){
+      const[,m,day]=d.date.split('-');
+      svg+=`<text x="${x}" y="${H-PB+16}" text-anchor="middle" font-size="9" fill="#7a7060">${day}/${m}</text>`;
+    }
+  });
+
+  svg+='</svg>';
+  area.innerHTML=svg;
+}
+
+
 const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
 const MAX_SNAPSHOTS = 50;
 let _lastAutoSnapshot = 0;
@@ -956,7 +1235,7 @@ let currentTab='escala';
 function switchTab(tab){
   currentTab=tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab')[['escala','colaboradores','setores','turnos','resumo','versoes'].indexOf(tab)].classList.add('active');
+  document.querySelectorAll('.tab')[['escala','colaboradores','setores','turnos','resumo','banco','versoes'].indexOf(tab)].classList.add('active');
   render();
 }
 
@@ -971,6 +1250,7 @@ function render(){
   else if(currentTab==='setores')main.appendChild(renderSectors());
   else if(currentTab==='turnos')main.appendChild(renderShiftTypes());
   else if(currentTab==='resumo')main.appendChild(renderSummary());
+  else if(currentTab==='banco')main.appendChild(renderBancoHoras());
   else if(currentTab==='versoes')main.appendChild(renderVersions());
 }
 
@@ -1535,10 +1815,10 @@ function openEmpModal(id){
         <label class="label">Banco de horas</label>
         <input class="input" id="emp-bh" value="${bhVal}" placeholder="+4:00 ou -1:30" style="font-family:var(--font-mono)">
       </div>
-      <div class="field">
-        <label class="label">Observação (opcional)</label>
-        <input class="input" id="emp-obs" value="${emp?emp.obs||'':''}" placeholder="Ex: Só pode folgar na terça">
-      </div>
+    </div>
+    <div class="field" style="margin-bottom:12px">
+      <label class="label">Observação do colaborador (opcional)</label>
+      <input class="input" id="emp-obs" value="${emp?emp.obs||'':''}" placeholder="Ex: Só pode folgar na terça">
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px"><input type="checkbox" id="emp-active" ${!emp||emp.active?'checked':''}> Colaborador ativo</label>
     <div class="modal-actions">
