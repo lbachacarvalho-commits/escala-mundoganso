@@ -749,6 +749,7 @@ async function loadData(){
     setTimeout(()=>showSave('idle'),3000);
   }
   render();
+  autoSaveBhToday(); // salva DEPOIS que os dados reais vieram do Firebase
 
   // 3. Escuta mudanças em tempo real via SSE
   startRealtimeSync();
@@ -2273,12 +2274,8 @@ function closeModal(){
 }
 
 // ===================== INIT =====================
-// Renderiza imediatamente com dados padrão (tela não fica em branco)
 render();
-// Depois carrega dados reais do Firebase (sobrescreve com re-render)
 loadData();
-// Registra saldo do banco de horas de hoje ao abrir o app
-setTimeout(autoSaveBhToday, 3000);
 </script>
 </body>
 </html>
