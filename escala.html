@@ -814,6 +814,7 @@ function saveData(){
       if(res.ok){
         showSave('saved');setTimeout(()=>showSave('idle'),1500);
         maybeAutoSnapshot();
+        autoSaveBhToday(); // registra saldo do dia automaticamente
       }
       else{showSave('error');_ignoreNextSync=false}
     }catch(e){
@@ -859,6 +860,7 @@ function renderBancoHoras(){
   state.data.sectors.forEach(s=>{
     const emps=activeEmps.filter(e=>e.sectorId===s.id);
     sectorTotals[s.id]={
+      id:s.id,
       name:s.name, color:s.color,
       total:emps.reduce((sum,e)=>sum+(e.bankHours||0),0),
       count:emps.length,
@@ -867,33 +869,6 @@ function renderBancoHoras(){
   const sectorsSorted=Object.values(sectorTotals).filter(s=>s.count>0).sort((a,b)=>b.total-a.total);
   const maxSecAbs=Math.max(...sectorsSorted.map(s=>Math.abs(s.total)),1);
 
-  // History: for each date in schedule, compute sum of bankHours of employees who worked
-  // (we track how BH evolved — use current BH values as snapshot, and chart entries per date)
-  const allDates=Object.keys(state.data.schedule).sort();
-
-  // Apply date filter
-  const today=fmtDate(new Date());
-  const filterStart=bhFilterStart||allDates[0]||today;
-  const filterEnd=bhFilterEnd||today;
-  const filteredDates=allDates.filter(d=>d>=filterStart&&d<=filterEnd);
-
-  // For each date, count total hours worked (sum BH of people who had a time-shift)
-  const shm=shiftMap();
-  const historyData=filteredDates.map(ds=>{
-    const daySchedule=state.data.schedule[ds]||{};
-    let totalWorkedMin=0;
-    Object.entries(daySchedule).forEach(([empId,val])=>{
-      const sid=getCellShiftId(val);
-      if(!sid)return;
-      const st=shm[sid];
-      if(st&&st.kind==='time'){
-        // Count this person's BH contribution for that day
-        const emp=activeEmps.find(e=>e.id===empId);
-        if(emp)totalWorkedMin+=emp.bankHours||0;
-      }
-    });
-    return{date:ds,value:totalWorkedMin};
-  });
 
   // ---- HTML ----
   div.innerHTML=`<div class="page-title" style="margin-bottom:4px">Banco de Horas</div>
@@ -963,13 +938,18 @@ function renderBancoHoras(){
   // --- Rank by sector ---
   const rankSecCard=document.createElement('div');
   rankSecCard.className='bh-card';
-  rankSecCard.innerHTML=`<div class="bh-card-header"><div class="bh-card-title">Ranking por Setor</div></div>`;
+  rankSecCard.innerHTML=`<div class="bh-card-header"><div class="bh-card-title">Ranking por Setor</div><span style="font-size:11px;color:var(--muted)">Clique para ver colaboradores</span></div>`;
   const secList=document.createElement('div');
   sectorsSorted.forEach((sec,i)=>{
     const pct=Math.round(Math.abs(sec.total)/maxSecAbs*100);
     const posClass=i===0?'top1':i===1?'top2':i===2?'top3':'';
     const item=document.createElement('div');
     item.className='bh-rank-item';
+    item.style.cursor='pointer';
+    item.style.transition='background .12s';
+    item.onmouseenter=()=>item.style.background='var(--surface2)';
+    item.onmouseleave=()=>item.style.background='';
+    item.onclick=()=>openSectorBhModal(sec.id);
     item.innerHTML=`
       <div class="bh-rank-pos ${posClass}">${i+1}</div>
       <div style="flex:1;min-width:0">
@@ -982,7 +962,10 @@ function renderBancoHoras(){
           <div class="bh-rank-bar" style="width:${pct}%;background:${sec.total>=0?'#15803d':'#dc2626'}"></div>
         </div>
       </div>
-      <div class="bh-rank-val" style="color:${sec.total>=0?'#15803d':'#dc2626'}">${fmtBankHours(sec.total)}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="bh-rank-val" style="color:${sec.total>=0?'#15803d':'#dc2626'}">${fmtBankHours(sec.total)}</div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+      </div>
     `;
     secList.appendChild(item);
   });
@@ -991,30 +974,32 @@ function renderBancoHoras(){
 
   div.appendChild(ranksRow);
 
-  // --- History chart ---
+  // --- History chart (loads from Firebase) ---
+  const today2=fmtDate(new Date());
   const histCard=document.createElement('div');
   histCard.className='bh-history-card';
-
-  // Filter controls
-  const today2=fmtDate(new Date());
-  const defaultStart=allDates.length>0?allDates[Math.max(0,allDates.length-30)]:today2;
   histCard.innerHTML=`
     <div class="bh-history-header">
-      <div class="bh-card-title">Histórico de Banco de Horas por Data</div>
+      <div>
+        <div class="bh-card-title">Histórico do Saldo Total por Dia</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Atualizado automaticamente. Dias sem alteração mantêm o valor anterior.</div>
+      </div>
       <div class="bh-filter-row">
         <label style="font-size:12px;color:var(--muted)">De</label>
-        <input type="date" id="bh-start" value="${bhFilterStart||defaultStart}" onchange="setBhFilter()">
+        <input type="date" id="bh-start" value="${bhFilterStart||''}" onchange="setBhFilter()">
         <label style="font-size:12px;color:var(--muted)">Até</label>
         <input type="date" id="bh-end" value="${bhFilterEnd||today2}" onchange="setBhFilter()">
         <button class="btn btn-ghost btn-sm" onclick="bhFilterStart='';bhFilterEnd='';render()">Limpar</button>
       </div>
     </div>
-    <div class="bh-chart-area" id="bh-chart-area"></div>
+    <div class="bh-chart-area" id="bh-chart-area">
+      <div style="padding:40px;text-align:center;color:var(--muted)">🔄 Carregando histórico…</div>
+    </div>
   `;
   div.appendChild(histCard);
 
-  // Render chart after DOM is ready
-  setTimeout(()=>renderBhChart(historyData,filteredDates),0);
+  // Load history async
+  setTimeout(()=>loadBhHistory(),0);
 
   return div;
 }
@@ -1022,68 +1007,110 @@ function renderBancoHoras(){
 function setBhFilter(){
   bhFilterStart=document.getElementById('bh-start')?.value||'';
   bhFilterEnd=document.getElementById('bh-end')?.value||'';
-  render();
+  loadBhHistory();
 }
 
-function renderBhChart(data, dates){
+const FB_BH_HISTORY='https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
+
+async function loadBhHistory(){
   const area=document.getElementById('bh-chart-area');
   if(!area)return;
 
-  if(!data.length){
-    area.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)">Nenhum dado no período selecionado.</div>`;
-    return;
-  }
+  try{
+    const res=await fetch(`${FB_BH_HISTORY}.json`);
+    const raw=res.ok?await res.json():null;
 
-  const W=800,H=220,PL=60,PR=20,PT=20,PB=40;
-  const chartW=W-PL-PR, chartH=H-PT-PB;
+    if(!raw||!Object.keys(raw).length){
+      area.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)">
+        <div style="font-size:28px;margin-bottom:8px">📭</div>
+        <div>Nenhum registro ainda.<br>Clique em <b>Registrar saldo de hoje</b> para começar o histórico.</div>
+      </div>`;
+      return;
+    }
+
+    // Build full date series, carrying forward last known value
+    let allEntries=Object.values(raw).sort((a,b)=>a.date.localeCompare(b.date));
+
+    // Apply filters
+    const start=bhFilterStart;
+    const end=bhFilterEnd||fmtDate(new Date());
+    if(start||end){
+      // Keep one entry before start for carry-forward context
+      allEntries=allEntries.filter(e=>(!start||e.date>=start)&&(!end||e.date<=end));
+    }
+
+    if(!allEntries.length){
+      area.innerHTML=`<div style="padding:32px;text-align:center;color:var(--muted)">Nenhum registro no período selecionado.</div>`;
+      return;
+    }
+
+    // Fill gaps: carry forward last value for days with no record
+    const filled=[];
+    let prev=allEntries[0];
+    const startDate=new Date(allEntries[0].date);
+    const endDate=new Date(allEntries[allEntries.length-1].date);
+    const entryMap={};
+    allEntries.forEach(e=>entryMap[e.date]=e);
+
+    for(let d=new Date(startDate);d<=endDate;d.setDate(d.getDate()+1)){
+      const ds=fmtDate(d);
+      if(entryMap[ds]){prev=entryMap[ds];}
+      filled.push({date:ds,value:prev.total,isReal:!!entryMap[ds]});
+    }
+
+    renderBhChart(filled);
+  }catch(e){
+    const area2=document.getElementById('bh-chart-area');
+    if(area2)area2.innerHTML=`<div style="padding:20px;color:var(--red)">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+function renderBhChart(data){
+  const area=document.getElementById('bh-chart-area');
+  if(!area||!data.length)return;
+
+  const W=800,H=240,PL=72,PR=24,PT=24,PB=44;
+  const chartW=W-PL-PR,chartH=H-PT-PB;
 
   const values=data.map(d=>d.value);
   const minV=Math.min(...values,0);
   const maxV=Math.max(...values,0);
   const range=Math.max(maxV-minV,1);
-
   const xStep=chartW/(data.length-1||1);
-  const yZero=PT+chartH-((0-minV)/range)*chartH;
+  const toY=v=>PT+chartH-((v-minV)/range)*chartH;
+  const yZero=toY(0);
 
-  // Build SVG
   let svg=`<svg viewBox="0 0 ${W} ${H}" class="bh-chart-svg" xmlns="http://www.w3.org/2000/svg">`;
 
-  // Grid lines
+  // Grid + Y labels
   const steps=5;
   for(let i=0;i<=steps;i++){
     const v=minV+(range/steps)*i;
-    const y=PT+chartH-((v-minV)/range)*chartH;
+    const y=toY(v);
     svg+=`<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="#e8e3d8" stroke-width="1"/>`;
-    svg+=`<text x="${PL-6}" y="${y+4}" text-anchor="end" font-size="10" fill="#7a7060">${fmtBankHours(Math.round(v))}</text>`;
+    svg+=`<text x="${PL-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#7a7060">${fmtBankHours(Math.round(v))}</text>`;
   }
 
   // Zero line
   svg+=`<line x1="${PL}" y1="${yZero}" x2="${W-PR}" y2="${yZero}" stroke="#1a3a2a" stroke-width="1.5" stroke-dasharray="4,3"/>`;
 
   // Area fill
-  let areaPts=`${PL},${yZero}`;
-  data.forEach((d,i)=>{
-    const x=PL+i*xStep;
-    const y=PT+chartH-((d.value-minV)/range)*chartH;
-    areaPts+=` ${x},${y}`;
-  });
-  areaPts+=` ${PL+(data.length-1)*xStep},${yZero}`;
-  svg+=`<polygon points="${areaPts}" fill="rgba(21,128,61,.12)"/>`;
+  let pts=`${PL},${yZero}`;
+  data.forEach((d,i)=>pts+=` ${PL+i*xStep},${toY(d.value)}`);
+  pts+=` ${PL+(data.length-1)*xStep},${yZero}`;
+  svg+=`<polygon points="${pts}" fill="rgba(21,128,61,.1)"/>`;
 
-  // Line
-  let linePts=data.map((d,i)=>{
-    const x=PL+i*xStep;
-    const y=PT+chartH-((d.value-minV)/range)*chartH;
-    return`${x},${y}`;
-  }).join(' ');
+  // Line (step-style for carry-forward days)
+  let linePts=data.map((d,i)=>`${PL+i*xStep},${toY(d.value)}`).join(' ');
   svg+=`<polyline points="${linePts}" fill="none" stroke="#15803d" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
 
-  // Dots + labels (show every Nth to avoid crowding)
-  const showEvery=Math.ceil(data.length/12);
+  // Dots: solid for real entries, hollow for carried-forward
+  const showEvery=Math.ceil(data.length/14);
   data.forEach((d,i)=>{
-    const x=PL+i*xStep;
-    const y=PT+chartH-((d.value-minV)/range)*chartH;
-    svg+=`<circle cx="${x}" cy="${y}" r="4" fill="${d.value>=0?'#15803d':'#dc2626'}" stroke="white" stroke-width="1.5"/>`;
+    const x=PL+i*xStep, y=toY(d.value);
+    if(d.isReal){
+      svg+=`<circle cx="${x}" cy="${y}" r="5" fill="${d.value>=0?'#15803d':'#dc2626'}" stroke="white" stroke-width="2"/>`;
+    }
     if(i%showEvery===0||i===data.length-1){
       const[,m,day]=d.date.split('-');
       svg+=`<text x="${x}" y="${H-PB+16}" text-anchor="middle" font-size="9" fill="#7a7060">${day}/${m}</text>`;
@@ -1094,8 +1121,85 @@ function renderBhChart(data, dates){
   area.innerHTML=svg;
 }
 
+function openSectorBhModal(sectorId){
+  const sector=state.data.sectors.find(s=>s.id===sectorId);
+  if(!sector)return;
+  const emps=state.data.employees
+    .filter(e=>e.active&&e.sectorId===sectorId&&e.bankHours)
+    .sort((a,b)=>(b.bankHours||0)-(a.bankHours||0));
 
-const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
+  const maxAbs=Math.max(...emps.map(e=>Math.abs(e.bankHours||0)),1);
+  const total=emps.reduce((s,e)=>s+(e.bankHours||0),0);
+
+  let rows='';
+  if(!emps.length){
+    rows=`<div style="padding:32px;text-align:center;color:var(--muted)">Nenhum banco de horas cadastrado neste setor.</div>`;
+  }else{
+    emps.forEach((emp,i)=>{
+      const bh=emp.bankHours||0;
+      const pct=Math.round(Math.abs(bh)/maxAbs*100);
+      const posClass=i===0?'top1':i===1?'top2':i===2?'top3':'';
+      const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+      rows+=`
+        <div class="bh-rank-item">
+          <div class="bh-rank-pos ${posClass}">${medal||i+1}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="bh-rank-name">${emp.name}</div>
+              ${emp.contract&&emp.contract!=='fixo'?`<span class="contract-badge contract-${emp.contract}">${emp.contract}</span>`:''}
+            </div>
+            <div class="bh-rank-sector">${emp.role||''}</div>
+            <div class="bh-rank-bar-wrap" style="margin-top:4px">
+              <div class="bh-rank-bar" style="width:${pct}%;background:${bh>=0?'#15803d':'#dc2626'}"></div>
+            </div>
+          </div>
+          <div class="bh-rank-val" style="color:${bh>=0?'#15803d':'#dc2626'}">${fmtBankHours(bh)}</div>
+        </div>
+      `;
+    });
+  }
+
+  const html=`
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" style="display:flex;align-items:center;gap:8px">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${sector.color}"></span>
+          ${sector.name}
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px">
+          Total: <strong style="color:${total>=0?'#15803d':'#dc2626'}">${fmtBankHours(total)||'0:00'}</strong>
+          · ${emps.length} colaborador${emps.length!==1?'es':''}
+        </div>
+      </div>
+      <button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button>
+    </div>
+    <div style="max-height:420px;overflow-y:auto;margin:0 -6px">${rows}</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Fechar</button>
+    </div>
+  `;
+  openModal(html,true);
+}
+
+let _bhSaveTimer=null;
+function autoSaveBhToday(){
+  // Debounce: espera 2s após última mudança antes de salvar
+  clearTimeout(_bhSaveTimer);
+  _bhSaveTimer=setTimeout(async()=>{
+    const today=fmtDate(new Date());
+    const activeEmps=state.data.employees.filter(e=>e.active);
+    const total=activeEmps.reduce((s,e)=>s+(e.bankHours||0),0);
+    try{
+      await fetch(`${FB_BH_HISTORY}/${today}.json`,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({date:today,total,registeredAt:Date.now()})
+      });
+    }catch(e){}
+  },2000);
+}
+
+
 const MAX_SNAPSHOTS = 50;
 let _lastAutoSnapshot = 0;
 
@@ -2173,6 +2277,8 @@ function closeModal(){
 render();
 // Depois carrega dados reais do Firebase (sobrescreve com re-render)
 loadData();
+// Registra saldo do banco de horas de hoje ao abrir o app
+setTimeout(autoSaveBhToday, 3000);
 </script>
 </body>
 </html>
