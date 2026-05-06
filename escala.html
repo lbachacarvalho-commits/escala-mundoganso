@@ -307,6 +307,18 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .bh-chart-svg{width:100%;min-width:500px;display:block}
 .bh-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .bh-filter-row input[type=date]{padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);font-family:var(--font-body)}
+/* SUBGROUP ROWS */
+.subgroup-hdr td{padding:4px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border-soft);color:var(--muted)}
+.subgroup-hdr td:first-child{position:sticky;left:0;z-index:4}
+.subgroup-hdr.trabalhando td{color:#15803d;background:#f0fdf4}
+.subgroup-hdr.trabalhando td:first-child{background:#f0fdf4}
+.subgroup-hdr.ausentes td{color:#7c3aed;background:#faf5ff}
+.subgroup-hdr.ausentes td:first-child{background:#faf5ff}
+.subgroup-hdr.indefinidos td{color:var(--muted);background:var(--surface2)}
+.subgroup-hdr.indefinidos td:first-child{background:var(--surface2)}
+.shift-subgroup-hdr td{padding:3px 16px 3px 28px;font-size:10px;font-weight:600;letter-spacing:.03em;border-bottom:1px solid var(--border-soft);background:rgba(240,253,244,.6);color:#15803d;font-style:italic}
+.shift-subgroup-hdr td:first-child{position:sticky;left:0;z-index:4;background:rgba(240,253,244,.6)}
+
 .version-item{padding:12px 16px;border-bottom:1px solid var(--border-soft);display:flex;align-items:flex-start;gap:12px}
 .version-item:last-child{border-bottom:none}
 .version-item:hover{background:var(--surface2)}
@@ -640,6 +652,8 @@ document.addEventListener('keydown',e=>{
 
 // ===================== FIREBASE CONFIG =====================
 const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
+const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
+const FB_BH_HISTORY = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
 const LOCAL_KEY = 'escala_lazer_html_v1';
 let _ignoreNextSync = false; // evita re-render quando a mudança veio do próprio usuário
 
@@ -815,7 +829,7 @@ function saveData(){
       if(res.ok){
         showSave('saved');setTimeout(()=>showSave('idle'),1500);
         maybeAutoSnapshot();
-        autoSaveBhToday(); // registra saldo do dia automaticamente
+        autoSaveBhToday();
       }
       else{showSave('error');_ignoreNextSync=false}
     }catch(e){
@@ -1010,8 +1024,6 @@ function setBhFilter(){
   bhFilterEnd=document.getElementById('bh-end')?.value||'';
   loadBhHistory();
 }
-
-const FB_BH_HISTORY='https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
 
 async function loadBhHistory(){
   const area=document.getElementById('bh-chart-area');
@@ -1218,7 +1230,8 @@ async function createSnapshot(label, type='manual'){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(snapshot)
     });
-    // Limpa snapshots antigos se passar do limite
+    // Registra BH junto com cada snapshot de versão
+    autoSaveBhToday();
     pruneSnapshots();
   }catch(e){ console.error('Snapshot error',e) }
   return id;
@@ -1557,7 +1570,6 @@ function renderSchedule(){
         td.className=classes.join(' ');
         td.style.background=locked?'#f0fdf4':isToday?'rgba(26,58,42,.05)':'var(--surface)';
         if(!locked)td.onclick=()=>handleCellClick(ds,emp.id,sector.id);
-
         const wrap=document.createElement('div');
         wrap.className='cell-inner-wrap';
         const inner=document.createElement('div');
@@ -1570,14 +1582,13 @@ function renderSchedule(){
           inner.style.color=contrastText(shift.color);
           inner.textContent=shift.code;
           if(shift.kind==='time')inner.classList.add('time-shift');
-        }
-        else{inner.style.color='var(--muted)';inner.textContent=locked?'':'+'}
+        } else{inner.style.color='var(--muted)';inner.textContent=locked?'':'+'}
         if(note){
           const dot=document.createElement('div');
           dot.className='cell-note-dot';
           dot.title=note;
           dot.innerHTML=`<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b" stroke="#92400e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13" stroke="#92400e" stroke-width="2"/><circle cx="12" cy="17" r="1" fill="#92400e" stroke="none"/></svg>`;
-          inner.appendChild(dot); /* inside cell-inner so it overlays the color */
+          inner.appendChild(dot);
         }
         wrap.appendChild(inner);
         td.appendChild(wrap);
