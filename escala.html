@@ -125,8 +125,16 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .done-label{font-size:10px;font-weight:700;color:var(--green);margin-top:2px}
 .day-counts{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin-top:5px}
 .count-chip{font-family:var(--font-mono);font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap}
-.conclude-btn{width:calc(100% - 8px);margin:4px;padding:4px 6px;border-radius:6px;font-size:11px;font-weight:700;color:#fff;border:none;cursor:pointer;transition:opacity .15s}
-.conclude-btn:hover{opacity:.85}
+.conclude-btn{
+  width:calc(100% - 8px);margin:4px;
+  padding:5px 8px;border-radius:20px;
+  font-size:11px;font-weight:700;color:#fff;
+  border:2px solid rgba(255,255,255,.4);
+  cursor:pointer;transition:all .15s;
+  display:flex;align-items:center;justify-content:center;gap:4px;
+  letter-spacing:.03em;text-transform:uppercase;
+}
+.conclude-btn:hover{opacity:.85;transform:scale(.97)}
 
 /* SECTOR ROW */
 .sector-hdr td{border-top:2px solid var(--border);border-bottom:1px solid var(--border-soft);background:var(--surface2)}
@@ -307,7 +315,22 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .bh-chart-svg{width:100%;min-width:500px;display:block}
 .bh-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .bh-filter-row input[type=date]{padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);font-family:var(--font-body)}
-/* LOGIN SCREEN */
+/* LOG PAGE */
+.log-session{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s}
+.log-session:hover{box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.log-session-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface)}
+.log-session-header.open{background:var(--surface2)}
+.log-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);flex-shrink:0}
+.log-session-info{flex:1;min-width:0}
+.log-session-user{font-weight:600;font-size:13px}
+.log-session-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.log-session-count{font-size:11px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0}
+.log-entries{padding:0 16px 12px;background:var(--surface2);border-top:1px solid var(--border-soft)}
+.log-entry{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-soft);font-size:12px}
+.log-entry:last-child{border-bottom:none}
+.log-entry-time{font-family:var(--font-mono);color:var(--muted);flex-shrink:0;width:48px}
+.log-entry-action{color:var(--text);flex:1}
+.log-entry-detail{color:var(--muted);font-style:italic}
 #login-screen{position:fixed;inset:0;z-index:999;background:var(--primary);display:flex;align-items:center;justify-content:center;padding:24px}
 .login-box{background:var(--surface);border-radius:20px;padding:36px 32px;width:100%;max-width:380px;box-shadow:0 24px 64px rgba(0,0,0,.3)}
 .login-logo{width:52px;height:52px;background:var(--primary);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 20px}
@@ -521,6 +544,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
       <button class="tab" onclick="switchTab('banco')">⏱ Banco de Horas</button>
       <button class="tab" onclick="switchTab('versoes')">🕘 Versões</button>
       <button class="tab" id="tab-usuarios" style="display:none" onclick="switchTab('usuarios')">👤 Usuários</button>
+      <button class="tab" id="tab-logs" style="display:none" onclick="switchTab('logs')">📋 Logs</button>
     </nav>
   </header>
   <main id="main"></main>
@@ -704,6 +728,7 @@ const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
 const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
 const FB_BH_HISTORY = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
 const FB_USERS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_users';
+const FB_LOGS  = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_logs';
 
 // ===================== AUTH =====================
 async function hashPassword(pw){
@@ -776,8 +801,8 @@ async function doLogin(){
     const user=await res.json();
     if(!user||user.passwordHash!==hash){errEl.textContent='Usuário ou senha incorretos.';return}
     currentUser={...user,username};
-    sessionStorage.setItem('escala_user',JSON.stringify(currentUser));
     showApp();
+    startLogSession(); // inicia sessão de log
   }catch(e){errEl.textContent='Erro ao conectar. Verifique sua conexão.'}
 }
 
@@ -795,7 +820,7 @@ function enterPreviewMode(){
 }
 
 function logout(){
-  sessionStorage.removeItem('escala_user');
+  logAction('Saiu do sistema');
   location.reload();
 }
 
@@ -803,6 +828,8 @@ function applyPermissionsToUI(){
   if(!currentUser)return;
   const tabU=document.getElementById('tab-usuarios');
   if(tabU)tabU.style.display=canEdit('usuarios')?'':'none';
+  const tabL=document.getElementById('tab-logs');
+  if(tabL)tabL.style.display=canEdit('usuarios')?'':'none';
   const sub=document.getElementById('header-sub');
   if(sub){
     const funcao=currentUser.funcao||'Gestor';
@@ -1564,6 +1591,7 @@ function render(){
   else if(currentTab==='banco'&&can('canViewBanco'))main.appendChild(renderBancoHoras());
   else if(currentTab==='versoes'&&can('canViewVersions'))main.appendChild(renderVersions());
   else if(currentTab==='usuarios'&&can('canManageUsers'))main.appendChild(renderUsuarios());
+  else if(currentTab==='logs'&&can('canManageUsers'))main.appendChild(renderLogs());
   else main.appendChild(renderAccessDenied());
 
   applyPermissionsToUI();
@@ -1734,7 +1762,7 @@ function renderSchedule(){
       btn.className='conclude-btn';
       btn.style.background=locked?'#15803d':sector.color;
       btn.style.opacity=locked?'1':'0.75';
-      btn.textContent=locked?'✓ Editar':'Concluir';
+      btn.textContent=locked?'✓ Editar':'↓ Concluir';
       btn.onclick=()=>toggleSectorLock(ds,sector.id);
       td.appendChild(btn);
       srow.appendChild(td);
@@ -1828,6 +1856,11 @@ function handleCellClick(ds,empId,sectorId){
 
 function setScheduleCell(ds,empId,shiftId,note){
   pushUndo();
+  const emp=state.data.employees.find(e=>e.id===empId);
+  const shm=shiftMap();
+  const shift=shiftId?shm[shiftId]:null;
+  if(shift)logAction('Turno definido',`${emp?.name||empId} em ${ds}: ${shift.name}`);
+  else logAction('Turno removido',`${emp?.name||empId} em ${ds}`);
   if(!state.data.schedule[ds])state.data.schedule[ds]={};
   if(shiftId===null||shiftId===undefined){
     delete state.data.schedule[ds][empId];
@@ -1840,6 +1873,9 @@ function setScheduleCell(ds,empId,shiftId,note){
 
 function toggleSectorLock(ds,sectorId){
   pushUndo();
+  const sec=state.data.sectors.find(s=>s.id===sectorId);
+  const locked=(state.data.lockedSectors[ds]||[]).includes(sectorId);
+  logAction(locked?'Setor reaberto':'Setor concluído',`${sec?.name||sectorId} em ${ds}`);
   if(!state.data.lockedSectors[ds])state.data.lockedSectors[ds]=[];
   const arr=state.data.lockedSectors[ds];
   const idx=arr.indexOf(sectorId);
@@ -2217,8 +2253,8 @@ function saveEmp(id){
     obs:document.getElementById('emp-obs').value.trim(),
     cpf:document.getElementById('emp-cpf').value.trim(),
   };
-  if(id){state.data.employees=state.data.employees.map(e=>e.id===id?emp:e)}
-  else{state.data.employees.push(emp)}
+  if(id){state.data.employees=state.data.employees.map(e=>e.id===id?emp:e);logAction('Colaborador editado',name)}
+  else{state.data.employees.push(emp);logAction('Colaborador adicionado',name)}
   saveData();closeModal();render();
 }
 
@@ -2706,20 +2742,160 @@ async function saveUser(originalUsername){
   if(currentTab==='usuarios')render();
 }
 
+// ===================== LOG SYSTEM =====================
+let _logSessionId = null;
+let _logBuffer = [];
+let _logFlushTimer = null;
+
+function startLogSession(){
+  if(!currentUser||currentUser.username==='preview')return;
+  _logSessionId = `${fmtDate(new Date())}_${currentUser.username}_${Date.now()}`;
+  _logBuffer = [];
+  logAction('Entrou no sistema');
+}
+
+function logAction(action, detail=''){
+  if(!_logSessionId||!currentUser||currentUser.username==='preview')return;
+  const entry={
+    t: Date.now(),
+    action,
+    detail: detail||'',
+  };
+  _logBuffer.push(entry);
+  // Debounce flush to Firebase
+  clearTimeout(_logFlushTimer);
+  _logFlushTimer=setTimeout(flushLog, 1500);
+}
+
+async function flushLog(){
+  if(!_logSessionId||!_logBuffer.length)return;
+  try{
+    const session={
+      id: _logSessionId,
+      username: currentUser.username,
+      name: currentUser.name||currentUser.username,
+      funcao: currentUser.funcao||'',
+      startedAt: parseInt(_logSessionId.split('_').pop()),
+      entries: [..._logBuffer],
+    };
+    await fetch(`${FB_LOGS}/${_logSessionId}.json`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(session),
+    });
+  }catch(e){}
+}
+
+// Intercept key mutations to log them
+const _origSetScheduleCell = setScheduleCell;
+
+function fmtTime(ts){
+  const d=new Date(ts);
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+// ===================== LOGS PAGE =====================
+let logsFilterDate = '';
+
+function renderLogs(){
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <div class="page-header">
+      <div><div class="page-title">Logs de Operações</div><div class="page-sub">Histórico de sessões e ações dos usuários</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="label" style="margin:0">Data</label>
+        <input type="date" id="logs-date" value="${logsFilterDate}" onchange="setLogsFilter(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface)">
+        <button class="btn btn-ghost btn-sm" onclick="setLogsFilter('')">Limpar</button>
+      </div>
+    </div>
+    <div id="logs-list">
+      <div style="padding:40px;text-align:center;color:var(--muted)">🔄 Carregando logs…</div>
+    </div>
+  `;
+  setTimeout(()=>loadLogs(),0);
+  return div;
+}
+
+function setLogsFilter(val){
+  logsFilterDate=val;
+  render();
+}
+
+async function loadLogs(){
+  const list=document.getElementById('logs-list');
+  if(!list)return;
+  try{
+    const res=await fetch(`${FB_LOGS}.json`);
+    const data=res.ok?await res.json():null;
+    if(!data||!Object.keys(data).length){
+      list.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:28px;margin-bottom:8px">📭</div>Nenhum log registrado ainda.</div>`;
+      return;
+    }
+    let sessions=Object.values(data).sort((a,b)=>b.startedAt-a.startedAt);
+    if(logsFilterDate){
+      sessions=sessions.filter(s=>fmtDate(new Date(s.startedAt))===logsFilterDate);
+    }
+    if(!sessions.length){
+      list.innerHTML=`<div style="padding:32px;text-align:center;color:var(--muted)">Nenhum log para a data selecionada.</div>`;
+      return;
+    }
+    list.innerHTML='';
+    sessions.forEach(session=>{
+      const d=new Date(session.startedAt);
+      const dateStr=`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+      const timeStr=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      const count=(session.entries||[]).length;
+
+      const sessionEl=document.createElement('div');
+      sessionEl.className='log-session';
+
+      const header=document.createElement('div');
+      header.className='log-session-header';
+      header.innerHTML=`
+        <div class="log-dot"></div>
+        <div class="log-session-info">
+          <div class="log-session-user">${session.name||session.username} <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">@${session.username}</span>
+            ${session.funcao?`<span class="user-role-badge role-custom" style="background:var(--primary);margin-left:6px">${session.funcao}</span>`:''}
+          </div>
+          <div class="log-session-meta">${dateStr} às ${timeStr}</div>
+        </div>
+        <div class="log-session-count">${count} ação${count!==1?'ões':''}</div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);transition:transform .2s"><path d="m6 9 6 6 6-6"/></svg>
+      `;
+
+      const entriesEl=document.createElement('div');
+      entriesEl.className='log-entries';
+      entriesEl.style.display='none';
+      (session.entries||[]).forEach(entry=>{
+        const row=document.createElement('div');
+        row.className='log-entry';
+        row.innerHTML=`
+          <span class="log-entry-time">${fmtTime(entry.t)}</span>
+          <span class="log-entry-action">${entry.action}${entry.detail?` <span class="log-entry-detail">— ${entry.detail}</span>`:''}</span>
+        `;
+        entriesEl.appendChild(row);
+      });
+
+      header.onclick=()=>{
+        const open=entriesEl.style.display!=='none';
+        entriesEl.style.display=open?'none':'block';
+        header.classList.toggle('open',!open);
+        const arrow=header.querySelector('svg');
+        if(arrow)arrow.style.transform=open?'':'rotate(180deg)';
+      };
+
+      sessionEl.appendChild(header);
+      sessionEl.appendChild(entriesEl);
+      list.appendChild(sessionEl);
+    });
+  }catch(e){
+    if(list)list.innerHTML=`<div style="padding:16px;color:var(--red)">Erro ao carregar logs: ${e.message}</div>`;
+  }
+}
+
 // ===================== INIT =====================
 (async()=>{
-  // Seed gestor account if no users exist yet
   await seedGestorIfNeeded();
-
-  // Check if already logged in (session)
-  const saved=sessionStorage.getItem('escala_user');
-  if(saved){
-    try{
-      currentUser=JSON.parse(saved);
-      showApp();
-      return;
-    }catch(e){sessionStorage.removeItem('escala_user')}
-  }
 
   // Try to reach Firebase — if unreachable, enter preview mode
   try{
