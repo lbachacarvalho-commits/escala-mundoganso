@@ -711,15 +711,57 @@ async function hashPassword(pw){
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-const ROLE_PRESETS={
-  gestor:{label:'Gestor',role:'gestor',canViewEscala:true,canEditEscala:true,canConclude:true,canViewColaboradores:true,canEditColaboradores:true,canViewSetores:true,canEditSetores:true,canViewTurnos:true,canEditTurnos:true,canViewResumo:true,canViewBanco:true,canViewVersions:true,canManageUsers:true,sectors:'all'},
-  coordenador:{label:'Coordenador',role:'coordenador',canViewEscala:true,canEditEscala:true,canConclude:true,canViewColaboradores:true,canEditColaboradores:false,canViewSetores:true,canEditSetores:false,canViewTurnos:true,canEditTurnos:false,canViewResumo:true,canViewBanco:true,canViewVersions:true,canManageUsers:false,sectors:'all'},
-  lider:{label:'Líder',role:'lider',canViewEscala:true,canEditEscala:true,canConclude:true,canViewColaboradores:true,canEditColaboradores:false,canViewSetores:false,canEditSetores:false,canViewTurnos:false,canEditTurnos:false,canViewResumo:false,canViewBanco:false,canViewVersions:false,canManageUsers:false,sectors:[]},
-  rh:{label:'RH',role:'rh',canViewEscala:true,canEditEscala:false,canConclude:false,canViewColaboradores:true,canEditColaboradores:true,canViewSetores:false,canEditSetores:false,canViewTurnos:false,canEditTurnos:false,canViewResumo:true,canViewBanco:true,canViewVersions:false,canManageUsers:false,sectors:'all'},
-};
+// Funções disponíveis (apenas label — sem permissões pré-definidas)
+const FUNCOES=['Administrador','Coordenador','Gerente','Líder de Setor','Operador'];
 
-function can(perm){return currentUser&&currentUser[perm]===true}
-function canSeeSector(sid){if(!currentUser)return false;if(currentUser.sectors==='all')return true;return Array.isArray(currentUser.sectors)&&currentUser.sectors.includes(sid)}
+// Seções com suas opções de acesso
+const SECOES=[
+  {key:'escala',    label:'Escala',              opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'concluir',  label:'Concluir escala',      opts:['Sim','Não']},
+  {key:'colaboradores',label:'Colaboradores',     opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'setores',   label:'Setores',              opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'turnos',    label:'Tipos de Turno',       opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'resumo',    label:'Resumo',               opts:['Pode ver','Sem acesso']},
+  {key:'banco',     label:'Banco de Horas',       opts:['Pode ver','Sem acesso']},
+  {key:'versoes',   label:'Histórico de Versões', opts:['Pode ver','Sem acesso']},
+  {key:'usuarios',  label:'Usuários',             opts:['Pode gerenciar','Sem acesso']},
+];
+
+// Helpers de permissão baseados no novo modelo
+function perm(key){ return currentUser?.perms?.[key]||'Sem acesso' }
+function canView(key){ const p=perm(key); return p!=='Sem acesso' }
+function canEdit(key){ const p=perm(key); return p==='Pode ver e editar'||p==='Sim'||p==='Pode gerenciar' }
+function can(oldKey){
+  // Backward compat map for old boolean keys
+  const map={
+    canViewEscala:()=>canView('escala'),
+    canEditEscala:()=>canEdit('escala'),
+    canConclude:()=>canEdit('concluir'),
+    canViewColaboradores:()=>canView('colaboradores'),
+    canEditColaboradores:()=>canEdit('colaboradores'),
+    canViewSetores:()=>canView('setores'),
+    canEditSetores:()=>canEdit('setores'),
+    canViewTurnos:()=>canView('turnos'),
+    canEditTurnos:()=>canEdit('turnos'),
+    canViewResumo:()=>canView('resumo'),
+    canViewBanco:()=>canView('banco'),
+    canViewVersions:()=>canView('versoes'),
+    canManageUsers:()=>canEdit('usuarios'),
+  };
+  return map[oldKey]?map[oldKey]():false;
+}
+function canSeeSector(sid){
+  if(!currentUser)return false;
+  if(currentUser.sectors==='all')return true;
+  return Array.isArray(currentUser.sectors)&&currentUser.sectors.includes(sid);
+}
+
+// Default gestor permissions
+const GESTOR_PERMS={
+  escala:'Pode ver e editar',concluir:'Sim',colaboradores:'Pode ver e editar',
+  setores:'Pode ver e editar',turnos:'Pode ver e editar',resumo:'Pode ver',
+  banco:'Pode ver',versoes:'Pode ver',usuarios:'Pode gerenciar',
+};
 
 async function doLogin(){
   const username=document.getElementById('login-user').value.trim().toLowerCase();
@@ -748,7 +790,7 @@ function showApp(){
 }
 
 function enterPreviewMode(){
-  currentUser={name:'Preview',username:'preview',role:'gestor',...ROLE_PRESETS.gestor};
+  currentUser={name:'Preview',username:'preview',funcao:'Administrador',sectors:'all',perms:{...GESTOR_PERMS}};
   showApp();
 }
 
@@ -760,13 +802,12 @@ function logout(){
 function applyPermissionsToUI(){
   if(!currentUser)return;
   const tabU=document.getElementById('tab-usuarios');
-  if(tabU)tabU.style.display=can('canManageUsers')?'':'none';
+  if(tabU)tabU.style.display=canEdit('usuarios')?'':'none';
   const sub=document.getElementById('header-sub');
   if(sub){
-    const roleLabel=ROLE_PRESETS[currentUser.role]?.label||'Usuário';
-    sub.textContent=`Complexo de Lazer · ${currentUser.name||currentUser.username} (${roleLabel})`;
+    const funcao=currentUser.funcao||'Gestor';
+    sub.textContent=`Complexo de Lazer · ${currentUser.name||currentUser.username} (${funcao})`;
   }
-  // Add logout button once
   if(!document.getElementById('logout-btn')){
     const badge=document.getElementById('save-badge');
     if(badge){
@@ -791,7 +832,7 @@ async function seedGestorIfNeeded(){
     if(!users||!Object.keys(users).length){
       const hash=await hashPassword('leolambari69');
       await fetch(`${FB_USERS}/gestor.json`,{method:'PUT',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({name:'Gestor',username:'gestor',role:'gestor',passwordHash:hash,...ROLE_PRESETS.gestor})});
+        body:JSON.stringify({name:'Gestor',username:'gestor',funcao:'Administrador',passwordHash:hash,sectors:'all',perms:{...GESTOR_PERMS}})});
     }
   }catch(e){}
 }
@@ -2444,16 +2485,20 @@ function closeModal(){
 
 function hideForbiddenTabs(){
   const map={
-    colaboradores:'canViewColaboradores',setores:'canViewSetores',
-    turnos:'canViewTurnos',resumo:'canViewResumo',
-    banco:'canViewBanco',versoes:'canViewVersions',usuarios:'canManageUsers'
+    colaboradores:()=>canView('colaboradores'),
+    setores:()=>canView('setores'),
+    turnos:()=>canView('turnos'),
+    resumo:()=>canView('resumo'),
+    banco:()=>canView('banco'),
+    versoes:()=>canView('versoes'),
+    usuarios:()=>canEdit('usuarios'),
   };
   document.querySelectorAll('.tab').forEach(t=>{
     const onclick=t.getAttribute('onclick')||'';
     const match=onclick.match(/switchTab\('(\w+)'\)/);
     if(!match)return;
     const tab=match[1];
-    if(map[tab]){t.style.display=can(map[tab])?'':'none'}
+    if(map[tab])t.style.display=map[tab]()?'':'none';
   });
 }
 
@@ -2503,18 +2548,19 @@ async function loadUsersList(){
       return;
     }
     list.innerHTML='';
-    Object.values(data).sort((a,b)=>a.username.localeCompare(b.username)).forEach(user=>{
-      const roleLabel=ROLE_PRESETS[user.role]?.label||user.role||'Custom';
-      const roleClass=`role-${user.role||'custom'}`;
+    Object.values(data).sort((a,b)=>(a.username||'').localeCompare(b.username||'')).forEach(user=>{
+      const funcao=user.funcao||'—';
       const item=document.createElement('div');
       item.className='emp-list-item';
       item.innerHTML=`
         <div class="emp-info">
-          <div class="emp-list-name">${user.name||user.username} <span class="user-role-badge ${roleClass}">${roleLabel}</span></div>
+          <div class="emp-list-name">${user.name||user.username}
+            <span class="user-role-badge role-custom" style="background:var(--primary)">${funcao}</span>
+          </div>
           <div class="emp-list-role" style="font-family:var(--font-mono)">@${user.username}</div>
         </div>
         <div class="action-btns">
-          ${user.username!=='gestor'||currentUser.username==='gestor'?`<button class="icon-btn" onclick="openUserModal('${user.username}')">${svgIcon(ICONS.edit,15)}</button>`:''}
+          <button class="icon-btn" onclick="openUserModal('${user.username}')">${svgIcon(ICONS.edit,15)}</button>
           ${user.username!=='gestor'?`<button class="icon-btn red" onclick="deleteUser('${user.username}')">${svgIcon(ICONS.trash,15)}</button>`:''}
         </div>
       `;
@@ -2532,7 +2578,6 @@ async function deleteUser(username){
 }
 
 function openUserModal(username){
-  // Load user data if editing
   if(username){
     fetch(`${FB_USERS}/${username}.json`).then(r=>r.json()).then(user=>{
       if(user)_showUserModal(username,user);
@@ -2545,64 +2590,50 @@ function openUserModal(username){
 function _showUserModal(username, user){
   const editing=!!username;
   const allSectors=state.data.sectors.slice().sort((a,b)=>a.order-b.order);
-  const userSectors=user?.sectors||[];
-  const userRole=user?.role||'lider';
+  const userSectors=user?.sectors||'all';
+  const userPerms=user?.perms||{};
+  const funcaoOpts=FUNCOES.map(f=>`<option ${(user?.funcao||''===f)?'selected':''}>${f}</option>`).join('');
 
-  // Permission checkboxes
-  const perms=[
-    {key:'canViewEscala',label:'Ver Escala'},
-    {key:'canEditEscala',label:'Editar Escala'},
-    {key:'canConclude',label:'Concluir dia/setor'},
-    {key:'canViewColaboradores',label:'Ver Colaboradores'},
-    {key:'canEditColaboradores',label:'Editar Colaboradores'},
-    {key:'canViewSetores',label:'Ver Setores'},
-    {key:'canEditSetores',label:'Editar Setores'},
-    {key:'canViewTurnos',label:'Ver Tipos de Turno'},
-    {key:'canEditTurnos',label:'Editar Tipos de Turno'},
-    {key:'canViewResumo',label:'Ver Resumo'},
-    {key:'canViewBanco',label:'Ver Banco de Horas'},
-    {key:'canViewVersions',label:'Ver Histórico de Versões'},
-    {key:'canManageUsers',label:'Gerenciar Usuários'},
-  ];
-
-  const permHtml=perms.map(p=>`
-    <label class="perm-item">
-      <input type="checkbox" id="perm-${p.key}" ${user?.[p.key]?'checked':''}>
-      ${p.label}
-    </label>`).join('');
+  // Build permission rows
+  const permRows=SECOES.map(sec=>{
+    const cur=userPerms[sec.key]||sec.opts[sec.opts.length-1];
+    const opts=sec.opts.map(o=>`<option ${cur===o?'selected':''}>${o}</option>`).join('');
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border-soft)">
+        <span style="font-size:13px;font-weight:500">${sec.label}</span>
+        <select id="perm-${sec.key}" class="input" style="width:auto;min-width:180px;height:34px;padding:4px 32px 4px 10px;font-size:13px">${opts}</select>
+      </div>`;
+  }).join('');
 
   const sectorsHtml=allSectors.map(s=>`
     <label class="perm-item">
-      <input type="checkbox" id="sec-${s.id}" ${userSectors==='all'||userSectors.includes(s.id)?'checked':''}>
+      <input type="checkbox" id="sec-${s.id}" ${userSectors==='all'||userSectors.includes?.(s.id)?'checked':''}>
       <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color}"></span>
       ${s.name}
     </label>`).join('');
-
-  const roleOptions=Object.entries(ROLE_PRESETS).map(([k,v])=>
-    `<option value="${k}" ${userRole===k?'selected':''}>${v.label}</option>`).join('');
 
   const html=`
     <div class="modal-header">
       <div class="modal-title">${editing?'Editar':'Novo'} usuário</div>
       <button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
       <div class="field"><label class="label">Nome</label><input class="input" id="umod-name" value="${user?.name||''}"></div>
       <div class="field"><label class="label">Usuário (login)</label><input class="input" id="umod-user" value="${username||''}" ${editing?'readonly':''}></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-      <div class="field"><label class="label">Senha${editing?' (deixe em branco para manter)':''}</label><input class="input" type="password" id="umod-pass" placeholder="••••••••"></div>
-      <div class="field"><label class="label">Perfil base</label>
-        <select class="input" id="umod-role" onchange="applyRolePreset()">${roleOptions}</select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div class="field"><label class="label">Senha${editing?' (em branco = manter)':''}</label><input class="input" type="password" id="umod-pass" placeholder="••••••••"></div>
+      <div class="field"><label class="label">Função</label>
+        <select class="input" id="umod-funcao">${funcaoOpts}</select>
       </div>
     </div>
     <div class="perm-section">
-      <div class="perm-section-title">Permissões</div>
-      <div class="perm-grid">${permHtml}</div>
+      <div class="perm-section-title">Permissões por área</div>
+      ${permRows}
     </div>
-    <div class="perm-section">
+    <div class="perm-section" style="margin-top:16px">
       <div class="perm-section-title">Setores visíveis</div>
-      <label class="perm-item full-width" style="margin-bottom:6px">
+      <label class="perm-item full-width" style="margin-bottom:8px">
         <input type="checkbox" id="sec-all" ${userSectors==='all'?'checked':''} onchange="toggleAllSectors(this.checked)">
         Todos os setores
       </label>
@@ -2614,20 +2645,8 @@ function _showUserModal(username, user){
     </div>
   `;
   openModal(html,true);
-}
-
-function applyRolePreset(){
-  const role=document.getElementById('umod-role')?.value;
-  const preset=ROLE_PRESETS[role];
-  if(!preset)return;
-  Object.entries(preset).forEach(([k,v])=>{
-    if(k.startsWith('can')){
-      const el=document.getElementById(`perm-${k}`);
-      if(el)el.checked=v===true;
-    }
-  });
-  const secAll=document.getElementById('sec-all');
-  if(secAll){secAll.checked=preset.sectors==='all';toggleAllSectors(preset.sectors==='all')}
+  // Disable sector checkboxes if "all" is checked
+  setTimeout(()=>toggleAllSectors(userSectors==='all'),50);
 }
 
 function toggleAllSectors(checked){
@@ -2640,6 +2659,7 @@ async function saveUser(originalUsername){
   const name=document.getElementById('umod-name').value.trim();
   const username=document.getElementById('umod-user').value.trim().toLowerCase().replace(/\s+/g,'');
   const password=document.getElementById('umod-pass').value;
+  const funcao=document.getElementById('umod-funcao').value;
   if(!name||!username){alert('Preencha nome e usuário.');return}
 
   const editing=!!originalUsername;
@@ -2647,7 +2667,6 @@ async function saveUser(originalUsername){
   if(password){
     passwordHash=await hashPassword(password);
   }else if(editing){
-    // Keep existing hash
     const res=await fetch(`${FB_USERS}/${originalUsername}.json`);
     const existing=await res.json();
     passwordHash=existing?.passwordHash;
@@ -2655,36 +2674,31 @@ async function saveUser(originalUsername){
     alert('Defina uma senha.');return;
   }
 
-  // Check duplicate username
   if(!editing){
     const check=await fetch(`${FB_USERS}/${username}.json`);
     const exists=await check.json();
     if(exists){alert(`Usuário @${username} já existe.`);return}
   }
 
-  const role=document.getElementById('umod-role').value;
-  const user={name,username,role,passwordHash};
-
-  // Permissions
-  ['canViewEscala','canEditEscala','canConclude','canViewColaboradores','canEditColaboradores',
-   'canViewSetores','canEditSetores','canViewTurnos','canEditTurnos','canViewResumo',
-   'canViewBanco','canViewVersions','canManageUsers'].forEach(k=>{
-    const el=document.getElementById(`perm-${k}`);
-    if(el)user[k]=el.checked;
+  // Collect permissions from dropdowns
+  const perms={};
+  SECOES.forEach(sec=>{
+    const el=document.getElementById(`perm-${sec.key}`);
+    if(el)perms[sec.key]=el.value;
   });
 
   // Sectors
   const secAll=document.getElementById('sec-all');
-  if(secAll?.checked){
-    user.sectors='all';
-  }else{
-    const sectors=[];
+  let sectors='all';
+  if(!secAll?.checked){
+    const arr=[];
     document.querySelectorAll('#sectors-checks input[type=checkbox]').forEach(cb=>{
-      if(cb.checked&&cb.id.startsWith('sec-'))sectors.push(cb.id.replace('sec-',''));
+      if(cb.checked&&cb.id.startsWith('sec-'))arr.push(cb.id.replace('sec-',''));
     });
-    user.sectors=sectors;
+    sectors=arr;
   }
 
+  const user={name,username,funcao,passwordHash,sectors,perms};
   await fetch(`${FB_USERS}/${username}.json`,{
     method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(user)
   });
@@ -2716,11 +2730,6 @@ async function saveUser(originalUsername){
     // Firebase reachable — show login screen normally
   }catch(e){
     // Firebase unreachable — enter preview mode (Claude preview, localhost, etc.)
-    currentUser={
-      name:'Preview',username:'preview',role:'gestor',
-      ...ROLE_PRESETS.gestor,
-    };
-    // Show preview banner
     const screen=document.getElementById('login-screen');
     if(screen){
       screen.innerHTML=`<div class="login-box" style="text-align:center">
