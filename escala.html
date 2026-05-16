@@ -125,8 +125,16 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .done-label{font-size:10px;font-weight:700;color:var(--green);margin-top:2px}
 .day-counts{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin-top:5px}
 .count-chip{font-family:var(--font-mono);font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap}
-.conclude-btn{width:calc(100% - 8px);margin:4px;padding:4px 6px;border-radius:6px;font-size:11px;font-weight:700;color:#fff;border:none;cursor:pointer;transition:opacity .15s}
-.conclude-btn:hover{opacity:.85}
+.conclude-btn{
+  width:calc(100% - 8px);margin:4px;
+  padding:5px 8px;border-radius:20px;
+  font-size:11px;font-weight:700;color:#fff;
+  border:2px solid rgba(255,255,255,.4);
+  cursor:pointer;transition:all .15s;
+  display:flex;align-items:center;justify-content:center;gap:4px;
+  letter-spacing:.03em;text-transform:uppercase;
+}
+.conclude-btn:hover{opacity:.85;transform:scale(.97)}
 
 /* SECTOR ROW */
 .sector-hdr td{border-top:2px solid var(--border);border-bottom:1px solid var(--border-soft);background:var(--surface2)}
@@ -307,7 +315,48 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .bh-chart-svg{width:100%;min-width:500px;display:block}
 .bh-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .bh-filter-row input[type=date]{padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);font-family:var(--font-body)}
-/* SUBGROUP ROWS */
+/* LOG PAGE */
+.log-session{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s}
+.log-session:hover{box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.log-session-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface)}
+.log-session-header.open{background:var(--surface2)}
+.log-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);flex-shrink:0}
+.log-session-info{flex:1;min-width:0}
+.log-session-user{font-weight:600;font-size:13px}
+.log-session-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.log-session-count{font-size:11px;font-family:var(--font-mono);color:var(--muted);flex-shrink:0}
+.log-entries{padding:0 16px 12px;background:var(--surface2);border-top:1px solid var(--border-soft)}
+.log-entry{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-soft);font-size:12px}
+.log-entry:last-child{border-bottom:none}
+.log-entry-time{font-family:var(--font-mono);color:var(--muted);flex-shrink:0;width:48px}
+.log-entry-action{color:var(--text);flex:1}
+.log-entry-detail{color:var(--muted);font-style:italic}
+#login-screen{position:fixed;inset:0;z-index:999;background:var(--primary);display:flex;align-items:center;justify-content:center;padding:24px}
+.login-box{background:var(--surface);border-radius:20px;padding:36px 32px;width:100%;max-width:380px;box-shadow:0 24px 64px rgba(0,0,0,.3)}
+.login-logo{width:52px;height:52px;background:var(--primary);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 20px}
+.login-title{font-family:var(--font-display);font-size:1.6rem;font-weight:800;color:var(--primary);text-align:center;letter-spacing:-.03em;margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:28px}
+.login-field{margin-bottom:16px}
+.login-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:6px}
+.login-input{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;background:var(--surface);font-family:var(--font-body);transition:border .15s;outline:none}
+.login-input:focus{border-color:var(--primary)}
+.login-btn{width:100%;padding:13px;border-radius:10px;background:var(--primary);color:#fff;font-family:var(--font-display);font-size:1rem;font-weight:700;cursor:pointer;border:none;margin-top:8px;transition:opacity .15s}
+.login-btn:hover{opacity:.88}
+.login-error{color:var(--red);font-size:13px;text-align:center;margin-top:10px;min-height:20px}
+
+/* USER MANAGEMENT */
+.perm-section{margin-bottom:16px}
+.perm-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px}
+.perm-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.perm-item{display:flex;align-items:center;gap:7px;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;cursor:pointer}
+.perm-item input{width:16px;height:16px;cursor:pointer}
+.perm-item.full-width{grid-column:1/-1}
+.user-role-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
+.role-gestor{background:#1a3a2a;color:#fff}
+.role-coordenador{background:#0369a1;color:#fff}
+.role-lider{background:#7c3aed;color:#fff}
+.role-rh{background:#c2410c;color:#fff}
+.role-custom{background:#475569;color:#fff}
 .subgroup-hdr td{padding:4px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border-soft);color:var(--muted)}
 .subgroup-hdr td:first-child{position:sticky;left:0;z-index:4}
 .subgroup-hdr.trabalhando td{color:#15803d;background:#f0fdf4}
@@ -455,7 +504,26 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 </style>
 </head>
 <body>
-<div id="app">
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">📅</div>
+    <div class="login-title">Escala Operacional</div>
+    <div class="login-sub">Complexo de Lazer</div>
+    <div class="login-field">
+      <label class="login-label">Usuário</label>
+      <input class="login-input" id="login-user" placeholder="seu usuário" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+    </div>
+    <div class="login-field">
+      <label class="login-label">Senha</label>
+      <input class="login-input" id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="login-btn" onclick="doLogin()">Entrar</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div id="app" style="display:none">
   <header>
     <div class="header-top">
       <div class="logo">
@@ -475,6 +543,8 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
       <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
       <button class="tab" onclick="switchTab('banco')">⏱ Banco de Horas</button>
       <button class="tab" onclick="switchTab('versoes')">🕘 Versões</button>
+      <button class="tab" id="tab-usuarios" style="display:none" onclick="switchTab('usuarios')">👤 Usuários</button>
+      <button class="tab" id="tab-logs" style="display:none" onclick="switchTab('logs')">📋 Logs</button>
     </nav>
   </header>
   <main id="main"></main>
@@ -578,9 +648,12 @@ let state = {
   empFilterSector: 'all',
   empShowInactive: false,
   saveTimer: null,
-  undoStack: [], // snapshots de data antes de cada mudança
-  redoStack: [], // snapshots para refazer
+  undoStack: [],
+  redoStack: [],
 };
+
+// Current logged-in user (loaded from sessionStorage)
+let currentUser = null;
 
 // ===================== HELPERS =====================
 function newId(p){return p+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)}
@@ -654,6 +727,170 @@ document.addEventListener('keydown',e=>{
 const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
 const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
 const FB_BH_HISTORY = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
+const FB_USERS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_users';
+const FB_LOGS  = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_logs';
+
+// ===================== AUTH =====================
+async function hashPassword(pw){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// Funções disponíveis (apenas label — sem permissões pré-definidas)
+const FUNCOES=['Administrador','Coordenador','Gerente','Líder de Setor','Operador'];
+
+// Seções com suas opções de acesso
+const SECOES=[
+  {key:'escala',    label:'Escala',              opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'concluir',  label:'Concluir escala',      opts:['Sim','Não']},
+  {key:'colaboradores',label:'Colaboradores',     opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'setores',   label:'Setores',              opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'turnos',    label:'Tipos de Turno',       opts:['Pode ver e editar','Pode ver','Sem acesso']},
+  {key:'resumo',    label:'Resumo',               opts:['Pode ver','Sem acesso']},
+  {key:'banco',     label:'Banco de Horas',       opts:['Pode ver','Sem acesso']},
+  {key:'versoes',   label:'Histórico de Versões', opts:['Pode ver','Sem acesso']},
+  {key:'usuarios',  label:'Usuários',             opts:['Pode gerenciar','Sem acesso']},
+];
+
+// Helpers de permissão baseados no novo modelo
+function perm(key){ return currentUser?.perms?.[key]||'Sem acesso' }
+function canView(key){
+  // New format: perms object
+  if(currentUser?.perms){
+    const p=currentUser.perms[key];
+    return p&&p!=='Sem acesso';
+  }
+  // Old boolean format fallback
+  const oldMap={
+    escala:'canViewEscala',colaboradores:'canViewColaboradores',
+    setores:'canViewSetores',turnos:'canViewTurnos',resumo:'canViewResumo',
+    banco:'canViewBanco',versoes:'canViewVersions',usuarios:'canManageUsers',
+    concluir:'canConclude',
+  };
+  return currentUser?.[oldMap[key]]===true;
+}
+function canEdit(key){
+  // New format
+  if(currentUser?.perms){
+    const p=currentUser.perms[key];
+    return p==='Pode ver e editar'||p==='Sim'||p==='Pode gerenciar';
+  }
+  // Old boolean format fallback
+  const oldMap={
+    escala:'canEditEscala',colaboradores:'canEditColaboradores',
+    setores:'canEditSetores',turnos:'canEditTurnos',
+    usuarios:'canManageUsers',concluir:'canConclude',
+  };
+  return currentUser?.[oldMap[key]]===true;
+}
+function can(oldKey){
+  // Backward compat map for old boolean keys
+  const map={
+    canViewEscala:()=>canView('escala'),
+    canEditEscala:()=>canEdit('escala'),
+    canConclude:()=>canEdit('concluir'),
+    canViewColaboradores:()=>canView('colaboradores'),
+    canEditColaboradores:()=>canEdit('colaboradores'),
+    canViewSetores:()=>canView('setores'),
+    canEditSetores:()=>canEdit('setores'),
+    canViewTurnos:()=>canView('turnos'),
+    canEditTurnos:()=>canEdit('turnos'),
+    canViewResumo:()=>canView('resumo'),
+    canViewBanco:()=>canView('banco'),
+    canViewVersions:()=>canView('versoes'),
+    canManageUsers:()=>canEdit('usuarios'),
+  };
+  return map[oldKey]?map[oldKey]():false;
+}
+function canSeeSector(sid){
+  if(!currentUser)return false;
+  if(currentUser.sectors==='all')return true;
+  return Array.isArray(currentUser.sectors)&&currentUser.sectors.includes(sid);
+}
+
+// Default gestor permissions
+const GESTOR_PERMS={
+  escala:'Pode ver e editar',concluir:'Sim',colaboradores:'Pode ver e editar',
+  setores:'Pode ver e editar',turnos:'Pode ver e editar',resumo:'Pode ver',
+  banco:'Pode ver',versoes:'Pode ver',usuarios:'Pode gerenciar',
+};
+
+async function doLogin(){
+  const username=document.getElementById('login-user').value.trim().toLowerCase();
+  const password=document.getElementById('login-pass').value;
+  const errEl=document.getElementById('login-error');
+  errEl.textContent='';
+  if(!username||!password){errEl.textContent='Preencha usuário e senha.';return}
+  const hash=await hashPassword(password);
+  try{
+    const res=await fetch(`${FB_USERS}/${username}.json`);
+    if(!res.ok)throw new Error('fetch');
+    const user=await res.json();
+    if(!user||user.passwordHash!==hash){errEl.textContent='Usuário ou senha incorretos.';return}
+    currentUser={...user,username};
+    showApp();
+    startLogSession(); // inicia sessão de log
+  }catch(e){errEl.textContent='Erro ao conectar. Verifique sua conexão.'}
+}
+
+function showApp(){
+  document.getElementById('login-screen').style.display='none';
+  const app=document.getElementById('app');
+  app.style.display='flex';app.style.flexDirection='column';app.style.minHeight='100vh';
+  applyPermissionsToUI();
+  loadData();
+}
+
+function enterPreviewMode(){
+  currentUser={name:'Preview',username:'preview',funcao:'Administrador',sectors:'all',perms:{...GESTOR_PERMS}};
+  showApp();
+}
+
+function logout(){
+  logAction('Saiu do sistema');
+  location.reload();
+}
+
+function applyPermissionsToUI(){
+  if(!currentUser)return;
+  const tabU=document.getElementById('tab-usuarios');
+  if(tabU)tabU.style.display=canEdit('usuarios')?'':'none';
+  const tabL=document.getElementById('tab-logs');
+  if(tabL)tabL.style.display=canEdit('usuarios')?'':'none';
+  const sub=document.getElementById('header-sub');
+  if(sub){
+    const funcao=currentUser.funcao||'Gestor';
+    sub.textContent=`Complexo de Lazer · ${currentUser.name||currentUser.username} (${funcao})`;
+  }
+  if(!document.getElementById('logout-btn')){
+    const badge=document.getElementById('save-badge');
+    if(badge){
+      const btn=document.createElement('button');
+      btn.id='logout-btn';
+      btn.className='btn btn-ghost btn-sm';
+      btn.style.cssText='font-size:12px;opacity:.7;color:#fff;border-color:rgba(255,255,255,.3)';
+      btn.textContent='Sair';
+      btn.onclick=logout;
+      badge.parentNode.style.display='flex';
+      badge.parentNode.style.alignItems='center';
+      badge.parentNode.style.gap='8px';
+      badge.parentNode.appendChild(btn);
+    }
+  }
+}
+
+async function seedGestorIfNeeded(){
+  try{
+    const res=await fetch(`${FB_USERS}/gestor.json`);
+    const existing=res.ok?await res.json():null;
+    // Create or update gestor if missing new perms format
+    if(!existing||!existing.perms){
+      const hash=existing?.passwordHash||(await hashPassword('leolambari69'));
+      await fetch(`${FB_USERS}/gestor.json`,{method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:'Gestor',username:'gestor',funcao:'Administrador',passwordHash:hash,sectors:'all',perms:{...GESTOR_PERMS}})});
+    }
+  }catch(e){}
+}
 const LOCAL_KEY = 'escala_lazer_html_v1';
 let _ignoreNextSync = false; // evita re-render quando a mudança veio do próprio usuário
 
@@ -1351,9 +1588,20 @@ async function manualSnapshot(){
 
 let currentTab='escala';
 function switchTab(tab){
+  // Guard: check permission
+  const guards={
+    colaboradores:'canViewColaboradores',setores:'canViewSetores',
+    turnos:'canViewTurnos',resumo:'canViewResumo',
+    banco:'canViewBanco',versoes:'canViewVersions',usuarios:'canManageUsers'
+  };
+  if(guards[tab]&&!can(guards[tab]))return;
   currentTab=tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab')[['escala','colaboradores','setores','turnos','resumo','banco','versoes'].indexOf(tab)].classList.add('active');
+  const allTabs=['escala','colaboradores','setores','turnos','resumo','banco','versoes','usuarios'];
+  const idx=allTabs.indexOf(tab);
+  const visibleTabs=document.querySelectorAll('.tab');
+  // Find tab button by onclick content
+  visibleTabs.forEach(t=>{if(t.getAttribute('onclick')===`switchTab('${tab}')`)t.classList.add('active')});
   render();
 }
 
@@ -1364,12 +1612,19 @@ function render(){
   const activeEmps=state.data.employees.filter(e=>e.active).length;
   document.getElementById('header-sub').textContent=`Complexo de Lazer · ${activeEmps} colaboradores`;
   if(currentTab==='escala')main.appendChild(renderSchedule());
-  else if(currentTab==='colaboradores')main.appendChild(renderEmployees());
-  else if(currentTab==='setores')main.appendChild(renderSectors());
-  else if(currentTab==='turnos')main.appendChild(renderShiftTypes());
-  else if(currentTab==='resumo')main.appendChild(renderSummary());
-  else if(currentTab==='banco')main.appendChild(renderBancoHoras());
-  else if(currentTab==='versoes')main.appendChild(renderVersions());
+  else if(currentTab==='colaboradores'&&can('canViewColaboradores'))main.appendChild(renderEmployees());
+  else if(currentTab==='setores'&&can('canViewSetores'))main.appendChild(renderSectors());
+  else if(currentTab==='turnos'&&can('canViewTurnos'))main.appendChild(renderShiftTypes());
+  else if(currentTab==='resumo'&&can('canViewResumo'))main.appendChild(renderSummary());
+  else if(currentTab==='banco'&&can('canViewBanco'))main.appendChild(renderBancoHoras());
+  else if(currentTab==='versoes'&&can('canViewVersions'))main.appendChild(renderVersions());
+  else if(currentTab==='usuarios'&&can('canManageUsers'))main.appendChild(renderUsuarios());
+  else if(currentTab==='logs'&&can('canManageUsers'))main.appendChild(renderLogs());
+  else main.appendChild(renderAccessDenied());
+
+  applyPermissionsToUI();
+  // Hide tabs user can't see
+  hideForbiddenTabs();
 }
 
 // ===================== SCHEDULE =====================
@@ -1535,7 +1790,7 @@ function renderSchedule(){
       btn.className='conclude-btn';
       btn.style.background=locked?'#15803d':sector.color;
       btn.style.opacity=locked?'1':'0.75';
-      btn.textContent=locked?'✓ Editar':'Concluir';
+      btn.textContent=locked?'✓ Editar':'↓ Concluir';
       btn.onclick=()=>toggleSectorLock(ds,sector.id);
       td.appendChild(btn);
       srow.appendChild(td);
@@ -1629,6 +1884,11 @@ function handleCellClick(ds,empId,sectorId){
 
 function setScheduleCell(ds,empId,shiftId,note){
   pushUndo();
+  const emp=state.data.employees.find(e=>e.id===empId);
+  const shm=shiftMap();
+  const shift=shiftId?shm[shiftId]:null;
+  if(shift)logAction('Turno definido',`${emp?.name||empId} em ${ds}: ${shift.name}`);
+  else logAction('Turno removido',`${emp?.name||empId} em ${ds}`);
   if(!state.data.schedule[ds])state.data.schedule[ds]={};
   if(shiftId===null||shiftId===undefined){
     delete state.data.schedule[ds][empId];
@@ -1641,6 +1901,9 @@ function setScheduleCell(ds,empId,shiftId,note){
 
 function toggleSectorLock(ds,sectorId){
   pushUndo();
+  const sec=state.data.sectors.find(s=>s.id===sectorId);
+  const locked=(state.data.lockedSectors[ds]||[]).includes(sectorId);
+  logAction(locked?'Setor reaberto':'Setor concluído',`${sec?.name||sectorId} em ${ds}`);
   if(!state.data.lockedSectors[ds])state.data.lockedSectors[ds]=[];
   const arr=state.data.lockedSectors[ds];
   const idx=arr.indexOf(sectorId);
@@ -2018,8 +2281,8 @@ function saveEmp(id){
     obs:document.getElementById('emp-obs').value.trim(),
     cpf:document.getElementById('emp-cpf').value.trim(),
   };
-  if(id){state.data.employees=state.data.employees.map(e=>e.id===id?emp:e)}
-  else{state.data.employees.push(emp)}
+  if(id){state.data.employees=state.data.employees.map(e=>e.id===id?emp:e);logAction('Colaborador editado',name)}
+  else{state.data.employees.push(emp);logAction('Colaborador adicionado',name)}
   saveData();closeModal();render();
 }
 
@@ -2284,9 +2547,404 @@ function closeModal(){
   document.getElementById('modal-container').innerHTML='';
 }
 
+function hideForbiddenTabs(){
+  const map={
+    colaboradores:()=>canView('colaboradores'),
+    setores:()=>canView('setores'),
+    turnos:()=>canView('turnos'),
+    resumo:()=>canView('resumo'),
+    banco:()=>canView('banco'),
+    versoes:()=>canView('versoes'),
+    usuarios:()=>canEdit('usuarios'),
+  };
+  document.querySelectorAll('.tab').forEach(t=>{
+    const onclick=t.getAttribute('onclick')||'';
+    const match=onclick.match(/switchTab\('(\w+)'\)/);
+    if(!match)return;
+    const tab=match[1];
+    if(map[tab])t.style.display=map[tab]()?'':'none';
+  });
+}
+
+function renderAccessDenied(){
+  const div=document.createElement('div');
+  div.innerHTML=`<div class="empty"><div class="empty-icon">🔒</div><div class="empty-text">Você não tem permissão para acessar esta área.</div></div>`;
+  return div;
+}
+
+// ===================== USER MANAGEMENT =====================
+function renderUsuarios(){
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <div class="page-header">
+      <div><div class="page-title">Usuários</div><div class="page-sub">Gerencie acessos e permissões</div></div>
+      <button class="btn btn-primary" onclick="openUserModal()">+ Novo usuário</button>
+    </div>
+    <div id="users-list" class="card" style="overflow:hidden">
+      <div style="padding:32px;text-align:center;color:var(--muted)">🔄 Carregando…</div>
+    </div>
+  `;
+  setTimeout(()=>loadUsersList(),0);
+  return div;
+}
+
+// Logout button in header
+function addLogoutBtn(){
+  const el=document.getElementById('save-badge');
+  if(!el||document.getElementById('logout-btn'))return;
+  const btn=document.createElement('button');
+  btn.id='logout-btn';
+  btn.className='btn btn-ghost btn-sm';
+  btn.style.cssText='font-size:12px;opacity:.75;margin-left:8px';
+  btn.textContent='Sair';
+  btn.onclick=logout;
+  el.parentNode.appendChild(btn);
+}
+
+async function loadUsersList(){
+  const list=document.getElementById('users-list');
+  if(!list)return;
+  try{
+    const res=await fetch(`${FB_USERS}.json`);
+    const data=res.ok?await res.json():null;
+    if(!data||!Object.keys(data).length){
+      list.innerHTML=`<div style="padding:32px;text-align:center;color:var(--muted)">Nenhum usuário cadastrado.</div>`;
+      return;
+    }
+    list.innerHTML='';
+    Object.values(data).sort((a,b)=>(a.username||'').localeCompare(b.username||'')).forEach(user=>{
+      const funcao=user.funcao||'—';
+      const item=document.createElement('div');
+      item.className='emp-list-item';
+      item.innerHTML=`
+        <div class="emp-info">
+          <div class="emp-list-name">${user.name||user.username}
+            <span class="user-role-badge role-custom" style="background:var(--primary)">${funcao}</span>
+          </div>
+          <div class="emp-list-role" style="font-family:var(--font-mono)">@${user.username}</div>
+        </div>
+        <div class="action-btns">
+          <button class="icon-btn" onclick="openUserModal('${user.username}')">${svgIcon(ICONS.edit,15)}</button>
+          ${user.username!=='gestor'?`<button class="icon-btn red" onclick="deleteUser('${user.username}')">${svgIcon(ICONS.trash,15)}</button>`:''}
+        </div>
+      `;
+      list.appendChild(item);
+    });
+  }catch(e){
+    if(list)list.innerHTML=`<div style="padding:16px;color:var(--red)">Erro ao carregar usuários.</div>`;
+  }
+}
+
+async function deleteUser(username){
+  if(!confirm(`Remover o usuário @${username}?`))return;
+  await fetch(`${FB_USERS}/${username}.json`,{method:'DELETE'});
+  if(currentTab==='usuarios')render();
+}
+
+function openUserModal(username){
+  if(username){
+    fetch(`${FB_USERS}/${username}.json`).then(r=>r.json()).then(user=>{
+      if(user)_showUserModal(username,user);
+    });
+  }else{
+    _showUserModal(null,null);
+  }
+}
+
+function _showUserModal(username, user){
+  const editing=!!username;
+  const allSectors=state.data.sectors.slice().sort((a,b)=>a.order-b.order);
+  const userSectors=user?.sectors||'all';
+  const userPerms=user?.perms||{};
+  const funcaoOpts=FUNCOES.map(f=>`<option ${(user?.funcao||''===f)?'selected':''}>${f}</option>`).join('');
+
+  // Build permission rows
+  const permRows=SECOES.map(sec=>{
+    const cur=userPerms[sec.key]||sec.opts[sec.opts.length-1];
+    const opts=sec.opts.map(o=>`<option ${cur===o?'selected':''}>${o}</option>`).join('');
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border-soft)">
+        <span style="font-size:13px;font-weight:500">${sec.label}</span>
+        <select id="perm-${sec.key}" class="input" style="width:auto;min-width:180px;height:34px;padding:4px 32px 4px 10px;font-size:13px">${opts}</select>
+      </div>`;
+  }).join('');
+
+  const sectorsHtml=allSectors.map(s=>`
+    <label class="perm-item">
+      <input type="checkbox" id="sec-${s.id}" ${userSectors==='all'||userSectors.includes?.(s.id)?'checked':''}>
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color}"></span>
+      ${s.name}
+    </label>`).join('');
+
+  const html=`
+    <div class="modal-header">
+      <div class="modal-title">${editing?'Editar':'Novo'} usuário</div>
+      <button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
+      <div class="field"><label class="label">Nome</label><input class="input" id="umod-name" value="${user?.name||''}"></div>
+      <div class="field"><label class="label">Usuário (login)</label><input class="input" id="umod-user" value="${username||''}" ${editing?'readonly':''}></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div class="field"><label class="label">Senha${editing?' (em branco = manter)':''}</label><input class="input" type="password" id="umod-pass" placeholder="••••••••"></div>
+      <div class="field"><label class="label">Função</label>
+        <select class="input" id="umod-funcao">${funcaoOpts}</select>
+      </div>
+    </div>
+    <div class="perm-section">
+      <div class="perm-section-title">Permissões por área</div>
+      ${permRows}
+    </div>
+    <div class="perm-section" style="margin-top:16px">
+      <div class="perm-section-title">Setores visíveis</div>
+      <label class="perm-item full-width" style="margin-bottom:8px">
+        <input type="checkbox" id="sec-all" ${userSectors==='all'?'checked':''} onchange="toggleAllSectors(this.checked)">
+        Todos os setores
+      </label>
+      <div class="perm-grid" id="sectors-checks">${sectorsHtml}</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveUser('${username||''}')">${svgIcon(ICONS.check)} Salvar</button>
+    </div>
+  `;
+  openModal(html,true);
+  // Disable sector checkboxes if "all" is checked
+  setTimeout(()=>toggleAllSectors(userSectors==='all'),50);
+}
+
+function toggleAllSectors(checked){
+  document.querySelectorAll('#sectors-checks input[type=checkbox]').forEach(cb=>{
+    cb.checked=checked;cb.disabled=checked;
+  });
+}
+
+async function saveUser(originalUsername){
+  const name=document.getElementById('umod-name').value.trim();
+  const username=document.getElementById('umod-user').value.trim().toLowerCase().replace(/\s+/g,'');
+  const password=document.getElementById('umod-pass').value;
+  const funcao=document.getElementById('umod-funcao').value;
+  if(!name||!username){alert('Preencha nome e usuário.');return}
+
+  const editing=!!originalUsername;
+  let passwordHash;
+  if(password){
+    passwordHash=await hashPassword(password);
+  }else if(editing){
+    const res=await fetch(`${FB_USERS}/${originalUsername}.json`);
+    const existing=await res.json();
+    passwordHash=existing?.passwordHash;
+  }else{
+    alert('Defina uma senha.');return;
+  }
+
+  if(!editing){
+    const check=await fetch(`${FB_USERS}/${username}.json`);
+    const exists=await check.json();
+    if(exists){alert(`Usuário @${username} já existe.`);return}
+  }
+
+  // Collect permissions from dropdowns
+  const perms={};
+  SECOES.forEach(sec=>{
+    const el=document.getElementById(`perm-${sec.key}`);
+    if(el)perms[sec.key]=el.value;
+  });
+
+  // Sectors
+  const secAll=document.getElementById('sec-all');
+  let sectors='all';
+  if(!secAll?.checked){
+    const arr=[];
+    document.querySelectorAll('#sectors-checks input[type=checkbox]').forEach(cb=>{
+      if(cb.checked&&cb.id.startsWith('sec-'))arr.push(cb.id.replace('sec-',''));
+    });
+    sectors=arr;
+  }
+
+  const user={name,username,funcao,passwordHash,sectors,perms};
+  await fetch(`${FB_USERS}/${username}.json`,{
+    method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(user)
+  });
+  closeModal();
+  if(currentTab==='usuarios')render();
+}
+
+// ===================== LOG SYSTEM =====================
+let _logSessionId = null;
+let _logBuffer = [];
+let _logFlushTimer = null;
+
+function startLogSession(){
+  if(!currentUser||currentUser.username==='preview')return;
+  _logSessionId = `${fmtDate(new Date())}_${currentUser.username}_${Date.now()}`;
+  _logBuffer = [];
+  logAction('Entrou no sistema');
+}
+
+function logAction(action, detail=''){
+  if(!_logSessionId||!currentUser||currentUser.username==='preview')return;
+  const entry={
+    t: Date.now(),
+    action,
+    detail: detail||'',
+  };
+  _logBuffer.push(entry);
+  // Debounce flush to Firebase
+  clearTimeout(_logFlushTimer);
+  _logFlushTimer=setTimeout(flushLog, 1500);
+}
+
+async function flushLog(){
+  if(!_logSessionId||!_logBuffer.length)return;
+  try{
+    const session={
+      id: _logSessionId,
+      username: currentUser.username,
+      name: currentUser.name||currentUser.username,
+      funcao: currentUser.funcao||'',
+      startedAt: parseInt(_logSessionId.split('_').pop()),
+      entries: [..._logBuffer],
+    };
+    await fetch(`${FB_LOGS}/${_logSessionId}.json`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(session),
+    });
+  }catch(e){}
+}
+
+// Intercept key mutations to log them
+const _origSetScheduleCell = setScheduleCell;
+
+function fmtTime(ts){
+  const d=new Date(ts);
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+// ===================== LOGS PAGE =====================
+let logsFilterDate = '';
+
+function renderLogs(){
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <div class="page-header">
+      <div><div class="page-title">Logs de Operações</div><div class="page-sub">Histórico de sessões e ações dos usuários</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="label" style="margin:0">Data</label>
+        <input type="date" id="logs-date" value="${logsFilterDate}" onchange="setLogsFilter(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface)">
+        <button class="btn btn-ghost btn-sm" onclick="setLogsFilter('')">Limpar</button>
+      </div>
+    </div>
+    <div id="logs-list">
+      <div style="padding:40px;text-align:center;color:var(--muted)">🔄 Carregando logs…</div>
+    </div>
+  `;
+  setTimeout(()=>loadLogs(),0);
+  return div;
+}
+
+function setLogsFilter(val){
+  logsFilterDate=val;
+  render();
+}
+
+async function loadLogs(){
+  const list=document.getElementById('logs-list');
+  if(!list)return;
+  try{
+    const res=await fetch(`${FB_LOGS}.json`);
+    const data=res.ok?await res.json():null;
+    if(!data||!Object.keys(data).length){
+      list.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:28px;margin-bottom:8px">📭</div>Nenhum log registrado ainda.</div>`;
+      return;
+    }
+    let sessions=Object.values(data).sort((a,b)=>b.startedAt-a.startedAt);
+    if(logsFilterDate){
+      sessions=sessions.filter(s=>fmtDate(new Date(s.startedAt))===logsFilterDate);
+    }
+    if(!sessions.length){
+      list.innerHTML=`<div style="padding:32px;text-align:center;color:var(--muted)">Nenhum log para a data selecionada.</div>`;
+      return;
+    }
+    list.innerHTML='';
+    sessions.forEach(session=>{
+      const d=new Date(session.startedAt);
+      const dateStr=`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+      const timeStr=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      const count=(session.entries||[]).length;
+
+      const sessionEl=document.createElement('div');
+      sessionEl.className='log-session';
+
+      const header=document.createElement('div');
+      header.className='log-session-header';
+      header.innerHTML=`
+        <div class="log-dot"></div>
+        <div class="log-session-info">
+          <div class="log-session-user">${session.name||session.username} <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">@${session.username}</span>
+            ${session.funcao?`<span class="user-role-badge role-custom" style="background:var(--primary);margin-left:6px">${session.funcao}</span>`:''}
+          </div>
+          <div class="log-session-meta">${dateStr} às ${timeStr}</div>
+        </div>
+        <div class="log-session-count">${count} ação${count!==1?'ões':''}</div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);transition:transform .2s"><path d="m6 9 6 6 6-6"/></svg>
+      `;
+
+      const entriesEl=document.createElement('div');
+      entriesEl.className='log-entries';
+      entriesEl.style.display='none';
+      (session.entries||[]).forEach(entry=>{
+        const row=document.createElement('div');
+        row.className='log-entry';
+        row.innerHTML=`
+          <span class="log-entry-time">${fmtTime(entry.t)}</span>
+          <span class="log-entry-action">${entry.action}${entry.detail?` <span class="log-entry-detail">— ${entry.detail}</span>`:''}</span>
+        `;
+        entriesEl.appendChild(row);
+      });
+
+      header.onclick=()=>{
+        const open=entriesEl.style.display!=='none';
+        entriesEl.style.display=open?'none':'block';
+        header.classList.toggle('open',!open);
+        const arrow=header.querySelector('svg');
+        if(arrow)arrow.style.transform=open?'':'rotate(180deg)';
+      };
+
+      sessionEl.appendChild(header);
+      sessionEl.appendChild(entriesEl);
+      list.appendChild(sessionEl);
+    });
+  }catch(e){
+    if(list)list.innerHTML=`<div style="padding:16px;color:var(--red)">Erro ao carregar logs: ${e.message}</div>`;
+  }
+}
+
 // ===================== INIT =====================
-render();
-loadData();
+(async()=>{
+  await seedGestorIfNeeded();
+
+  // Try to reach Firebase — if unreachable, enter preview mode
+  try{
+    const test=await Promise.race([
+      fetch(FB_URL+'/data.json',{method:'HEAD'}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),3000))
+    ]);
+    // Firebase reachable — show login screen normally
+  }catch(e){
+    // Firebase unreachable — enter preview mode (Claude preview, localhost, etc.)
+    const screen=document.getElementById('login-screen');
+    if(screen){
+      screen.innerHTML=`<div class="login-box" style="text-align:center">
+        <div class="login-logo">👁️</div>
+        <div class="login-title">Modo Preview</div>
+        <div class="login-sub" style="margin-bottom:20px">Sem acesso ao Firebase.<br>Entrando com dados de exemplo.</div>
+        <button class="login-btn" onclick="enterPreviewMode()">Entrar em modo preview</button>
+      </div>`;
+    }
+  }
+})();
 </script>
 </body>
 </html>
