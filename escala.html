@@ -2516,6 +2516,7 @@ function saveShift(id){
 // ===================== SUMMARY =====================
 let summaryView = 'periodo'; // 'periodo' | 'pessoa'
 let summaryMode = 'dia';     // 'dia' | 'semana'
+let summaryAudience = 'gerencial'; // 'gerencial' | 'colaboradores'
 let summaryDate = fmtDate(new Date());
 let summaryWeekStart = fmtDate(startOfWeek(new Date()));
 let summaryWeekEnd = fmtDate(addDays(startOfWeek(new Date()), 6));
@@ -2534,15 +2535,20 @@ function renderSummary(){
   div.innerHTML=`
     <div class="page-header" style="margin-bottom:16px">
       <div class="page-title">Resumo</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn ${summaryView==='periodo'?'btn-primary':'btn-ghost'}" onclick="setSummaryView('periodo')">📅 Por período</button>
         <button class="btn ${summaryView==='pessoa'?'btn-primary':'btn-ghost'}" onclick="setSummaryView('pessoa')">👤 Por pessoa</button>
-        <button class="btn btn-ghost" onclick="exportSummaryPDF()" style="margin-left:8px">⬇️ Exportar PDF</button>
+        <div style="width:1px;height:24px;background:var(--border);margin:0 4px"></div>
+        <button class="btn ${summaryAudience==='gerencial'?'btn-primary':'btn-ghost'}" onclick="summaryAudience='gerencial';render()" title="Mostra trabalhando, ausentes e indefinidos">📋 Gerencial</button>
+        <button class="btn ${summaryAudience==='colaboradores'?'btn-primary':'btn-ghost'}" onclick="summaryAudience='colaboradores';render()" title="Mostra apenas quem está trabalhando">👷 Colaboradores</button>
+        <div style="width:1px;height:24px;background:var(--border);margin:0 4px"></div>
+        <button class="btn btn-ghost" onclick="exportSummaryPDF()">⬇️ Exportar PDF</button>
       </div>
     </div>
-    <div id="summary-print-header" style="display:none;margin-bottom:16px">
-      <div style="font-size:18px;font-weight:800">Escala Operacional — Resumo</div>
-      <div id="summary-print-sub" style="font-size:12px;color:#555;margin-top:4px"></div>
+    <div id="summary-print-header" style="display:none;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #1a3a2a">
+      <div style="font-size:20px;font-weight:800;color:#1a3a2a">Escala Operacional</div>
+      <div id="summary-print-sub" style="font-size:13px;color:#555;margin-top:4px"></div>
+      <div style="font-size:11px;color:#888;margin-top:2px" id="summary-print-audience"></div>
     </div>
     <div id="summary-controls"></div>
     <div id="summary-content"></div>
@@ -2612,7 +2618,7 @@ function buildSummaryPeriodoElements(sm,shm,ebs){
 
   const content=document.createElement('div');
   dates.forEach(ds=>{
-    const block=buildDayBlock(ds,visibleSectors,shm,sm);
+    const block=buildDayBlock(ds,visibleSectors,shm,sm,summaryAudience);
     block.classList.add('summary-block');
     content.appendChild(block);
   });
@@ -2620,7 +2626,7 @@ function buildSummaryPeriodoElements(sm,shm,ebs){
   return {ctrl,content};
 }
 
-function buildDayBlock(ds, visibleSectors, shm, sm){
+function buildDayBlock(ds, visibleSectors, shm, sm, audience='gerencial'){
   const [y,m,d]=ds.split('-').map(Number);
   const dt=new Date(y,m-1,d);
   const dayName=DAY_NAMES_FULL[(dt.getDay()+6)%7];
@@ -2665,10 +2671,13 @@ function buildDayBlock(ds, visibleSectors, shm, sm){
       return sa.localeCompare(sb);
     });
 
-    const hasAnything=sortedTimeShiftIds.length||statusEmps.length;
+    const hasWorking=sortedTimeShiftIds.length>0;
+    const hasAnything=hasWorking||statusEmps.length;
+    // For colaboradores view, skip sector entirely if nobody is working
+    if(audience==='colaboradores'&&!hasWorking) return;
     if(!hasAnything&&!undefinedEmps.length) return;
 
-    // Sector label
+    // Sector label — hide "Trabalhando" subheader in colaboradores mode (it's implied)
     const secHdr=document.createElement('div');
     secHdr.style.cssText=`padding:7px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-soft);background:var(--bg)`;
     secHdr.innerHTML=`<div style="width:8px;height:8px;border-radius:50%;background:${sector.color}"></div><span style="font-family:var(--font-display);font-size:12px;font-weight:700;color:${sector.color};text-transform:uppercase;letter-spacing:.05em">${sector.name}</span>`;
@@ -2676,17 +2685,18 @@ function buildDayBlock(ds, visibleSectors, shm, sm){
 
     // Working groups (by shift, chronological)
     if(sortedTimeShiftIds.length){
-      const workHdr=document.createElement('div');
-      workHdr.style.cssText='padding:5px 16px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#15803d;background:#f0fdf4';
-      workHdr.textContent='✅ Trabalhando';
-      block.appendChild(workHdr);
+      if(audience==='gerencial'){
+        const workHdr=document.createElement('div');
+        workHdr.style.cssText='padding:5px 16px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#15803d;background:#f0fdf4';
+        workHdr.textContent='✅ Trabalhando';
+        block.appendChild(workHdr);
+      }
 
       sortedTimeShiftIds.forEach(sid=>{
         const shift=shm[sid];
         const group=timeShifts[sid];
         const shiftRow=document.createElement('div');
         shiftRow.style.cssText='padding:6px 16px 6px 24px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
-        // Shift badge
         const badge=`<span style="font-family:var(--font-mono);font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:${shift.color};color:${contrastText(shift.color)};flex-shrink:0">${shift.code} ${shift.startTime}–${shift.endTime}</span>`;
         const names=group.map(emp=>{
           const note=getCellNote(state.data.schedule[ds]?.[emp.id]);
@@ -2697,8 +2707,8 @@ function buildDayBlock(ds, visibleSectors, shm, sm){
       });
     }
 
-    // Absent group
-    if(statusEmps.length){
+    // Absent group — gerencial only
+    if(audience==='gerencial'&&statusEmps.length){
       const absHdr=document.createElement('div');
       absHdr.style.cssText='padding:5px 16px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#7c3aed;background:#faf5ff';
       absHdr.textContent='🚫 Não trabalhando';
@@ -2712,8 +2722,8 @@ function buildDayBlock(ds, visibleSectors, shm, sm){
       block.appendChild(absRow);
     }
 
-    // Undefined
-    if(undefinedEmps.length){
+    // Undefined — gerencial only
+    if(audience==='gerencial'&&undefinedEmps.length){
       const undefRow=document.createElement('div');
       undefRow.style.cssText='padding:5px 16px 5px 24px;border-bottom:1px solid var(--border-soft);font-size:12px;color:var(--muted)';
       undefRow.innerHTML=`⬜ Indefinido: ${undefinedEmps.map(e=>e.name).join(', ')}`;
@@ -2731,8 +2741,8 @@ function renderSummaryPessoa(sm,shm){ // kept for compat
 }
 
 function exportSummaryPDF(){
-  // Set print header content
   const sub=document.getElementById('summary-print-sub');
+  const aud=document.getElementById('summary-print-audience');
   if(sub){
     if(summaryView==='periodo'){
       const sec=summaryFilterSector==='all'?'Todos os setores':state.data.sectors.find(s=>s.id===summaryFilterSector)?.name||'';
@@ -2746,6 +2756,9 @@ function exportSummaryPDF(){
       const end=(summaryPersonEnd||fmtDate(new Date())).split('-').reverse().join('/');
       sub.textContent=`${emp?.name||'—'} · ${start} a ${end}`;
     }
+  }
+  if(aud){
+    aud.textContent=summaryAudience==='colaboradores'?'Visão: Colaboradores (apenas trabalhando)':'Visão: Gerencial (completo)';
   }
   window.print();
 }
