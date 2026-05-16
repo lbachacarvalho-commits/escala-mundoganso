@@ -317,6 +317,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .bh-filter-row input[type=date]{padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);font-family:var(--font-body)}
 /* PRINT / PDF */
 @media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
   body{background:#fff!important;font-size:12px}
   header,nav,#login-screen,.btn,.page-header button,
   .controls,.stamps-bar,.week-nav,.custom-select,
@@ -325,12 +326,12 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
   main{padding:0!important;max-width:100%!important}
   .page-title{font-size:1.2rem}
   .page-sub{font-size:11px}
-  /* Summary specific */
   #summary-print-header{display:block!important}
   #summary-controls{display:none!important}
   .summary-block{break-inside:avoid;margin-bottom:8px}
-  .summary-block *{font-size:11px!important}
   .card,.bh-card,.summary-table{box-shadow:none!important;border:1px solid #ccc!important}
+  /* Shift badges: keep color bg + add border so visible in B&W */
+  span[style*="border-radius"]{border:1.5px solid rgba(0,0,0,.35)!important;font-weight:800!important}
 }
 .log-session{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s}
 .log-session:hover{box-shadow:0 2px 12px rgba(0,0,0,.08)}
