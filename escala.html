@@ -315,7 +315,23 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .bh-chart-svg{width:100%;min-width:500px;display:block}
 .bh-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .bh-filter-row input[type=date]{padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);font-family:var(--font-body)}
-/* LOG PAGE */
+/* PRINT / PDF */
+@media print{
+  body{background:#fff!important;font-size:12px}
+  header,nav,#login-screen,.btn,.page-header button,
+  .controls,.stamps-bar,.week-nav,.custom-select,
+  .conclude-btn,#logout-btn,.tab{display:none!important}
+  #app{min-height:unset}
+  main{padding:0!important;max-width:100%!important}
+  .page-title{font-size:1.2rem}
+  .page-sub{font-size:11px}
+  /* Summary specific */
+  #summary-print-header{display:block!important}
+  #summary-controls{display:none!important}
+  .summary-block{break-inside:avoid;margin-bottom:8px}
+  .summary-block *{font-size:11px!important}
+  .card,.bh-card,.summary-table{box-shadow:none!important;border:1px solid #ccc!important}
+}
 .log-session{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s}
 .log-session:hover{box-shadow:0 2px 12px rgba(0,0,0,.08)}
 .log-session-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface)}
@@ -629,6 +645,7 @@ const DEFAULT = {
   ],
   schedule:{},
   lockedSectors:{},
+  weekStartDay:1,
 };
 
 const PRESET_COLORS=['#0c4a6e','#0e7490','#0d9488','#15803d','#65a30d','#ca8a04','#ea580c','#dc2626','#b91c1c','#a21caf','#7c3aed','#4338ca','#1e293b','#475569','#78716c'];
@@ -660,7 +677,16 @@ function newId(p){return p+'-'+Date.now()+'-'+Math.random().toString(36).slice(2
 function fmtDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return`${y}-${m}-${day}`}
 function fmtBR(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')}
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r}
-function startOfWeek(d){const r=new Date(d);r.setHours(0,0,0,0);const day=r.getDay();r.setDate(r.getDate()+(day===0?-6:1-day));return r}
+function startOfWeek(d, startDay){
+  const sd = (startDay !== undefined && startDay !== null) ? startDay : 1;
+  const r=new Date(d);r.setHours(0,0,0,0);
+  const day=r.getDay();
+  const diff=((day - sd) + 7) % 7;
+  r.setDate(r.getDate() - diff);
+  return r;
+}
+// Use this after state is loaded
+function startOfConfiguredWeek(d){ return startOfWeek(d, state?.data?.weekStartDay??1); }
 function getWeekDates(ws){return Array.from({length:7},(_,i)=>addDays(ws,i))}
 function todayStr(){return fmtDate(new Date())}
 function contrastText(hex){const h=hex.replace('#',''),r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return(0.299*r+0.587*g+0.114*b)/255>.6?'#1c1917':'#ffffff'}
@@ -999,6 +1025,8 @@ async function loadData(){
     showSave('offline');
     setTimeout(()=>showSave('idle'),3000);
   }
+  // Align weekStart with configured start day
+  state.weekStart=startOfConfiguredWeek(new Date());
   render();
   autoSaveBhToday(); // salva DEPOIS que os dados reais vieram do Firebase
 
@@ -1657,6 +1685,19 @@ function renderSchedule(){
   controls.className='controls';
   let secOptions='<option value="all">Todos os setores</option>';
   state.data.sectors.slice().sort((a,b)=>a.order-b.order).forEach(s=>{secOptions+=`<option value="${s.id}"${state.filterSector===s.id?' selected':''}>${s.name}</option>`});
+
+  const weekStartDay=state.data.weekStartDay??1;
+  const dayNames=[
+    {v:0,l:'Dom'},
+    {v:1,l:'Seg'},
+    {v:2,l:'Ter'},
+    {v:3,l:'Qua'},
+    {v:4,l:'Qui'},
+    {v:5,l:'Sex'},
+    {v:6,l:'Sáb'},
+  ];
+  const dayOpts=dayNames.map(d=>`<option value="${d.v}"${weekStartDay===d.v?' selected':''}>${d.l}</option>`).join('');
+
   controls.innerHTML=`
     <div class="custom-select" id="sector-dropdown">
       <button class="custom-select-btn" onclick="toggleSectorDropdown(event)">
@@ -1667,6 +1708,10 @@ function renderSchedule(){
         <div class="custom-select-opt${state.filterSector==='all'?' selected':''}" onclick="pickSector('all')">Todos os setores</div>
         ${state.data.sectors.slice().sort((a,b)=>a.order-b.order).map(s=>`<div class="custom-select-opt${state.filterSector===s.id?' selected':''}" onclick="pickSector('${s.id}')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:7px"></span>${s.name}</div>`).join('')}
       </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;padding:0 4px">
+      <span style="font-size:12px;color:var(--muted);white-space:nowrap">Início da semana:</span>
+      <select class="input" style="height:36px;width:auto;font-size:13px" onchange="setWeekStartDay(this.value)">${dayOpts}</select>
     </div>
     <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="copyPrevWeek()">${svgIcon(ICONS.copy)} Copiar anterior</button>
     <button class="btn btn-danger btn-sm" style="flex:1;justify-content:center" onclick="clearWeek()">${svgIcon(ICONS.refresh)} Limpar</button>
@@ -1731,7 +1776,9 @@ function renderSchedule(){
     const th=document.createElement('th');
     th.className='day-th'+(isToday?' today':'')+(done?' done':'');
 
-    let html=`<div class="day-name">${DAY_NAMES[i]}</div><div class="day-num">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</div>`;
+    // DAY_NAMES is Mon=0..Sun=6, JS getDay() is Sun=0,Mon=1..Sat=6
+    const dayIdx=(d.getDay()+6)%7; // convert to Mon=0 base
+    let html=`<div class="day-name">${DAY_NAMES[dayIdx]}</div><div class="day-num">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</div>`;
     if(done)html+=`<div class="done-label">✓ Concluído</div>`;
     th.innerHTML=html;
     hrow.appendChild(th);
@@ -1913,7 +1960,14 @@ function toggleSectorLock(ds,sectorId){
 
 function prevWeek(){state.weekStart=addDays(state.weekStart,-7);render()}
 function nextWeek(){state.weekStart=addDays(state.weekStart,7);render()}
-function goToday(){state.weekStart=startOfWeek(new Date());render()}
+function goToday(){state.weekStart=startOfConfiguredWeek(new Date());render()}
+
+function setWeekStartDay(dayNum){
+  pushUndo();
+  state.data.weekStartDay=parseInt(dayNum);
+  state.weekStart=startOfConfiguredWeek(new Date());
+  saveData();render();
+}
 function setFilterSector(v){state.filterSector=v;render()}
 
 function toggleSectorDropdown(e){
@@ -2459,74 +2513,371 @@ function saveShift(id){
 }
 
 // ===================== SUMMARY =====================
+let summaryView = 'periodo'; // 'periodo' | 'pessoa'
+let summaryMode = 'dia';     // 'dia' | 'semana'
+let summaryDate = fmtDate(new Date());
+let summaryWeekStart = fmtDate(startOfWeek(new Date()));
+let summaryWeekEnd = fmtDate(addDays(startOfWeek(new Date()), 6));
+let summaryEmpId = '';
+let summaryPersonStart = '';
+let summaryPersonEnd = '';
+let summaryFilterSector = 'all';
+
 function renderSummary(){
   const div=document.createElement('div');
-  const wk=state.weekStart;
-  const weekDates=getWeekDates(wk);
-  const sm=sectorMap();const shm=shiftMap();const ebs=empsBySector();
-  const rangeLabel=fmtBR(wk)+' a '+fmtBR(addDays(wk,6));
+  const sm=sectorMap();
+  const shm=shiftMap();
+  const ebs=empsBySector();
 
-  div.innerHTML=`<div class="page-header"><div><div class="page-title">Resumo da Semana</div><div class="page-sub">${rangeLabel} · contagem de turnos por colaborador</div></div></div>`;
+  // Header with view toggle + export button
+  div.innerHTML=`
+    <div class="page-header" style="margin-bottom:16px">
+      <div class="page-title">Resumo</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ${summaryView==='periodo'?'btn-primary':'btn-ghost'}" onclick="setSummaryView('periodo')">📅 Por período</button>
+        <button class="btn ${summaryView==='pessoa'?'btn-primary':'btn-ghost'}" onclick="setSummaryView('pessoa')">👤 Por pessoa</button>
+        <button class="btn btn-ghost" onclick="exportSummaryPDF()" style="margin-left:8px">⬇️ Exportar PDF</button>
+      </div>
+    </div>
+    <div id="summary-print-header" style="display:none;margin-bottom:16px">
+      <div style="font-size:18px;font-weight:800">Escala Operacional — Resumo</div>
+      <div id="summary-print-sub" style="font-size:12px;color:#555;margin-top:4px"></div>
+    </div>
+    <div id="summary-controls"></div>
+    <div id="summary-content"></div>
+  `;
 
-  // Totals
-  const totals={};
-  state.data.employees.filter(e=>e.active).forEach(emp=>{
-    weekDates.forEach(d=>{
-      const rawVal=state.data.schedule[fmtDate(d)]&&state.data.schedule[fmtDate(d)][emp.id];
-      const sid=getCellShiftId(rawVal);
-      if(sid)totals[sid]=(totals[sid]||0)+1;
-    });
-  });
+  // Fill controls + content after mount
+  setTimeout(()=>{
+    const ctrlEl=document.getElementById('summary-controls');
+    const contentEl=document.getElementById('summary-content');
+    if(!ctrlEl||!contentEl)return;
+    if(summaryView==='periodo'){
+      const {ctrl,content}=buildSummaryPeriodoElements(sm,shm,ebs);
+      ctrlEl.appendChild(ctrl);
+      contentEl.appendChild(content);
+    } else {
+      const {ctrl,content}=buildSummaryPessoaElements(sm,shm);
+      ctrlEl.appendChild(ctrl);
+      contentEl.appendChild(content);
+    }
+  },0);
 
-  const totDiv=document.createElement('div');
-  totDiv.className='summary-totals';
-  state.data.shiftTypes.slice().sort((a,b)=>a.order-b.order).forEach(st=>{
-    const cnt=totals[st.id]||0;
-    const chip=document.createElement('div');
-    chip.className='total-chip';
-    chip.style.cssText=`border-color:${st.color};background:${st.color}12`;
-    chip.innerHTML=`<div><div class="total-chip-label">${st.name}</div></div><div class="total-chip-count" style="color:${st.color}">${cnt}</div>`;
-    totDiv.appendChild(chip);
-  });
-  div.appendChild(totDiv);
-
-  // Per-employee table
-  const tableWrap=document.createElement('div');
-  tableWrap.className='summary-table';
-  const scroll=document.createElement('div');
-  scroll.style.overflowX='auto';
-  let html=`<table><thead><tr><th>Colaborador</th><th>Setor</th><th>Turnos da semana</th></tr></thead><tbody>`;
-
-  let any=false;
-  state.data.sectors.slice().sort((a,b)=>a.order-b.order).forEach(sector=>{
-    const emps=ebs[sector.id]||[];
-    emps.forEach(emp=>{
-      const counts={};
-      weekDates.forEach(d=>{
-        const rawVal=state.data.schedule[fmtDate(d)]&&state.data.schedule[fmtDate(d)][emp.id];
-        const sid=getCellShiftId(rawVal);
-        if(sid)counts[sid]=(counts[sid]||0)+1;
-      });
-      if(!Object.keys(counts).length)return;
-      any=true;
-      let chips='';
-      Object.entries(counts).forEach(([sid,cnt])=>{
-        const st=shm[sid];if(!st)return;
-        chips+=`<span class="shift-chip" style="background:${st.color};color:${contrastText(st.color)}">${st.code}×${cnt}</span>`;
-      });
-      html+=`<tr><td>${emp.name}</td><td style="color:${sector.color};font-weight:500">${sector.name}</td><td><div class="shift-chips">${chips}</div></td></tr>`;
-    });
-  });
-
-  if(!any)html+=`<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--muted)">Sem dados na semana</td></tr>`;
-  html+=`</tbody></table>`;
-  scroll.innerHTML=html;
-  tableWrap.appendChild(scroll);
-  div.appendChild(tableWrap);
   return div;
 }
 
-// ===================== MODAL =====================
+function setSummaryView(v){ summaryView=v; render(); }
+function setSummaryMode(v){ summaryMode=v; render(); }
+
+function renderSummaryPeriodo(sm,shm,ebs){ // kept for compat
+  const r=buildSummaryPeriodoElements(sm,shm,ebs);
+  const w=document.createElement('div');
+  w.appendChild(r.ctrl);w.appendChild(r.content);return w;
+}
+
+function buildSummaryPeriodoElements(sm,shm,ebs){
+  const allSectors=state.data.sectors.slice().sort((a,b)=>a.order-b.order);
+  let secOpts='<option value="all">Todos os setores</option>';
+  allSectors.forEach(s=>secOpts+=`<option value="${s.id}"${summaryFilterSector===s.id?' selected':''}>${s.name}</option>`);
+
+  const ctrl=document.createElement('div');
+  ctrl.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px';
+  ctrl.innerHTML=`
+    <div style="display:flex;border:1.5px solid var(--border);border-radius:8px;overflow:hidden">
+      <button class="btn ${summaryMode==='dia'?'btn-primary':''}" style="border-radius:0;border:none" onclick="setSummaryMode('dia')">Dia</button>
+      <button class="btn ${summaryMode==='semana'?'btn-primary':''}" style="border-radius:0;border:none;border-left:1px solid var(--border)" onclick="setSummaryMode('semana')">Semana</button>
+    </div>
+    ${summaryMode==='dia'
+      ? `<input type="date" class="input" style="width:auto;height:38px" value="${summaryDate}" onchange="summaryDate=this.value;render()">`
+      : `<input type="date" class="input" style="width:auto;height:38px" value="${summaryWeekStart}" onchange="summaryWeekStart=this.value;render()">
+         <span style="color:var(--muted);font-size:13px">até</span>
+         <input type="date" class="input" style="width:auto;height:38px" value="${summaryWeekEnd}" onchange="summaryWeekEnd=this.value;render()">`
+    }
+    <select class="input" style="height:38px;width:auto" onchange="summaryFilterSector=this.value;render()">${secOpts}</select>
+  `;
+
+  let dates=[];
+  if(summaryMode==='dia'){
+    dates=[summaryDate];
+  } else {
+    const [sy,sm2,sd]=summaryWeekStart.split('-').map(Number);
+    const [ey,em,ed]=summaryWeekEnd.split('-').map(Number);
+    const s=new Date(sy,sm2-1,sd);
+    const e=new Date(ey,em-1,ed);
+    for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)) dates.push(fmtDate(new Date(d)));
+  }
+
+  const visibleSectors=summaryFilterSector==='all'?allSectors:allSectors.filter(s=>s.id===summaryFilterSector);
+
+  const content=document.createElement('div');
+  dates.forEach(ds=>{
+    const block=buildDayBlock(ds,visibleSectors,shm,sm);
+    block.classList.add('summary-block');
+    content.appendChild(block);
+  });
+
+  return {ctrl,content};
+}
+
+function buildDayBlock(ds, visibleSectors, shm, sm){
+  const [y,m,d]=ds.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  const dayName=DAY_NAMES_FULL[(dt.getDay()+6)%7];
+  const dateLabel=`${dayName}, ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
+
+  const block=document.createElement('div');
+  block.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden';
+
+  // Date header
+  const hdr=document.createElement('div');
+  hdr.style.cssText='padding:12px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between';
+  hdr.innerHTML=`<div style="font-family:var(--font-display);font-weight:700;font-size:1rem">${dateLabel}</div>`;
+  block.appendChild(hdr);
+
+  visibleSectors.forEach(sector=>{
+    const emps=(empsBySector()[sector.id]||[]);
+    if(!emps.length) return;
+
+    // Classify employees for this day
+    const timeShifts={};   // shiftId -> [emp, ...]
+    const statusEmps=[];
+    const undefinedEmps=[];
+
+    emps.forEach(emp=>{
+      const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
+      const sid=getCellShiftId(rawVal);
+      const shift=sid?shm[sid]:null;
+      if(shift&&shift.kind==='time'){
+        if(!timeShifts[sid])timeShifts[sid]=[];
+        timeShifts[sid].push(emp);
+      } else if(shift&&shift.kind==='status'){
+        statusEmps.push({emp,shift});
+      } else {
+        undefinedEmps.push(emp);
+      }
+    });
+
+    // Sort time shifts chronologically by startTime
+    const sortedTimeShiftIds=Object.keys(timeShifts).sort((a,b)=>{
+      const sa=shm[a]?.startTime||'';
+      const sb=shm[b]?.startTime||'';
+      return sa.localeCompare(sb);
+    });
+
+    const hasAnything=sortedTimeShiftIds.length||statusEmps.length;
+    if(!hasAnything&&!undefinedEmps.length) return;
+
+    // Sector label
+    const secHdr=document.createElement('div');
+    secHdr.style.cssText=`padding:7px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-soft);background:var(--bg)`;
+    secHdr.innerHTML=`<div style="width:8px;height:8px;border-radius:50%;background:${sector.color}"></div><span style="font-family:var(--font-display);font-size:12px;font-weight:700;color:${sector.color};text-transform:uppercase;letter-spacing:.05em">${sector.name}</span>`;
+    block.appendChild(secHdr);
+
+    // Working groups (by shift, chronological)
+    if(sortedTimeShiftIds.length){
+      const workHdr=document.createElement('div');
+      workHdr.style.cssText='padding:5px 16px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#15803d;background:#f0fdf4';
+      workHdr.textContent='✅ Trabalhando';
+      block.appendChild(workHdr);
+
+      sortedTimeShiftIds.forEach(sid=>{
+        const shift=shm[sid];
+        const group=timeShifts[sid];
+        const shiftRow=document.createElement('div');
+        shiftRow.style.cssText='padding:6px 16px 6px 24px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+        // Shift badge
+        const badge=`<span style="font-family:var(--font-mono);font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:${shift.color};color:${contrastText(shift.color)};flex-shrink:0">${shift.code} ${shift.startTime}–${shift.endTime}</span>`;
+        const names=group.map(emp=>{
+          const note=getCellNote(state.data.schedule[ds]?.[emp.id]);
+          return `<span style="font-size:13px">${emp.name}${note?` <span style="font-size:11px;color:#c2410c;font-style:italic">(${note})</span>`:''}</span>`;
+        }).join('<span style="color:var(--border);margin:0 2px">·</span>');
+        shiftRow.innerHTML=`${badge}<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${names}</div>`;
+        block.appendChild(shiftRow);
+      });
+    }
+
+    // Absent group
+    if(statusEmps.length){
+      const absHdr=document.createElement('div');
+      absHdr.style.cssText='padding:5px 16px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#7c3aed;background:#faf5ff';
+      absHdr.textContent='🚫 Não trabalhando';
+      block.appendChild(absHdr);
+
+      const absRow=document.createElement('div');
+      absRow.style.cssText='padding:6px 16px 6px 24px;border-bottom:1px solid var(--border-soft);display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+      statusEmps.forEach(({emp,shift})=>{
+        absRow.innerHTML+=`<span style="display:inline-flex;align-items:center;gap:4px;font-size:13px">${emp.name}<span style="font-family:var(--font-mono);font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;background:${shift.color};color:${contrastText(shift.color)}">${shift.code}</span></span>`;
+      });
+      block.appendChild(absRow);
+    }
+
+    // Undefined
+    if(undefinedEmps.length){
+      const undefRow=document.createElement('div');
+      undefRow.style.cssText='padding:5px 16px 5px 24px;border-bottom:1px solid var(--border-soft);font-size:12px;color:var(--muted)';
+      undefRow.innerHTML=`⬜ Indefinido: ${undefinedEmps.map(e=>e.name).join(', ')}`;
+      block.appendChild(undefRow);
+    }
+  });
+
+  return block;
+}
+
+function renderSummaryPessoa(sm,shm){ // kept for compat
+  const r=buildSummaryPessoaElements(sm,shm);
+  const w=document.createElement('div');
+  w.appendChild(r.ctrl);w.appendChild(r.content);return w;
+}
+
+function exportSummaryPDF(){
+  // Set print header content
+  const sub=document.getElementById('summary-print-sub');
+  if(sub){
+    if(summaryView==='periodo'){
+      const sec=summaryFilterSector==='all'?'Todos os setores':state.data.sectors.find(s=>s.id===summaryFilterSector)?.name||'';
+      const range=summaryMode==='dia'
+        ?summaryDate.split('-').reverse().join('/')
+        :`${summaryWeekStart.split('-').reverse().join('/')} a ${summaryWeekEnd.split('-').reverse().join('/')}`;
+      sub.textContent=`${sec} · ${range}`;
+    } else {
+      const emp=state.data.employees.find(e=>e.id===summaryEmpId);
+      const start=(summaryPersonStart||fmtDate(addDays(new Date(),-29))).split('-').reverse().join('/');
+      const end=(summaryPersonEnd||fmtDate(new Date())).split('-').reverse().join('/');
+      sub.textContent=`${emp?.name||'—'} · ${start} a ${end}`;
+    }
+  }
+  window.print();
+}
+
+function buildSummaryPessoaElements(sm,shm){
+  const activeEmps=state.data.employees.filter(e=>e.active).sort((a,b)=>{
+    const sa=(sm[a.sectorId]||{}).order??999;
+    const sb=(sm[b.sectorId]||{}).order??999;
+    return sa!==sb?sa-sb:a.name.localeCompare(b.name);
+  });
+  let empOpts='<option value="">Selecione um colaborador…</option>';
+  let lastSector='';
+  activeEmps.forEach(emp=>{
+    const sec=sm[emp.sectorId];
+    if(sec&&sec.id!==lastSector){
+      empOpts+=`<optgroup label="${sec.name}">`;
+      lastSector=sec.id;
+    }
+    empOpts+=`<option value="${emp.id}"${summaryEmpId===emp.id?' selected':''}>${emp.name}${emp.role?' · '+emp.role:''}</option>`;
+  });
+
+  const today=fmtDate(new Date());
+  const defaultStart=summaryPersonStart||fmtDate(addDays(new Date(),-29));
+  const defaultEnd=summaryPersonEnd||today;
+
+  const ctrl=document.createElement('div');
+  ctrl.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px';
+  ctrl.innerHTML=`
+    <select class="input" style="height:38px;min-width:220px" onchange="summaryEmpId=this.value;render()">${empOpts}</select>
+    <input type="date" class="input" style="width:auto;height:38px" value="${defaultStart}" onchange="summaryPersonStart=this.value;render()">
+    <span style="color:var(--muted);font-size:13px">até</span>
+    <input type="date" class="input" style="width:auto;height:38px" value="${defaultEnd}" onchange="summaryPersonEnd=this.value;render()">
+  `;
+
+  const content=document.createElement('div');
+
+  if(!summaryEmpId){
+    const empty=document.createElement('div');
+    empty.style.cssText='padding:48px;text-align:center;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:12px';
+    empty.innerHTML='<div style="font-size:28px;margin-bottom:8px">👤</div>Selecione um colaborador para ver a escala.';
+    content.appendChild(empty);
+    return {ctrl,content};
+  }
+
+  const emp=state.data.employees.find(e=>e.id===summaryEmpId);
+  if(!emp){return {ctrl,content};}
+  const sec=sm[emp.sectorId]||{};
+
+  const [sy,sm2,sd]=defaultStart.split('-').map(Number);
+  const [ey,em,ed]=defaultEnd.split('-').map(Number);
+  const s=new Date(sy,sm2-1,sd),e=new Date(ey,em-1,ed);
+  const dates=[];
+  for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)) dates.push(fmtDate(new Date(d)));
+
+  // Header card
+  const empCard=document.createElement('div');
+  empCard.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;display:flex;align-items:center;gap:12px';
+  const bh=emp.bankHours||0;
+  empCard.innerHTML=`
+    <div style="width:44px;height:44px;border-radius:10px;background:${sec.color||'var(--primary)'};display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display);font-weight:800;font-size:1.2rem;flex-shrink:0">${emp.name[0]}</div>
+    <div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem">${emp.name}${bh?`<span class="bh-badge ${bh>0?'bh-pos':'bh-neg'}">${fmtBankHours(bh)}</span>`:''}</div>
+      <div style="font-size:12px;color:${sec.color||'var(--muted)'};margin-top:2px">${sec.name||''}${emp.role?' · '+emp.role:''}</div>
+    </div>
+    <div style="margin-left:auto;font-size:13px;color:var(--muted)">${dates.length} dias</div>
+  `;
+  content.appendChild(empCard);
+
+  // Table of days
+  const tableCard=document.createElement('div');
+  tableCard.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden';
+
+  let worked=0,absent=0,undef=0;
+  let rows='';
+  dates.forEach(ds=>{
+    const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
+    const sid=getCellShiftId(rawVal);
+    const note=getCellNote(rawVal);
+    const shift=sid?shm[sid]:null;
+    const [y,m,d]=ds.split('-').map(Number);
+    const dt=new Date(y,m-1,d);
+    const dayName=DAY_NAMES[(dt.getDay()+6)%7];
+    const isToday=ds===fmtDate(new Date());
+    const isWeekend=dt.getDay()===0||dt.getDay()===6;
+
+    if(shift?.kind==='time') worked++;
+    else if(shift?.kind==='status') absent++;
+    else undef++;
+
+    const rowBg=isToday?'background:#f0fdf4':isWeekend?'background:rgba(0,0,0,.02)':'';
+    rows+=`<tr style="${rowBg}">
+      <td style="padding:9px 16px;font-size:13px;color:${isToday?'var(--primary)':'var(--text)'};font-weight:${isToday?'700':'400'};white-space:nowrap">
+        ${dayName} ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}${isToday?' <span style="font-size:10px;background:var(--primary);color:#fff;padding:1px 5px;border-radius:4px;margin-left:4px">Hoje</span>':''}
+      </td>
+      <td style="padding:9px 16px">
+        ${shift
+          ? `<span style="font-family:var(--font-mono);font-size:12px;font-weight:700;padding:3px 10px;border-radius:${shift.kind==='time'?'20px':'6px'};background:${shift.color};color:${contrastText(shift.color)};${shift.kind!=='time'?'filter:saturate(.65)':''}">${shift.code}</span> <span style="font-size:13px">${shift.name}</span>`
+          : `<span style="font-size:13px;color:var(--muted)">—</span>`
+        }
+      </td>
+      <td style="padding:9px 16px;font-size:12px;color:#c2410c;font-style:italic">${note||''}</td>
+    </tr>`;
+  });
+
+  // Stats row
+  tableCard.innerHTML=`
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;padding:12px 16px;text-align:center;border-right:1px solid var(--border-soft)">
+        <div style="font-family:var(--font-display);font-size:1.4rem;font-weight:800;color:#15803d">${worked}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Trabalhado</div>
+      </div>
+      <div style="flex:1;padding:12px 16px;text-align:center;border-right:1px solid var(--border-soft)">
+        <div style="font-family:var(--font-display);font-size:1.4rem;font-weight:800;color:#7c3aed">${absent}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Ausente</div>
+      </div>
+      <div style="flex:1;padding:12px 16px;text-align:center">
+        <div style="font-family:var(--font-display);font-size:1.4rem;font-weight:800;color:var(--muted)">${undef}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Indefinido</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:var(--surface2)">
+        <th style="text-align:left;padding:8px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border)">Data</th>
+        <th style="text-align:left;padding:8px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border)">Turno</th>
+        <th style="text-align:left;padding:8px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border)">Observação</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  `;
+  tableCard.classList.add('summary-block');
+  content.appendChild(tableCard);
+  return {ctrl,content};
+}// ===================== MODAL =====================
 function openModal(html,center){
   const container=document.getElementById('modal-container');
   const backdrop=document.createElement('div');
