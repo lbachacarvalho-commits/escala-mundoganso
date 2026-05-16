@@ -2148,7 +2148,7 @@ function renderEmployees(){
       <button class="btn btn-primary" onclick="openEmpModal()">${svgIcon(ICONS.plus)} Novo colaborador</button>
     </div>
     <div class="controls" style="margin-bottom:16px">
-      <div class="search-wrap"><span class="search-icon">${svgIcon(ICONS.search,15)}</span><input class="input" style="height:36px" type="text" placeholder="Buscar por nome ou função…" value="${state.empSearch}" oninput="empSearch(this.value)"></div>
+      <div class="search-wrap"><span class="search-icon">${svgIcon(ICONS.search,15)}</span><input id="emp-search-input" class="input" style="height:36px" type="text" placeholder="Buscar por nome ou função…" value="${state.empSearch}" oninput="empSearch(this.value)"></div>
       <select class="input" style="height:36px;width:auto" onchange="empFilterSector(this.value)">${secOptions}</select>
       <label class="toggle-label"><input type="checkbox" ${state.empShowInactive?'checked':''} onchange="empToggleInactive(this.checked)"> Mostrar inativos</label>
     </div>
@@ -2171,6 +2171,9 @@ function renderEmployees(){
       const cBadge=emp.contract&&emp.contract!=='fixo'?`<span class="contract-badge ${contractClasses2[emp.contract]||''}">${contractLabels2[emp.contract]||''}</span>`:'';
       const item=document.createElement('div');
       item.className='emp-list-item';
+      item.dataset.empId=emp.id;
+      item.dataset.empName=emp.name;
+      item.dataset.empRole=emp.role||'';
       item.innerHTML=`
         <div class="emp-bar" style="background:${sec.color||'#ccc'}"></div>
         <div class="emp-info">
@@ -2193,7 +2196,18 @@ function renderEmployees(){
   return div;
 }
 
-function empSearch(v){state.empSearch=v;render()}
+function empSearch(v){
+  state.empSearch=v;
+  // Filter in place without full re-render (keeps input focus)
+  const sm=sectorMap();
+  const items=document.querySelectorAll('.emp-list-item[data-emp-id]');
+  items.forEach(item=>{
+    const name=(item.dataset.empName||'').toLowerCase();
+    const role=(item.dataset.empRole||'').toLowerCase();
+    const q=v.toLowerCase();
+    item.style.display=(!q||name.includes(q)||role.includes(q))?'':'none';
+  });
+}
 function empFilterSector(v){state.empFilterSector=v;render()}
 function empToggleInactive(v){state.empShowInactive=v;render()}
 
