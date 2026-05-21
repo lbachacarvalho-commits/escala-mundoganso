@@ -118,7 +118,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .day-th{text-align:center;min-width:110px;cursor:default}
 .day-name{text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-size:10px}
 .day-num{font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--text);margin-top:2px;letter-spacing:-.01em}
-.day-th.today{background:rgba(26,58,42,.08)}
+.day-th.today{background:#e6f0ea}
 .day-th.today .day-num{color:var(--primary-mid)}
 .day-th.done{background:var(--green-light)}
 .day-th.done .day-num{color:var(--green)}
@@ -1871,7 +1871,7 @@ function renderSchedule(){
         const classes=['cell-td'];
         if(locked)classes.push('locked');
         td.className=classes.join(' ');
-        td.style.background=locked?'#f0fdf4':isToday?'rgba(26,58,42,.05)':'var(--surface)';
+        td.style.background=locked?'#f0fdf4':isToday?'#f0f6f2':'var(--surface)';
         if(!locked)td.onclick=()=>handleCellClick(ds,emp.id,sector.id);
         const wrap=document.createElement('div');
         wrap.className='cell-inner-wrap';
