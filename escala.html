@@ -693,7 +693,22 @@ function todayStr(){return fmtDate(new Date())}
 function contrastText(hex){const h=hex.replace('#',''),r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return(0.299*r+0.587*g+0.114*b)/255>.6?'#1c1917':'#ffffff'}
 function sectorMap(){const m={};state.data.sectors.forEach(s=>m[s.id]=s);return m}
 function shiftMap(){const m={};state.data.shiftTypes.forEach(s=>m[s.id]=s);return m}
-function empsBySector(){const g={};state.data.sectors.forEach(s=>g[s.id]=[]);state.data.employees.filter(e=>e.active).forEach(e=>{if(g[e.sectorId])g[e.sectorId].push(e)});return g}
+function empsBySector(){
+  const CONTRACT_ORDER={fixo:0,pacote:1,freelancer:2};
+  const g={};
+  state.data.sectors.forEach(s=>g[s.id]=[]);
+  state.data.employees.filter(e=>e.active).forEach(e=>{if(g[e.sectorId])g[e.sectorId].push(e)});
+  // Sort each sector by contract type: fixo -> pacote -> freelancer -> indefinido
+  Object.keys(g).forEach(sid=>{
+    g[sid].sort((a,b)=>{
+      const oa=CONTRACT_ORDER[a.contract]??3;
+      const ob=CONTRACT_ORDER[b.contract]??3;
+      if(oa!==ob)return oa-ob;
+      return a.name.localeCompare(b.name);
+    });
+  });
+  return g;
+}
 function e(tag,attrs={},children=[]){const el=document.createElement(tag);Object.entries(attrs).forEach(([k,v])=>{if(k==='class')el.className=v;else if(k==='style')el.style.cssText=v;else if(k.startsWith('on'))el.addEventListener(k.slice(2).toLowerCase(),v);else el.setAttribute(k,v)});children.forEach(c=>{if(c==null)return;if(typeof c==='string')el.appendChild(document.createTextNode(c));else el.appendChild(c)});return el}
 function svgIcon(path,size=16){return`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`}
 const ICONS={
