@@ -2065,19 +2065,25 @@ async function exportSectorImage(sectorId){
   box.appendChild(hdr);
 
   // Table
+  const NAME_W=200, DAY_W=104;
   const table=document.createElement('table');
-  table.style.cssText='border-collapse:collapse;font-family:'+"'Nunito Sans',sans-serif";
+  table.style.cssText='border-collapse:collapse;table-layout:fixed;font-family:'+"'Nunito Sans',sans-serif"+';width:'+(NAME_W+DAY_W*7)+'px';
+  // Colgroup for fixed widths
+  const colgroup=document.createElement('colgroup');
+  const col0=document.createElement('col');col0.style.width=NAME_W+'px';colgroup.appendChild(col0);
+  weekDates.forEach(()=>{const c=document.createElement('col');c.style.width=DAY_W+'px';colgroup.appendChild(c)});
+  table.appendChild(colgroup);
   // Head
   const thead=document.createElement('thead');
   const hrow=document.createElement('tr');
   const th0=document.createElement('th');
   th0.textContent='Colaborador';
-  th0.style.cssText='padding:11px 16px;text-align:left;font-size:13px;font-weight:700;color:#1c1a14;background:#f0ebe0;border:1px solid #ddd8cc;min-width:180px';
+  th0.style.cssText='padding:11px 16px;text-align:left;font-size:13px;font-weight:700;color:#1c1a14;background:#f0ebe0;border:1px solid #ddd8cc';
   hrow.appendChild(th0);
   weekDates.forEach(d=>{
     const ds=fmtDate(d),isToday=ds===today,dayIdx=(d.getDay()+6)%7;
     const th=document.createElement('th');
-    th.style.cssText=`padding:9px 12px;text-align:center;font-size:12px;border:1px solid #ddd8cc;min-width:96px;background:${isToday?'#e6f0ea':'#f0ebe0'}`;
+    th.style.cssText=`padding:9px 6px;text-align:center;font-size:12px;border:1px solid #ddd8cc;background:${isToday?'#e6f0ea':'#f0ebe0'}`;
     th.innerHTML=`<div style="text-transform:uppercase;letter-spacing:.05em;color:#7a7060;font-size:10px">${DAY_NAMES[dayIdx]}</div><div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;color:${isToday?'#2d5a3d':'#1c1a14'};margin-top:2px">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</div>`;
     hrow.appendChild(th);
   });
