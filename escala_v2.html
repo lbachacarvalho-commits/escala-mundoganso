@@ -2052,7 +2052,7 @@ async function exportSectorImage(sectorId){
 
   // Build off-screen container styled like the site (NO bank hours)
   const box=document.createElement('div');
-  box.style.cssText='position:absolute;left:0;top:0;z-index:-1;opacity:0;background:#fffefa;padding:28px;display:inline-block;font-family:'+"'Nunito Sans',sans-serif"+';';
+  box.style.cssText='position:fixed;left:-99999px;top:0;background:#fffefa;padding:28px;display:inline-block;font-family:'+"'Nunito Sans',sans-serif"+';';
 
   // Header
   const hdr=document.createElement('div');
@@ -2127,9 +2127,10 @@ async function exportSectorImage(sectorId){
 
   try{
     // Aguarda layout/fontes estabilizarem antes de capturar
-    await new Promise(r=>setTimeout(r,300));
-    const canvas=await html2canvas(box,{scale:2,backgroundColor:'#fffefa',logging:false,useCORS:true,width:box.scrollWidth,height:box.scrollHeight,windowWidth:box.scrollWidth+100});
+    await new Promise(r=>setTimeout(r,400));
+    const canvas=await html2canvas(box,{scale:2,backgroundColor:'#fffefa',logging:false,useCORS:true});
     canvas.toBlob(blob=>{
+      if(!blob){alert('Erro ao gerar imagem (vazia).');return}
       const url=URL.createObjectURL(blob);
       const a=document.createElement('a');
       a.href=url;
