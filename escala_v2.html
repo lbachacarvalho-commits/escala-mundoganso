@@ -521,7 +521,6 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
   .sector-hdr-name{min-width:90px}
 }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <!-- LOGIN SCREEN -->
@@ -2033,117 +2032,153 @@ function clearWeek(){
   saveData();render();
 }
 
-// ===================== EXPORTAR IMAGEM DO SETOR =====================
-async function exportSectorImage(sectorId){
+// ===================== EXPORTAR IMAGEM DO SETOR (Canvas nativo) =====================
+function exportSectorImage(sectorId){
   const sector=state.data.sectors.find(s=>s.id===sectorId);
-  if(!sector){alert('Setor não encontrado');return}
-  if(typeof html2canvas==='undefined'){alert('Biblioteca de exportação ainda carregando. Tente novamente em alguns segundos.');return}
-
+  if(!sector){alert('Setor nao encontrado');return}
   const weekDates=getWeekDates(state.weekStart);
   const today=fmtDate(new Date());
   const shm=shiftMap();
   const ebs=empsBySector();
   const emps=ebs[sectorId]||[];
-  if(!emps.length){alert('Este setor não tem colaboradores ativos.');return}
-
+  if(!emps.length){alert('Este setor nao tem colaboradores ativos.');return}
   const wkEnd=addDays(state.weekStart,6);
   const rangeLabel=fmtBR(state.weekStart)+' a '+fmtBR(wkEnd);
-  const isSectorLocked=(ds)=>(state.data.lockedSectors[ds]||[]).includes(sectorId);
+  const isLocked=(ds)=>(state.data.lockedSectors[ds]||[]).includes(sectorId);
 
-  // Build off-screen container styled like the site (NO bank hours)
-  const box=document.createElement('div');
-  box.style.cssText='position:fixed;left:-99999px;top:0;background:#fffefa;padding:28px;display:inline-block;font-family:'+"'Nunito Sans',sans-serif"+';';
+  // ---- Layout (em px lógicos; multiplica por DPR no fim) ----
+  const DPR=2;
+  const PAD=28;
+  const NAME_W=210;
+  const DAY_W=108;
+  const HEAD_H=58;
+  const TITLE_H=78;
+  const FOOT_H=34;
+  const cols=weekDates.length;
+  const tableW=NAME_W+DAY_W*cols;
+  const W=PAD*2+tableW;
 
-  // Header
-  const hdr=document.createElement('div');
-  hdr.style.cssText='margin-bottom:18px;border-bottom:3px solid '+sector.color+';padding-bottom:12px';
-  hdr.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-      <div style="width:16px;height:16px;border-radius:50%;background:${sector.color}"></div>
-      <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:800;color:${sector.color};letter-spacing:-.02em">${sector.name}</div>
-    </div>
-    <div style="font-size:15px;color:#7a7060;margin-left:26px">Escala da semana · ${rangeLabel}</div>`;
-  box.appendChild(hdr);
-
-  // Table
-  const NAME_W=200, DAY_W=104;
-  const table=document.createElement('table');
-  table.style.cssText='border-collapse:collapse;table-layout:fixed;font-family:'+"'Nunito Sans',sans-serif"+';width:'+(NAME_W+DAY_W*7)+'px';
-  // Colgroup for fixed widths
-  const colgroup=document.createElement('colgroup');
-  const col0=document.createElement('col');col0.style.width=NAME_W+'px';colgroup.appendChild(col0);
-  weekDates.forEach(()=>{const c=document.createElement('col');c.style.width=DAY_W+'px';colgroup.appendChild(c)});
-  table.appendChild(colgroup);
-  // Head
-  const thead=document.createElement('thead');
-  const hrow=document.createElement('tr');
-  const th0=document.createElement('th');
-  th0.style.cssText='padding:11px 16px;text-align:left;font-size:13px;font-weight:700;color:#1c1a14;background:#f0ebe0;border:1px solid #ddd8cc';
-  hrow.appendChild(th0);
-  weekDates.forEach(d=>{
-    const ds=fmtDate(d),isToday=ds===today,dayIdx=(d.getDay()+6)%7;
-    const th=document.createElement('th');
-    th.style.cssText=`padding:9px 6px;text-align:center;font-size:12px;border:1px solid #ddd8cc;background:${isToday?'#e6f0ea':'#f0ebe0'}`;
-    th.innerHTML=`<div style="text-transform:uppercase;letter-spacing:.05em;color:#7a7060;font-size:10px">${DAY_NAMES[dayIdx]}</div><div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;color:${isToday?'#2d5a3d':'#1c1a14'};margin-top:2px">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</div>`;
-    hrow.appendChild(th);
+  // Altura de cada linha depende de nota (2 linhas) — pré-calcula
+  function cellNoteOf(emp,ds){return getCellNote(state.data.schedule[ds]&&state.data.schedule[ds][emp.id])}
+  const rowHeights=emps.map(emp=>{
+    let hasNote=false;
+    weekDates.forEach(d=>{if(cellNoteOf(emp,fmtDate(d)))hasNote=true});
+    return hasNote?64:48;
   });
-  thead.appendChild(hrow);
-  table.appendChild(thead);
-  // Body
-  const tbody=document.createElement('tbody');
-  emps.forEach(emp=>{
-    const row=document.createElement('tr');
-    const nameTd=document.createElement('td');
-    nameTd.style.cssText='padding:9px 16px;border:1px solid #ddd8cc;background:#fffefa;vertical-align:middle';
-    const cLabels={fixo:'',pacote:'Pacote',freelancer:'Freelancer'};
-    const cLab=emp.contract&&emp.contract!=='fixo'?` <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;background:#fef3c7;color:#92400e;text-transform:uppercase">${cLabels[emp.contract]||''}</span>`:'';
-    nameTd.innerHTML=`<div style="font-weight:600;font-size:14px;color:#1c1a14">${emp.name}${cLab}</div>${emp.role?`<div style="font-size:11px;color:#7a7060;margin-top:1px">${emp.role}</div>`:''}`;
-    row.appendChild(nameTd);
-    weekDates.forEach(d=>{
-      const ds=fmtDate(d),isToday=ds===today,locked=isSectorLocked(ds);
+  const tableBodyH=rowHeights.reduce((a,b)=>a+b,0);
+  const H=PAD+TITLE_H+HEAD_H+tableBodyH+FOOT_H+PAD;
+
+  // ---- Canvas ----
+  const canvas=document.createElement('canvas');
+  canvas.width=W*DPR;canvas.height=H*DPR;
+  const ctx=canvas.getContext('2d');
+  ctx.scale(DPR,DPR);
+  ctx.textBaseline='middle';
+  function rrect(x,y,w,h,r){r=Math.min(r,h/2,w/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+
+  // Fundo
+  ctx.fillStyle='#fffefa';ctx.fillRect(0,0,W,H);
+
+  // Titulo
+  let ty=PAD+10;
+  ctx.fillStyle=sector.color;ctx.beginPath();ctx.arc(PAD+9,ty+9,8,0,Math.PI*2);ctx.fill();
+  ctx.font='800 26px "Plus Jakarta Sans",sans-serif';ctx.fillStyle=sector.color;ctx.textAlign='left';
+  ctx.fillText(sector.name,PAD+26,ty+10);
+  ctx.font='400 15px "Nunito Sans",sans-serif';ctx.fillStyle='#7a7060';
+  ctx.fillText('Escala da semana · '+rangeLabel,PAD+26,ty+36);
+  // Linha divisoria
+  ctx.strokeStyle=sector.color;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(PAD,PAD+TITLE_H-12);ctx.lineTo(W-PAD,PAD+TITLE_H-12);ctx.stroke();
+
+  // ---- Cabecalho da tabela ----
+  const tableX=PAD, tableY=PAD+TITLE_H;
+  // celula nome (vazia)
+  ctx.fillStyle='#f0ebe0';ctx.fillRect(tableX,tableY,NAME_W,HEAD_H);
+  weekDates.forEach((d,i)=>{
+    const ds=fmtDate(d),isToday=ds===today,dayIdx=(d.getDay()+6)%7;
+    const cx=tableX+NAME_W+DAY_W*i;
+    ctx.fillStyle=isToday?'#e6f0ea':'#f0ebe0';ctx.fillRect(cx,tableY,DAY_W,HEAD_H);
+    ctx.textAlign='center';
+    ctx.font='700 10px "Nunito Sans",sans-serif';ctx.fillStyle='#7a7060';
+    ctx.fillText(DAY_NAMES[dayIdx].toUpperCase(),cx+DAY_W/2,tableY+18);
+    ctx.font='700 16px "Plus Jakarta Sans",sans-serif';ctx.fillStyle=isToday?'#2d5a3d':'#1c1a14';
+    ctx.fillText(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),cx+DAY_W/2,tableY+38);
+  });
+
+  // ---- Linhas ----
+  let ry=tableY+HEAD_H;
+  emps.forEach((emp,ri)=>{
+    const rh=rowHeights[ri];
+    // fundo da linha (nome)
+    ctx.fillStyle='#fffefa';ctx.fillRect(tableX,ry,NAME_W,rh);
+    // nome
+    ctx.textAlign='left';
+    ctx.font='600 14px "Nunito Sans",sans-serif';ctx.fillStyle='#1c1a14';
+    let nameStr=emp.name;
+    // badge de contrato
+    let nameX=tableX+16;
+    ctx.fillText(nameStr,nameX,ry+(emp.role?rh/2-9:rh/2));
+    const nameW=ctx.measureText(nameStr).width;
+    if(emp.contract&&emp.contract!=='fixo'){
+      const lbl=emp.contract==='pacote'?'PACOTE':'FREELANCER';
+      ctx.font='700 9px "Nunito Sans",sans-serif';
+      const bw=ctx.measureText(lbl).width+12;
+      const bx=nameX+nameW+8, by=ry+(emp.role?rh/2-18:rh/2-9);
+      ctx.fillStyle='#fef3c7';rrect(bx,by,bw,16,3);ctx.fill();
+      ctx.fillStyle='#92400e';ctx.textAlign='center';ctx.fillText(lbl,bx+bw/2,by+8);ctx.textAlign='left';
+    }
+    if(emp.role){ctx.font='400 11px "Nunito Sans",sans-serif';ctx.fillStyle='#7a7060';ctx.fillText(emp.role,nameX,ry+rh/2+10)}
+    // celulas dos dias
+    weekDates.forEach((d,i)=>{
+      const ds=fmtDate(d),isToday=ds===today;
+      const cx=tableX+NAME_W+DAY_W*i;
+      ctx.fillStyle=isToday?'#f0f6f2':'#fffefa';ctx.fillRect(cx,ry,DAY_W,rh);
       const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
       const shiftId=getCellShiftId(rawVal),note=getCellNote(rawVal),shift=shiftId?shm[shiftId]:null;
-      const td=document.createElement('td');
-      td.style.cssText=`padding:6px;border:1px solid #ddd8cc;text-align:center;vertical-align:middle;background:${isToday?'#f0f6f2':'#fffefa'}`;
       if(shift){
         const isTime=shift.kind==='time';
-        td.innerHTML=`<div style="display:inline-block;background:${shift.color};color:${contrastText(shift.color)};font-family:'DM Mono',monospace;font-weight:700;font-size:13px;padding:${isTime?'7px 14px':'5px 10px'};border-radius:${isTime?'20px':'6px'};${!isTime?'filter:saturate(.7) brightness(.97)':''}">${shift.code}</div>${note?`<div style="font-size:10px;color:#c2410c;font-style:italic;margin-top:3px">${note}</div>`:''}`;
-      } else {
-        td.innerHTML=`<span style="color:#c9c4b8;font-size:16px">—</span>`;
+        ctx.font='700 13px "DM Mono",monospace';
+        const tw=ctx.measureText(shift.code).width;
+        const chipW=tw+(isTime?28:20), chipH=isTime?28:26;
+        const chipX=cx+(DAY_W-chipW)/2, chipY=ry+(note?14:(rh-chipH)/2);
+        ctx.fillStyle=shift.color;
+        rrect(chipX,chipY,chipW,chipH,isTime?14:6);ctx.fill();
+        ctx.fillStyle=contrastText(shift.color);ctx.textAlign='center';
+        ctx.fillText(shift.code,cx+DAY_W/2,chipY+chipH/2);
+        if(note){ctx.font='italic 10px "Nunito Sans",sans-serif';ctx.fillStyle='#c2410c';
+          let n=note;if(ctx.measureText(n).width>DAY_W-8){while(ctx.measureText(n+'…').width>DAY_W-8&&n.length>1)n=n.slice(0,-1);n+='…'}
+          ctx.fillText(n,cx+DAY_W/2,ry+rh-12)}
+      }else{
+        ctx.font='400 16px "Nunito Sans",sans-serif';ctx.fillStyle='#c9c4b8';ctx.textAlign='center';
+        ctx.fillText('—',cx+DAY_W/2,ry+rh/2);
       }
-      row.appendChild(td);
     });
-    tbody.appendChild(row);
+    ry+=rh;
   });
-  table.appendChild(tbody);
-  box.appendChild(table);
 
-  // Footer
-  const foot=document.createElement('div');
-  foot.style.cssText='margin-top:14px;font-size:11px;color:#a89f8c;text-align:right';
-  foot.textContent='Escala Operacional · Complexo de Lazer';
-  box.appendChild(foot);
+  // ---- Grade (linhas da tabela) ----
+  ctx.strokeStyle='#ddd8cc';ctx.lineWidth=1;
+  // horizontais
+  let gy=tableY;
+  ctx.beginPath();ctx.moveTo(tableX,gy);ctx.lineTo(tableX+tableW,gy);ctx.stroke();
+  gy=tableY+HEAD_H;ctx.beginPath();ctx.moveTo(tableX,gy);ctx.lineTo(tableX+tableW,gy);ctx.stroke();
+  rowHeights.forEach(rh=>{gy+=rh;ctx.beginPath();ctx.moveTo(tableX,gy);ctx.lineTo(tableX+tableW,gy);ctx.stroke()});
+  // verticais
+  for(let i=0;i<=cols+1;i++){const vx=i===0?tableX:tableX+NAME_W+DAY_W*(i-1);ctx.beginPath();ctx.moveTo(vx,tableY);ctx.lineTo(vx,tableY+HEAD_H+tableBodyH);ctx.stroke()}
 
-  document.body.appendChild(box);
+  // ---- Rodape ----
+  ctx.font='400 11px "Nunito Sans",sans-serif';ctx.fillStyle='#a89f8c';ctx.textAlign='right';
+  ctx.fillText('Escala Operacional · Complexo de Lazer',W-PAD,H-PAD-4);
 
-  try{
-    // Aguarda layout/fontes estabilizarem antes de capturar
-    await new Promise(r=>setTimeout(r,400));
-    const canvas=await html2canvas(box,{scale:2,backgroundColor:'#fffefa',logging:false,useCORS:true});
-    canvas.toBlob(blob=>{
-      if(!blob){alert('Erro ao gerar imagem (vazia).');return}
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a');
-      a.href=url;
-      a.download=`escala_${sector.name.replace(/[^a-zA-Z0-9]/g,'_')}_${fmtDate(state.weekStart)}.png`;
-      document.body.appendChild(a);a.click();document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    },'image/png');
-    logAction('Escala exportada',`${sector.name} · ${rangeLabel}`);
-  }catch(e){
-    alert('Erro ao gerar imagem: '+e.message);
-  }finally{
-    document.body.removeChild(box);
-  }
+  // ---- Download ----
+  canvas.toBlob(blob=>{
+    if(!blob){alert('Erro ao gerar imagem.');return}
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='escala_'+sector.name.replace(/[^a-zA-Z0-9]/g,'_')+'_'+fmtDate(state.weekStart)+'.png';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  },'image/png');
+  logAction('Escala exportada',sector.name+' · '+rangeLabel);
 }
 
 
