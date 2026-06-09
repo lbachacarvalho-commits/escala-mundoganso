@@ -2058,13 +2058,8 @@ function exportSectorImage(sectorId){
   const tableW=NAME_W+DAY_W*cols;
   const W=PAD*2+tableW;
 
-  // Altura de cada linha depende de nota (2 linhas) — pré-calcula
-  function cellNoteOf(emp,ds){return getCellNote(state.data.schedule[ds]&&state.data.schedule[ds][emp.id])}
-  const rowHeights=emps.map(emp=>{
-    let hasNote=false;
-    weekDates.forEach(d=>{if(cellNoteOf(emp,fmtDate(d)))hasNote=true});
-    return hasNote?64:48;
-  });
+  // Altura fixa de linha (observações não são exportadas por privacidade)
+  const rowHeights=emps.map(()=>50);
   const tableBodyH=rowHeights.reduce((a,b)=>a+b,0);
   const H=PAD+TITLE_H+HEAD_H+tableBodyH+FOOT_H+PAD;
 
@@ -2133,20 +2128,17 @@ function exportSectorImage(sectorId){
       const cx=tableX+NAME_W+DAY_W*i;
       ctx.fillStyle=isToday?'#f0f6f2':'#fffefa';ctx.fillRect(cx,ry,DAY_W,rh);
       const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
-      const shiftId=getCellShiftId(rawVal),note=getCellNote(rawVal),shift=shiftId?shm[shiftId]:null;
+      const shiftId=getCellShiftId(rawVal),shift=shiftId?shm[shiftId]:null;
       if(shift){
         const isTime=shift.kind==='time';
         ctx.font='700 13px "DM Mono",monospace';
         const tw=ctx.measureText(shift.code).width;
         const chipW=tw+(isTime?28:20), chipH=isTime?28:26;
-        const chipX=cx+(DAY_W-chipW)/2, chipY=ry+(note?14:(rh-chipH)/2);
+        const chipX=cx+(DAY_W-chipW)/2, chipY=ry+(rh-chipH)/2;
         ctx.fillStyle=shift.color;
         rrect(chipX,chipY,chipW,chipH,isTime?14:6);ctx.fill();
         ctx.fillStyle=contrastText(shift.color);ctx.textAlign='center';
         ctx.fillText(shift.code,cx+DAY_W/2,chipY+chipH/2);
-        if(note){ctx.font='italic 10px "Nunito Sans",sans-serif';ctx.fillStyle='#c2410c';
-          let n=note;if(ctx.measureText(n).width>DAY_W-8){while(ctx.measureText(n+'…').width>DAY_W-8&&n.length>1)n=n.slice(0,-1);n+='…'}
-          ctx.fillText(n,cx+DAY_W/2,ry+rh-12)}
       }else{
         ctx.font='400 16px "Nunito Sans",sans-serif';ctx.fillStyle='#c9c4b8';ctx.textAlign='center';
         ctx.fillText('—',cx+DAY_W/2,ry+rh/2);
