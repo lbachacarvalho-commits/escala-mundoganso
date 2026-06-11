@@ -141,6 +141,8 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .sector-hdr td:not(:first-child){background:var(--surface2)}
 .sector-hdr td:first-child{position:sticky;left:0;z-index:6;background:var(--surface2);will-change:transform;transform:translateZ(0)}
 .sector-hdr-name{display:flex;align-items:center;gap:8px;padding:7px 16px;min-width:170px}
+.sector-export-btn{margin-left:8px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);white-space:nowrap;cursor:pointer;transition:all .12s}
+.sector-export-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
 .sector-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .sector-name{font-family:var(--font-display);font-size:12px;font-weight:700;letter-spacing:.01em}
 .sector-count{font-size:11px;color:var(--muted)}
@@ -557,7 +559,6 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
       <button class="tab" onclick="switchTab('colaboradores')">👥 Colaboradores</button>
       <button class="tab" onclick="switchTab('setores')">🏷️ Setores</button>
       <button class="tab" onclick="switchTab('turnos')">🕐 Tipos de Turno</button>
-      <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
       <button class="tab" onclick="switchTab('banco')">⏱ Banco de Horas</button>
       <button class="tab" onclick="switchTab('versoes')">🕘 Versões</button>
       <button class="tab" id="tab-usuarios" style="display:none" onclick="switchTab('usuarios')">👤 Usuários</button>
@@ -788,7 +789,6 @@ const SECOES=[
   {key:'colaboradores',label:'Colaboradores',     opts:['Pode ver e editar','Pode ver','Sem acesso']},
   {key:'setores',   label:'Setores',              opts:['Pode ver e editar','Pode ver','Sem acesso']},
   {key:'turnos',    label:'Tipos de Turno',       opts:['Pode ver e editar','Pode ver','Sem acesso']},
-  {key:'resumo',    label:'Resumo',               opts:['Pode ver','Sem acesso']},
   {key:'banco',     label:'Banco de Horas',       opts:['Pode ver','Sem acesso']},
   {key:'versoes',   label:'Histórico de Versões', opts:['Pode ver','Sem acesso']},
   {key:'usuarios',  label:'Usuários',             opts:['Pode gerenciar','Sem acesso']},
@@ -1659,7 +1659,6 @@ function render(){
   else if(currentTab==='colaboradores'&&can('canViewColaboradores'))main.appendChild(renderEmployees());
   else if(currentTab==='setores'&&can('canViewSetores'))main.appendChild(renderSectors());
   else if(currentTab==='turnos'&&can('canViewTurnos'))main.appendChild(renderShiftTypes());
-  else if(currentTab==='resumo'&&can('canViewResumo'))main.appendChild(renderSummary());
   else if(currentTab==='banco'&&can('canViewBanco'))main.appendChild(renderBancoHoras());
   else if(currentTab==='versoes'&&can('canViewVersions'))main.appendChild(renderVersions());
   else if(currentTab==='usuarios'&&can('canManageUsers'))main.appendChild(renderUsuarios());
@@ -1812,7 +1811,7 @@ function renderSchedule(){
     const srow=document.createElement('tr');
     srow.className='sector-hdr';
     const sNameTd=document.createElement('td');
-    sNameTd.innerHTML=`<div class="sector-hdr-name"><div class="sector-dot" style="background:${sector.color}"></div><span class="sector-name" style="color:${sector.color}">${sector.name}</span><span class="sector-count">· ${emps.length} pessoa${emps.length!==1?'s':''}</span></div>`;
+    sNameTd.innerHTML=`<div class="sector-hdr-name"><div class="sector-dot" style="background:${sector.color}"></div><span class="sector-name" style="color:${sector.color}">${sector.name}</span><span class="sector-count">· ${emps.length} pessoa${emps.length!==1?'s':''}</span><button class="sector-export-btn" title="Exportar escala deste setor como imagem" onclick="event.stopPropagation();exportSectorImage('${sector.id}')">📷 Exportar</button></div>`;
     srow.appendChild(sNameTd);
 
     weekDates.forEach(d=>{
@@ -2032,6 +2031,148 @@ function clearWeek(){
   for(let i=0;i<7;i++)delete state.data.schedule[fmtDate(addDays(state.weekStart,i))];
   saveData();render();
 }
+
+// ===================== EXPORTAR IMAGEM DO SETOR (Canvas nativo) =====================
+function exportSectorImage(sectorId){
+  const sector=state.data.sectors.find(s=>s.id===sectorId);
+  if(!sector){alert('Setor nao encontrado');return}
+  const weekDates=getWeekDates(state.weekStart);
+  const today=fmtDate(new Date());
+  const shm=shiftMap();
+  const ebs=empsBySector();
+  const emps=ebs[sectorId]||[];
+  if(!emps.length){alert('Este setor nao tem colaboradores ativos.');return}
+  const wkEnd=addDays(state.weekStart,6);
+  const rangeLabel=fmtBR(state.weekStart)+' a '+fmtBR(wkEnd);
+  const isLocked=(ds)=>(state.data.lockedSectors[ds]||[]).includes(sectorId);
+
+  // ---- Layout (em px lógicos; multiplica por DPR no fim) ----
+  const DPR=2;
+  const PAD=28;
+  const NAME_W=210;
+  const DAY_W=108;
+  const HEAD_H=58;
+  const TITLE_H=78;
+  const FOOT_H=34;
+  const cols=weekDates.length;
+  const tableW=NAME_W+DAY_W*cols;
+  const W=PAD*2+tableW;
+
+  // Altura fixa de linha (observações não são exportadas por privacidade)
+  const rowHeights=emps.map(()=>50);
+  const tableBodyH=rowHeights.reduce((a,b)=>a+b,0);
+  const H=PAD+TITLE_H+HEAD_H+tableBodyH+FOOT_H+PAD;
+
+  // ---- Canvas ----
+  const canvas=document.createElement('canvas');
+  canvas.width=W*DPR;canvas.height=H*DPR;
+  const ctx=canvas.getContext('2d');
+  ctx.scale(DPR,DPR);
+  ctx.textBaseline='middle';
+  function rrect(x,y,w,h,r){r=Math.min(r,h/2,w/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+
+  // Fundo
+  ctx.fillStyle='#fffefa';ctx.fillRect(0,0,W,H);
+
+  // Titulo
+  let ty=PAD+10;
+  ctx.fillStyle=sector.color;ctx.beginPath();ctx.arc(PAD+9,ty+9,8,0,Math.PI*2);ctx.fill();
+  ctx.font='800 26px "Plus Jakarta Sans",sans-serif';ctx.fillStyle=sector.color;ctx.textAlign='left';
+  ctx.fillText(sector.name,PAD+26,ty+10);
+  ctx.font='400 15px "Nunito Sans",sans-serif';ctx.fillStyle='#7a7060';
+  ctx.fillText('Escala da semana · '+rangeLabel,PAD+26,ty+36);
+  // Linha divisoria
+  ctx.strokeStyle=sector.color;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(PAD,PAD+TITLE_H-12);ctx.lineTo(W-PAD,PAD+TITLE_H-12);ctx.stroke();
+
+  // ---- Cabecalho da tabela ----
+  const tableX=PAD, tableY=PAD+TITLE_H;
+  // celula nome (vazia)
+  ctx.fillStyle='#f0ebe0';ctx.fillRect(tableX,tableY,NAME_W,HEAD_H);
+  weekDates.forEach((d,i)=>{
+    const ds=fmtDate(d),isToday=ds===today,dayIdx=(d.getDay()+6)%7;
+    const cx=tableX+NAME_W+DAY_W*i;
+    ctx.fillStyle=isToday?'#e6f0ea':'#f0ebe0';ctx.fillRect(cx,tableY,DAY_W,HEAD_H);
+    ctx.textAlign='center';
+    ctx.font='700 10px "Nunito Sans",sans-serif';ctx.fillStyle='#7a7060';
+    ctx.fillText(DAY_NAMES[dayIdx].toUpperCase(),cx+DAY_W/2,tableY+18);
+    ctx.font='700 16px "Plus Jakarta Sans",sans-serif';ctx.fillStyle=isToday?'#2d5a3d':'#1c1a14';
+    ctx.fillText(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),cx+DAY_W/2,tableY+38);
+  });
+
+  // ---- Linhas ----
+  let ry=tableY+HEAD_H;
+  emps.forEach((emp,ri)=>{
+    const rh=rowHeights[ri];
+    // fundo da linha (nome)
+    ctx.fillStyle='#fffefa';ctx.fillRect(tableX,ry,NAME_W,rh);
+    // nome
+    ctx.textAlign='left';
+    ctx.font='600 14px "Nunito Sans",sans-serif';ctx.fillStyle='#1c1a14';
+    let nameStr=emp.name;
+    // badge de contrato
+    let nameX=tableX+16;
+    ctx.fillText(nameStr,nameX,ry+(emp.role?rh/2-9:rh/2));
+    const nameW=ctx.measureText(nameStr).width;
+    if(emp.contract&&emp.contract!=='fixo'){
+      const lbl=emp.contract==='pacote'?'PACOTE':'FREELANCER';
+      ctx.font='700 9px "Nunito Sans",sans-serif';
+      const bw=ctx.measureText(lbl).width+12;
+      const bx=nameX+nameW+8, by=ry+(emp.role?rh/2-18:rh/2-9);
+      ctx.fillStyle='#fef3c7';rrect(bx,by,bw,16,3);ctx.fill();
+      ctx.fillStyle='#92400e';ctx.textAlign='center';ctx.fillText(lbl,bx+bw/2,by+8);ctx.textAlign='left';
+    }
+    if(emp.role){ctx.font='400 11px "Nunito Sans",sans-serif';ctx.fillStyle='#7a7060';ctx.fillText(emp.role,nameX,ry+rh/2+10)}
+    // celulas dos dias
+    weekDates.forEach((d,i)=>{
+      const ds=fmtDate(d),isToday=ds===today;
+      const cx=tableX+NAME_W+DAY_W*i;
+      ctx.fillStyle=isToday?'#f0f6f2':'#fffefa';ctx.fillRect(cx,ry,DAY_W,rh);
+      const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
+      const shiftId=getCellShiftId(rawVal),shift=shiftId?shm[shiftId]:null;
+      if(shift){
+        const isTime=shift.kind==='time';
+        ctx.font='700 13px "DM Mono",monospace';
+        const tw=ctx.measureText(shift.code).width;
+        const chipW=tw+(isTime?28:20), chipH=isTime?28:26;
+        const chipX=cx+(DAY_W-chipW)/2, chipY=ry+(rh-chipH)/2;
+        ctx.fillStyle=shift.color;
+        rrect(chipX,chipY,chipW,chipH,isTime?14:6);ctx.fill();
+        ctx.fillStyle=contrastText(shift.color);ctx.textAlign='center';
+        ctx.fillText(shift.code,cx+DAY_W/2,chipY+chipH/2);
+      }else{
+        ctx.font='400 16px "Nunito Sans",sans-serif';ctx.fillStyle='#c9c4b8';ctx.textAlign='center';
+        ctx.fillText('—',cx+DAY_W/2,ry+rh/2);
+      }
+    });
+    ry+=rh;
+  });
+
+  // ---- Grade (linhas da tabela) ----
+  ctx.strokeStyle='#ddd8cc';ctx.lineWidth=1;
+  // horizontais
+  let gy=tableY;
+  ctx.beginPath();ctx.moveTo(tableX,gy);ctx.lineTo(tableX+tableW,gy);ctx.stroke();
+  gy=tableY+HEAD_H;ctx.beginPath();ctx.moveTo(tableX,gy);ctx.lineTo(tableX+tableW,gy);ctx.stroke();
+  rowHeights.forEach(rh=>{gy+=rh;ctx.beginPath();ctx.moveTo(tableX,gy);ctx.lineTo(tableX+tableW,gy);ctx.stroke()});
+  // verticais
+  for(let i=0;i<=cols+1;i++){const vx=i===0?tableX:tableX+NAME_W+DAY_W*(i-1);ctx.beginPath();ctx.moveTo(vx,tableY);ctx.lineTo(vx,tableY+HEAD_H+tableBodyH);ctx.stroke()}
+
+  // ---- Rodape ----
+  ctx.font='400 11px "Nunito Sans",sans-serif';ctx.fillStyle='#a89f8c';ctx.textAlign='right';
+  ctx.fillText('Escala Operacional · Complexo de Lazer',W-PAD,H-PAD-4);
+
+  // ---- Download ----
+  canvas.toBlob(blob=>{
+    if(!blob){alert('Erro ao gerar imagem.');return}
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='escala_'+sector.name.replace(/[^a-zA-Z0-9]/g,'_')+'_'+fmtDate(state.weekStart)+'.png';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  },'image/png');
+  logAction('Escala exportada',sector.name+' · '+rangeLabel);
+}
+
 
 // ===================== CELL PICKER =====================
 function openCellPicker(ds,empId){
