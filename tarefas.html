@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tarefas · Lazer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Firebase (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+:root{
+  --bg:#eef3f2; --surface:#ffffff; --surface-2:#f6f9f8; --line:#dde6e4;
+  --ink:#142624; --muted:#647a77; --muted-2:#90a3a0;
+  --primary:#0e6e6e; --primary-deep:#0a4f4f; --primary-soft:#dbeceb;
+  --accent:#e8744f; --accent-soft:#fbe6dd;
+  --ok:#2f9e6b; --ok-soft:#dcf0e6;
+  --warn:#d98a1f;
+  --simples:#3fa66a; --media:#dca227; --dificil:#d9543b;
+  --radius:14px; --radius-sm:10px;
+  --shadow:0 1px 2px rgba(16,40,38,.06),0 6px 20px -8px rgba(16,40,38,.18);
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.45}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:16px}
+.hidden{display:none !important}
+
+/* ---------- Layout ---------- */
+.app{max-width:760px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column}
+header.bar{position:sticky;top:0;z-index:20;background:var(--primary-deep);color:#eafcfb;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 0;box-shadow:var(--shadow)}
+.bar-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:10px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:18px}
+.brand .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#34c0b6,#0e6e6e);
+  display:grid;place-items:center;font-size:13px}
+.who{font-size:12.5px;color:#bfe6e3;text-align:right;line-height:1.25}
+.who b{color:#eafcfb;font-weight:600}
+.iconbtn{background:rgba(255,255,255,.12);border:0;color:#eafcfb;border-radius:9px;padding:7px 10px;font-size:13px;font-weight:600}
+.tabs{display:flex;gap:4px}
+.tab{flex:0 0 auto;background:transparent;border:0;color:#a9dad6;padding:11px 14px;font-weight:600;font-size:14px;
+  border-bottom:3px solid transparent;border-radius:8px 8px 0 0}
+.tab.active{color:#fff;border-bottom-color:var(--accent)}
+main{flex:1;padding:18px 16px 90px}
+
+/* ---------- Generic ---------- */
+.section-title{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  margin:22px 2px 10px;display:flex;align-items:center;gap:8px}
+.section-title:first-child{margin-top:4px}
+.count-pill{background:var(--surface);border:1px solid var(--line);color:var(--muted);border-radius:999px;
+  font-size:11px;padding:1px 8px;font-weight:700;letter-spacing:0}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius);padding:22px 18px;
+  text-align:center;color:var(--muted);font-size:14px}
+.empty b{color:var(--ink);display:block;margin-bottom:3px;font-size:15px}
+
+/* ---------- Task card ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  margin-bottom:12px;overflow:hidden;position:relative}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--muted-2)}
+.card.d-simples::before{background:var(--simples)}
+.card.d-media::before{background:var(--media)}
+.card.d-dificil::before{background:var(--dificil)}
+.card.late::before{background:var(--accent)}
+.card-body{padding:14px 16px 14px 18px}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.card h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.01em}
+.card .desc{color:var(--muted);font-size:13.5px;margin:5px 0 0}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.chip{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--surface-2);
+  border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.chip.sector{background:var(--primary-soft);border-color:transparent;color:var(--primary-deep)}
+.chip.r{background:#ecebfb;border-color:transparent;color:#4a45a8}
+.chip.time{background:#eef6ff;border-color:transparent;color:#2b6cb0}
+.chip.simples{background:var(--ok-soft);border-color:transparent;color:#1d7a4f}
+.chip.media{background:#fbf0d8;border-color:transparent;color:#9a6a12}
+.chip.dificil{background:#fbe1dc;border-color:transparent;color:#a8341f}
+.chip.late{background:var(--accent-soft);border-color:transparent;color:#b24722}
+.chip.transferred{background:#fff4e6;border-color:transparent;color:#a8651a}
+.status{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.status.pendente{background:var(--surface-2);color:var(--muted)}
+.status.em_andamento{background:#e7f0ff;color:#2b6cb0}
+.status.concluida{background:var(--ok-soft);color:#1d7a4f}
+.status.adiada{background:#f0ecff;color:#6a5acd}
+.assignee{font-size:13px;color:var(--muted);margin-top:9px}
+.assignee b{color:var(--ink);font-weight:600}
+
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;
+  padding:9px 14px;font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;gap:6px;transition:.12s}
+.btn:hover{border-color:var(--muted-2)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:var(--primary-deep)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.ok:hover{filter:brightness(.95)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:7px 11px;font-size:12.5px}
+.btn.full{width:100%;justify-content:center}
+.btn.danger{color:#b8311a;border-color:#f0c8c0}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- Login ---------- */
+.login-wrap{min-height:100dvh;display:grid;place-items:center;padding:24px;
+  background:radial-gradient(120% 80% at 50% 0%,#0e6e6e 0%,#0a4f4f 55%,#073c3c 100%)}
+.login{width:100%;max-width:380px;background:var(--surface);border-radius:20px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);
+  padding:30px 26px}
+.login .logo{width:54px;height:54px;border-radius:15px;background:linear-gradient(135deg,#34c0b6,#0e6e6e);
+  display:grid;place-items:center;font-size:26px;margin-bottom:16px}
+.login h1{margin:0;font-size:22px;letter-spacing:-.02em}
+.login p.sub{margin:4px 0 22px;color:var(--muted);font-size:14px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;padding:12px 13px;border:1px solid var(--line);
+  border-radius:11px;background:var(--surface-2);outline:none;transition:.12s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);background:#fff;
+  box-shadow:0 0 0 3px var(--primary-soft)}
+.field textarea{min-height:74px;resize:vertical}
+.login .btn.primary{width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:6px}
+.error-msg{background:var(--accent-soft);color:#a8341f;border-radius:10px;padding:10px 12px;font-size:13px;
+  font-weight:500;margin-bottom:14px}
+
+/* ---------- Modal ---------- */
+.overlay{position:fixed;inset:0;background:rgba(10,30,28,.55);backdrop-filter:blur(2px);z-index:60;
+  display:grid;place-items:end center;padding:0}
+.sheet{background:var(--surface);width:100%;max-width:760px;max-height:92dvh;overflow:auto;
+  border-radius:20px 20px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 22px);
+  animation:slideUp .22s ease}
+@keyframes slideUp{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.sheet-head h2{margin:0;font-size:19px;letter-spacing:-.01em}
+.x{background:var(--surface-2);border:0;width:34px;height:34px;border-radius:9px;font-size:18px;color:var(--muted)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;
+  padding:10px;font-weight:600;font-size:13px;color:var(--muted)}
+.seg button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.seg.diff button.on[data-v=simples]{background:var(--simples);border-color:var(--simples)}
+.seg.diff button.on[data-v=media]{background:var(--media);border-color:var(--media)}
+.seg.diff button.on[data-v=dificil]{background:var(--dificil);border-color:var(--dificil)}
+
+/* responsibles picker */
+.resp-list{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+.resp-item{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:10px;padding:8px 8px 8px 11px}
+.resp-item .rlevel{background:#ecebfb;color:#4a45a8;font-weight:700;font-size:12px;border-radius:7px;
+  padding:2px 8px;flex:0 0 auto}
+.resp-item .rname{flex:1;font-size:14px;font-weight:500}
+.resp-item .ord{display:flex;flex-direction:column;gap:2px}
+.miniicon{background:#fff;border:1px solid var(--line);border-radius:7px;width:30px;height:26px;
+  display:grid;place-items:center;font-size:13px;color:var(--muted);padding:0}
+.miniicon.rm{color:#b8311a}
+.add-resp{display:flex;gap:8px;margin-top:8px}
+.add-resp select{flex:1}
+.note{font-size:12px;color:var(--muted);margin-top:7px}
+
+/* admin task list */
+.tcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:13px 15px;margin-bottom:10px}
+.tcard-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.tcard h3{margin:0;font-size:15.5px;font-weight:700}
+.tcard .small{font-size:12.5px;color:var(--muted);margin-top:3px}
+.tcard .actions{margin-top:10px}
+.fab{position:fixed;right:max(16px,calc(50% - 380px + 16px));bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  background:var(--primary);color:#fff;border:0;border-radius:16px;padding:14px 18px;font-weight:700;font-size:15px;
+  box-shadow:0 10px 24px -6px rgba(14,110,110,.6);z-index:30;display:flex;align-items:center;gap:8px}
+
+/* diagnostics */
+.diag{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.diag h4{margin:0 0 8px;font-size:14px}
+table.diag-t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.diag-t th,table.diag-t td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.tag-ok{color:#1d7a4f;font-weight:700}
+.tag-no{color:#b24722;font-weight:700}
+.kv{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px}
+.kv span{color:var(--muted)} .kv b{color:var(--ink)}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);
+  color:#fff;padding:11px 18px;border-radius:12px;font-size:14px;font-weight:500;z-index:90;opacity:0;
+  transition:.25s;box-shadow:var(--shadow);max-width:90vw}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.loading{padding:60px 20px;text-align:center;color:var(--muted)}
+.spinner{width:30px;height:30px;border:3px solid var(--primary-soft);border-top-color:var(--primary);
+  border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginScreen" class="login-wrap">
+  <div class="login">
+    <div class="logo">🧹</div>
+    <h1>Tarefas do Lazer</h1>
+    <p class="sub">Entre com seu usuário da escala.</p>
+    <div id="loginError" class="error-msg hidden"></div>
+    <div class="field">
+      <label for="lgUser">Usuário</label>
+      <input id="lgUser" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="seu.usuario">
+    </div>
+    <div class="field">
+      <label for="lgPass">Senha</label>
+      <input id="lgPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="btn primary" id="lgBtn">Entrar</button>
+    <p class="note" id="lgStatus" style="text-align:center;margin-top:14px">Conectando ao banco…</p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appScreen" class="app hidden">
+  <header class="bar">
+    <div class="bar-top">
+      <div class="brand"><span class="dot">🧹</span> Tarefas</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="who" id="whoBox"></div>
+        <button class="iconbtn" id="logoutBtn">Sair</button>
+      </div>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-view="mine">Minhas tarefas</button>
+      <button class="tab hidden" data-view="admin" id="tabAdmin">Gestão</button>
+      <button class="tab hidden" data-view="diag" id="tabDiag">Diagnóstico</button>
+    </div>
+  </header>
+  <main id="main"><div class="loading"><div class="spinner"></div>Carregando…</div></main>
+</div>
+
+<button id="fab" class="fab hidden" data-act="new-task">＋ Nova tarefa</button>
+<div id="modalRoot"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+"use strict";
+
+/* ===================================================================
+   1) CONFIG DO FIREBASE
+   Use a MESMA config do seu escala.html. Para o Realtime Database o
+   campo essencial é databaseURL; os outros podem ficar como estão.
+   =================================================================== */
+const firebaseConfig = {
+  apiKey: "",                                   // cole a do escala.html se houver
+  authDomain: "escala-fb8b7.firebaseapp.com",
+  databaseURL: "https://escala-fb8b7-default-rtdb.firebaseio.com",
+  projectId: "escala-fb8b7"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const dbRef = p => db.ref(p);
+
+/* Caminhos */
+const PATH = {
+  escala: "escala_lazer/data",   // somente leitura
+  users:  "escala_users",        // login
+  tarefas:"escala_tarefas"       // leitura+escrita (novo)
+};
+
+/* ===================================================================
+   2) ADAPTADOR DE SCHEMA  ← AJUSTE AQUI se algum campo tiver outro nome
+   Tudo que depende do formato exato da sua escala vive neste bloco.
+   =================================================================== */
+const SCHEMA = {
+  // possíveis nomes de campos dentro de um shiftType / célula de escala
+  startTimeFields: ["startTime","start","inicio","horaInicio","entrada","horarioInicio"],
+  endTimeFields:   ["endTime","end","fim","horaFim","saida","horarioFim"],
+  nameFields:      ["name","nome","label","abbr","sigla","title"],
+  // referência ao tipo de turno dentro de uma célula de escala (quando é objeto)
+  shiftRefFields:  ["shiftTypeId","shiftType","shiftId","type","tipo","turno","shift"],
+  // nomes de empregado
+  employeeNameFields: ["name","nome","label","fullName"],
+  // nomes que representam AUSÊNCIA (folga/férias/falta/afastado etc.)
+  absenceNames: ["folga","feria","ferias","falta","afastad","atestado","licenc","ausente","off","f","dispensa"],
+  // flags booleanas que marcam ausência numa célula/shiftType
+  absenceFlagFields: ["isAbsence","absence","folga","ausencia","off"]
+};
+
+const LOOKBACK_DAYS = 30;       // quantos dias para trás materializar/cobrar atrasos
+const WEEKDAYS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+
+/* ===================================================================
+   3) ESTADO
+   =================================================================== */
+let ESCALA = null;              // /escala_lazer/data
+let USERS  = null;              // /escala_users (carregado no login)
+let TASKS  = {};                // /escala_tarefas/tasks
+let INSTANCES = {};             // /escala_tarefas/instances
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false };
+let materializing = false;
+
+/* ===================================================================
+   4) UTILIDADES
+   =================================================================== */
+function $(s,r=document){return r.querySelector(s)}
+function el(tag,attrs={},html){const e=document.createElement(tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(html!=null)e.innerHTML=html;return e}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function norm(s){return String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
+function genId(p){return p+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+let toastT;
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200)}
+
+/* datas em chave YYYY-MM-DD (local) */
+function dateKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),a=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${a}`}
+function todayKey(){return dateKey(new Date())}
+function parseKey(k){const[y,m,d]=String(k).split("-").map(Number);return new Date(y,m-1,d)}
+function addDays(k,n){const d=parseKey(k);d.setDate(d.getDate()+n);return dateKey(d)}
+function weekdayOf(k){return parseKey(k).getDay()}
+function maxKey(a,b){return a>=b?a:b}
+function fmtDate(k){const d=parseKey(k);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"short"})}
+
+/* horários "HH:MM" → minutos */
+function timeToMin(t){if(t==null||t==="")return null;const m=String(t).match(/(\d{1,2}):(\d{2})/);return m?(+m[1])*60+(+m[2]):null}
+function withinShift(taskT,startT,endT){
+  const tt=timeToMin(taskT),s=timeToMin(startT),e=timeToMin(endT);
+  if(s==null||e==null)return false;          // sem faixa de turno → não dá pra validar
+  if(tt==null)return true;                    // tarefa sem horário → condição não se aplica
+  if(e>=s)return tt>=s&&tt<=e;                 // turno normal
+  return tt>=s||tt<=e;                         // turno que vira a meia-noite
+}
+
+/* SHA-256 hex (Web Crypto) */
+async function sha256Hex(str){
+  const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+/* normaliza map OU array do Firebase → array de objetos com id/_key */
+function toArray(coll){
+  if(!coll)return [];
+  if(Array.isArray(coll))return coll.map((v,i)=>v&&typeof v==="object"?{id:v.id!=null?v.id:String(i),_key:String(i),...v}:{id:String(i),_key:String(i),value:v}).filter(x=>x.value!==undefined||x.id!=null);
+  return Object.entries(coll).map(([k,v])=>v&&typeof v==="object"?{id:v.id!=null?v.id:k,_key:k,...v}:{id:k,_key:k,value:v});
+}
+function pick(o,fields){if(!o||typeof o!=="object")return null;for(const f of fields)if(o[f]!=null&&o[f]!=="")return o[f];return null}
+
+/* ===================================================================
+   5) ACESSO À ESCALA  (presença / elegibilidade)
+   =================================================================== */
+function employees(){return toArray(ESCALA&&ESCALA.employees)}
+function sectors(){return toArray(ESCALA&&ESCALA.sectors)}
+function shiftTypes(){return toArray(ESCALA&&ESCALA.shiftTypes)}
+
+function empName(emp){return emp?(pick(emp,SCHEMA.employeeNameFields)||emp._key||emp.id):"—"}
+function employeeById(id){if(id==null)return null;const s=String(id);return employees().find(e=>String(e.id)===s||String(e._key)===s)||null}
+function sectorName(id){const s=sectors().find(x=>String(x.id)===String(id)||String(x._key)===String(id));return s?(pick(s,SCHEMA.nameFields)||s._key):(id||"—")}
+
+function findShiftType(ref){
+  if(ref==null)return null;const r=norm(ref);const arr=shiftTypes();
+  return arr.find(s=>norm(s.id)===r||norm(s._key)===r)
+      || arr.find(s=>{const n=pick(s,SCHEMA.nameFields);return n&&norm(n)===r})||null;
+}
+function isAbsenceName(label){if(!label)return false;const n=norm(label);return SCHEMA.absenceNames.some(a=>n===a||n.startsWith(a))}
+
+/* célula bruta da escala para um empregado num dia (tenta as duas orientações) */
+function scheduleCell(emp,dKey){
+  const sch=ESCALA&&ESCALA.schedule;if(!sch||!emp)return undefined;
+  const ids=[emp._key,emp.id].filter(v=>v!=null).map(String);
+  for(const id of ids){
+    if(sch[id]&&Object.prototype.hasOwnProperty.call(sch[id],dKey))return sch[id][dKey];
+  }
+  if(sch[dKey]){
+    for(const id of ids)if(Object.prototype.hasOwnProperty.call(sch[dKey],id))return sch[dKey][id];
+  }
+  return undefined;
+}
+
+/* presença + faixa de horário de um empregado num dia */
+function presenceFor(emp,dKey){
+  const cell=scheduleCell(emp,dKey);
+  if(cell==null||cell===""||cell===false)return {present:false,label:null,start:null,end:null};
+  let start=null,end=null,label=null,absence=false;
+  if(typeof cell==="object"){
+    label=pick(cell,SCHEMA.nameFields);
+    start=pick(cell,SCHEMA.startTimeFields);
+    end  =pick(cell,SCHEMA.endTimeFields);
+    if(SCHEMA.absenceFlagFields.some(f=>cell[f]===true))absence=true;
+    const ref=pick(cell,SCHEMA.shiftRefFields);
+    if((start==null||end==null)&&ref!=null){
+      const st=findShiftType(ref);
+      if(st){start=start||pick(st,SCHEMA.startTimeFields);end=end||pick(st,SCHEMA.endTimeFields);label=label||pick(st,SCHEMA.nameFields)}
+      if(!st&&isAbsenceName(ref))absence=true;
+      label=label||ref;
+    }
+  }else{
+    const st=findShiftType(cell);
+    if(st){start=pick(st,SCHEMA.startTimeFields);end=pick(st,SCHEMA.endTimeFields);label=pick(st,SCHEMA.nameFields)||String(cell)}
+    else{label=String(cell)}
+  }
+  if(isAbsenceName(label))absence=true;
+  const hasTimes=timeToMin(start)!=null&&timeToMin(end)!=null;
+  return {present:!absence&&hasTimes,label,start,end,absence};
+}
+
+/* elegibilidade de um empregado para uma tarefa num dia */
+function eligibility(emp,dKey,taskStart){
+  const p=presenceFor(emp,dKey);
+  if(!p.present)return {ok:false,reason:p.absence?"ausente":"sem turno",p};
+  if(taskStart&&!withinShift(taskStart,p.start,p.end))return {ok:false,reason:"fora do turno",p};
+  return {ok:true,reason:"ok",p};
+}
+
+/* fila: primeiro R presente/elegível */
+function computeAssignee(task,dKey){
+  for(const id of (task.responsibles||[])){
+    const emp=employeeById(id);if(!emp)continue;
+    if(eligibility(emp,dKey,task.startTime).ok)return id;
+  }
+  return null;
+}
+
+/* a tarefa ocorre nesse dia? */
+function occursOn(task,dKey){
+  if(task.active===false)return false;
+  if(task.createdDate&&dKey<task.createdDate)return false;
+  const rec=task.recurrence||{type:"daily"};
+  if(rec.type==="daily")return true;
+  if(rec.type==="weekly")return weekdayOf(dKey)===Number(rec.weekday);
+  return false;
+}
+
+/* ===================================================================
+   6) MATERIALIZAÇÃO  (cria instâncias do dia / cobra atrasos)
+   =================================================================== */
+function materialize(){
+  if(materializing||!ESCALA||!state.user)return;
+  materializing=true;
+  const today=todayKey();
+  const floor=addDays(today,-LOOKBACK_DAYS);
+  const updates={};
+  for(const tid in TASKS){
+    const task=TASKS[tid];if(!task||task.active===false)continue;
+    let d=maxKey(floor,task.createdDate||floor);
+    while(d<=today){
+      if(occursOn(task,d)){
+        const iid=`${tid}__${d}`;
+        if(!INSTANCES[iid]){
+          updates[`instances/${iid}`]={taskId:tid,date:d,occurrenceDate:d,
+            assignedTo:computeAssignee(task,d),autoAssigned:true,status:"pendente",createdAt:Date.now()};
+        }
+      }
+      d=addDays(d,1);
+    }
+  }
+  // recalcula a fila SÓ das instâncias automáticas de hoje ainda pendentes
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins)continue;
+    if(ins.date===today&&ins.autoAssigned&&ins.status==="pendente"){
+      const task=TASKS[ins.taskId];if(!task)continue;
+      const should=computeAssignee(task,today);
+      if((should||null)!==(ins.assignedTo||null))updates[`instances/${iid}/assignedTo`]=should;
+    }
+  }
+  if(Object.keys(updates).length){
+    dbRef(PATH.tarefas).update(updates).catch(e=>console.warn("materialize",e)).finally(()=>{materializing=false});
+  }else{materializing=false}
+}
+
+/* instâncias do empregado logado */
+function myInstances(){
+  const me=state.emp;if(!me)return {today:[],late:[],coresp:[]};
+  const today=todayKey();const myIds=[me._key,me.id].filter(v=>v!=null).map(String);
+  const mine=id=>myIds.includes(String(id));
+  const todayArr=[],lateArr=[],coresp=[];
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins)continue;const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
+    if(mine(ins.assignedTo)){
+      if(ins.status==="concluida"||ins.status==="adiada")continue;
+      if(ins.date===today)todayArr.push({iid,ins,task});
+      else if(ins.date<today)lateArr.push({iid,ins,task});
+    }
+  }
+  // co-responsável: tarefas de hoje onde estou na lista mas não sou o responsável ativo
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||ins.date!==today)continue;const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
+    const idx=(task.responsibles||[]).findIndex(mine);
+    if(idx>=0&&!mine(ins.assignedTo)&&ins.status!=="adiada")coresp.push({iid,ins,task,rlevel:idx+1});
+  }
+  const ord=(a,b)=>(timeToMin(a.task.startTime)??1e9)-(timeToMin(b.task.startTime)??1e9);
+  todayArr.sort(ord);lateArr.sort((a,b)=>a.ins.date<b.ins.date?-1:1);
+  return {today:todayArr,late:lateArr,coresp};
+}
+
+/* ===================================================================
+   7) AÇÕES sobre instâncias
+   =================================================================== */
+function canAct(ins){
+  if(state.admin)return true;
+  const me=state.emp;if(!me)return false;
+  return [me._key,me.id].map(String).includes(String(ins.assignedTo));
+}
+function pushHistory(iid,entry){
+  const ins=INSTANCES[iid];const hist=Array.isArray(ins.history)?ins.history.slice():[];
+  hist.push({...entry,by:state.user.username,at:Date.now()});
+  return hist;
+}
+function startTask(iid){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"em_andamento",startedAt:Date.now(),history:pushHistory(iid,{type:"iniciada"})});
+  toast("Tarefa iniciada");
+}
+function completeTask(iid){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"concluida",completedAt:Date.now(),history:pushHistory(iid,{type:"concluida"})});
+  toast("Tarefa concluída ✓");
+}
+function transferToR(iid,toEmpId){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({assignedTo:String(toEmpId),autoAssigned:false,
+    history:pushHistory(iid,{type:"transferida",to:String(toEmpId)})});
+  closeModal();toast("Transferida para "+empName(employeeById(toEmpId)));
+}
+function postpone(iid,toDate){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  const task=TASKS[ins.taskId];const newIid=`${ins.taskId}__${toDate}`;
+  const updates={};
+  updates[`instances/${iid}/status`]="adiada";
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"adiada",to:toDate});
+  if(!INSTANCES[newIid]){
+    updates[`instances/${newIid}`]={taskId:ins.taskId,date:toDate,occurrenceDate:ins.occurrenceDate,
+      assignedTo:computeAssignee(task,toDate),autoAssigned:true,status:"pendente",createdAt:Date.now(),
+      history:[{type:"recebida-adiamento",from:ins.date,by:state.user.username,at:Date.now()}]};
+  }
+  dbRef(PATH.tarefas).update(updates);
+  closeModal();toast("Adiada para "+fmtDate(toDate));
+}
+
+/* ===================================================================
+   8) ADMIN: criar / editar / excluir tarefa
+   =================================================================== */
+function saveTask(data,id){
+  const tid=id||genId("t");
+  const payload={
+    title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
+    difficulty:data.difficulty,startTime:data.startTime||null,responsibles:data.responsibles,
+    recurrence:data.recurrence,active:true,
+    createdDate:data.createdDate||todayKey(),createdBy:data.createdBy||state.user.username,updatedAt:Date.now()
+  };
+  return dbRef(`${PATH.tarefas}/tasks/${tid}`).set(payload).then(()=>{closeModal();toast(id?"Tarefa atualizada":"Tarefa criada")});
+}
+function deleteTask(tid){
+  if(!confirm("Excluir esta tarefa? As ocorrências futuras deixam de aparecer."))return;
+  // marca inativa (preserva histórico). Para apagar de vez, troque por .remove()
+  dbRef(`${PATH.tarefas}/tasks/${tid}`).update({active:false,updatedAt:Date.now()}).then(()=>toast("Tarefa removida"));
+}
+function recalcQueue(){
+  materializing=false;materialize();toast("Fila recalculada");
+}
+
+/* ===================================================================
+   9) AUTENTICAÇÃO
+   =================================================================== */
+function isAdminUser(u){
+  if(!u)return false;const p=u.perms;
+  if(p===true)return true;
+  if(typeof p==="string"&&/admin|gestor|gerente|coorden|manage/i.test(p))return true;
+  if(Array.isArray(p)&&p.some(x=>/admin|gestor|gerente|coorden|manage/i.test(String(x))))return true;
+  if(p&&typeof p==="object"&&(p.admin||p.gestor||p.isAdmin||p.manageTasks||p.tarefas||p.editarTarefas))return true;
+  if(/gestor|gerente|coorden|admin|superv/i.test(norm(u.funcao)))return true;
+  return false;
+}
+function resolveEmp(u){
+  const emps=employees();
+  for(const f of ["employeeId","empId","colaboradorId"])if(u[f]!=null){const e=emps.find(e=>String(e.id)===String(u[f])||String(e._key)===String(u[f]));if(e)return e}
+  let e=emps.find(e=>norm(empName(e))===norm(u.name));if(e)return e;
+  e=emps.find(e=>norm(e.username||e.user)===norm(u.username));if(e)return e;
+  e=emps.find(e=>norm(empName(e))===norm(u.username));return e||null;
+}
+async function doLogin(){
+  const user=$("#lgUser").value.trim(),pass=$("#lgPass").value;
+  const errBox=$("#loginError");errBox.classList.add("hidden");
+  if(!user||!pass){errBox.textContent="Preencha usuário e senha.";errBox.classList.remove("hidden");return}
+  if(!USERS){errBox.textContent="Ainda conectando ao banco. Tente de novo em instantes.";errBox.classList.remove("hidden");return}
+  const list=toArray(USERS);
+  const u=list.find(x=>norm(x.username)===norm(user))||list.find(x=>norm(x._key)===norm(user));
+  if(!u){errBox.textContent="Usuário não encontrado.";errBox.classList.remove("hidden");return}
+  const hash=await sha256Hex(pass);
+  if(norm(u.passwordHash)!==norm(hash)){errBox.textContent="Senha incorreta.";errBox.classList.remove("hidden");return}
+  enterApp(u);
+}
+function enterApp(u){
+  state.user={username:u.username||u._key,name:u.name||u.username||u._key,funcao:u.funcao||"",perms:u.perms,sectors:u.sectors};
+  state.admin=isAdminUser(u);
+  state.emp=resolveEmp(state.user);
+  try{localStorage.setItem("tarefas_session",JSON.stringify({username:state.user.username}))}catch(e){}
+  $("#loginScreen").classList.add("hidden");
+  $("#appScreen").classList.remove("hidden");
+  $("#tabAdmin").classList.toggle("hidden",!state.admin);
+  $("#tabDiag").classList.toggle("hidden",!state.admin);
+  renderWho();
+  state.view="mine";setActiveTab();
+  state.ready=true;
+  materialize();render();
+}
+function logout(){
+  try{localStorage.removeItem("tarefas_session")}catch(e){}
+  state={user:null,emp:null,admin:false,view:"mine",ready:false};
+  $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
+  $("#loginScreen").classList.remove("hidden");$("#lgPass").value="";
+}
+function renderWho(){
+  const sec=state.emp?(pick(state.emp,["sectorId","setorId","sector","setor"])):null;
+  $("#whoBox").innerHTML=`<b>${esc(state.user.name)}</b><br>${esc(state.user.funcao||(state.admin?"Gestor":"Colaborador"))}`;
+}
+
+/* ===================================================================
+   10) RENDER
+   =================================================================== */
+function setActiveTab(){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.view===state.view));
+  $("#fab").classList.toggle("hidden",!(state.admin&&state.view==="admin"));
+}
+function render(){
+  if(!state.ready)return;
+  const m=$("#main");
+  if(!ESCALA){m.innerHTML='<div class="loading"><div class="spinner"></div>Carregando escala…</div>';return}
+  if(state.view==="mine")m.innerHTML=viewMine();
+  else if(state.view==="admin")m.innerHTML=viewAdmin();
+  else if(state.view==="diag")m.innerHTML=viewDiag();
+}
+
+function diffChip(d){const map={simples:"Simples",media:"Média",dificil:"Difícil"};return `<span class="chip ${d}">${map[d]||d}</span>`}
+function statusBadge(s){const map={pendente:"Pendente",em_andamento:"Em andamento",concluida:"Concluída",adiada:"Adiada"};return `<span class="status ${s}">${map[s]||s}</span>`}
+
+function taskCardMine({iid,ins,task},opts={}){
+  const late=ins.date<todayKey()&&ins.status!=="concluida";
+  const myIdx=(task.responsibles||[]).findIndex(id=>[state.emp._key,state.emp.id].map(String).includes(String(id)));
+  const cls=["card","d-"+task.difficulty];if(late)cls.push("late");
+  let meta=`<span class="chip sector">${esc(sectorName(task.sectorId))}</span>${diffChip(task.difficulty)}`;
+  if(task.startTime)meta+=`<span class="chip time">🕐 ${esc(task.startTime)}</span>`;
+  if(myIdx>=0)meta+=`<span class="chip r">R${myIdx+1}</span>`;
+  if(ins.autoAssigned===false)meta+=`<span class="chip transferred">Recebida</span>`;
+  if(late)meta+=`<span class="chip late">Atrasada · ${fmtDate(ins.date)}</span>`;
+  let actions="";
+  if(opts.coresp){
+    actions=`<div class="assignee">Responsável hoje: <b>${esc(empName(employeeById(ins.assignedTo)))||"—"}</b></div>`;
+  }else{
+    actions='<div class="actions">';
+    if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">Iniciar</button>`;
+    if(ins.status!=="concluida")actions+=`<button class="btn ok sm" data-act="complete" data-iid="${iid}">Concluir</button>`;
+    actions+=`<button class="btn ghost sm" data-act="transfer" data-iid="${iid}">Transferir</button>`;
+    actions+="</div>";
+  }
+  return `<article class="${cls.join(" ")}"><div class="card-body">
+    <div class="card-head"><h3>${esc(task.title)}</h3>${statusBadge(ins.status)}</div>
+    ${task.description?`<p class="desc">${esc(task.description)}</p>`:""}
+    <div class="meta">${meta}</div>
+    ${actions}
+  </div></article>`;
+}
+
+function viewMine(){
+  if(!state.emp){
+    return `<div class="empty"><b>Não encontramos seu cadastro de colaborador na escala.</b>
+      Seu usuário (<b>${esc(state.user.username)}</b>) não casou com nenhum funcionário. Peça ao gestor para alinhar o nome,
+      ou ajuste o vínculo. ${state.admin?"Como gestor, você ainda pode criar e gerenciar tarefas na aba Gestão.":""}</div>`;
+  }
+  const {today,late,coresp}=myInstances();
+  let h="";
+  h+=`<div class="section-title">Hoje <span class="count-pill">${today.length}</span></div>`;
+  h+=today.length?today.map(t=>taskCardMine(t)).join(""):
+    `<div class="empty"><b>Sem tarefas para você hoje.</b>Aproveite — ou confira se há algo atrasado abaixo.</div>`;
+  if(late.length){
+    h+=`<div class="section-title">Atrasadas <span class="count-pill">${late.length}</span></div>`;
+    h+=late.map(t=>taskCardMine(t)).join("");
+  }
+  if(coresp.length){
+    h+=`<div class="section-title">Você é co-responsável <span class="count-pill">${coresp.length}</span></div>`;
+    h+=coresp.map(t=>taskCardMine(t,{coresp:true})).join("");
+  }
+  return h;
+}
+
+function viewAdmin(){
+  const list=Object.entries(TASKS).filter(([,t])=>t.active!==false);
+  const today=todayKey();
+  let pend=0,prog=0,done=0,unassigned=0;
+  for(const iid in INSTANCES){const ins=INSTANCES[iid];if(!ins||ins.date!==today)continue;const t=TASKS[ins.taskId];if(!t||t.active===false)continue;
+    if(ins.status==="concluida")done++;else if(ins.status==="em_andamento")prog++;else if(ins.status==="pendente"){pend++;if(!ins.assignedTo)unassigned++}}
+  let h=`<div class="diag"><div class="kv">
+    <span>Hoje:</span> <b>${pend}</b> <span>pendentes</span>
+    <b>${prog}</b> <span>em andamento</span>
+    <b>${done}</b> <span>concluídas</span>
+    ${unassigned?`<b style="color:var(--accent)">${unassigned}</b> <span>sem responsável elegível</span>`:""}
+  </div><div class="actions"><button class="btn sm" data-act="recalc">↻ Recalcular fila de hoje</button></div></div>`;
+  h+=`<div class="section-title">Tarefas <span class="count-pill">${list.length}</span></div>`;
+  if(!list.length)h+=`<div class="empty"><b>Nenhuma tarefa cadastrada.</b>Toque em “Nova tarefa” para começar.</div>`;
+  for(const [tid,t] of list){
+    const recur=t.recurrence&&t.recurrence.type==="weekly"?`Semanal · ${WEEKDAYS[t.recurrence.weekday]}`:"Diária";
+    const resp=(t.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
+    h+=`<div class="tcard"><div class="tcard-head"><div>
+      <h3>${esc(t.title)}</h3>
+      <div class="small">${esc(sectorName(t.sectorId))} · ${recur}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
+      <div class="small">${resp}</div>
+    </div>${diffChip(t.difficulty)}</div>
+    <div class="actions">
+      <button class="btn sm" data-act="edit-task" data-tid="${tid}">Editar</button>
+      <button class="btn sm danger" data-act="del-task" data-tid="${tid}">Excluir</button>
+    </div></div>`;
+  }
+  return h;
+}
+
+/* ---------- Diagnóstico (valida o adaptador de schema) ---------- */
+function viewDiag(){
+  const today=todayKey();
+  let h=`<div class="section-title">Como o app está lendo seus dados</div>`;
+  h+=`<div class="diag"><div class="kv">
+    <span>Setores:</span><b>${sectors().length}</b>
+    <span>Colaboradores:</span><b>${employees().length}</b>
+    <span>Tipos de turno:</span><b>${shiftTypes().length}</b>
+    <span>Usuários:</span><b>${toArray(USERS).length}</b>
+  </div><p class="note">Seu vínculo: usuário <b>${esc(state.user.username)}</b> → colaborador <b>${esc(state.emp?empName(state.emp):"NÃO ENCONTRADO")}</b></p></div>`;
+
+  h+=`<div class="diag"><h4>Tipos de turno detectados</h4><table class="diag-t"><tr><th>Nome</th><th>Início</th><th>Fim</th><th>Interpretação</th></tr>`;
+  for(const s of shiftTypes()){
+    const nm=pick(s,SCHEMA.nameFields)||s._key,st=pick(s,SCHEMA.startTimeFields),en=pick(s,SCHEMA.endTimeFields);
+    const abs=isAbsenceName(nm)||SCHEMA.absenceFlagFields.some(f=>s[f]===true);
+    const tag=abs?'<span class="tag-no">ausência</span>':(timeToMin(st)!=null&&timeToMin(en)!=null?'<span class="tag-ok">presença</span>':'<span class="tag-no">sem horário</span>');
+    h+=`<tr><td>${esc(nm)}</td><td>${esc(st||"—")}</td><td>${esc(en||"—")}</td><td>${tag}</td></tr>`;
+  }
+  h+=`</table><p class="note">Se algum turno de presença aparecer como “ausência/sem horário”, ajuste os campos no bloco SCHEMA do arquivo.</p></div>`;
+
+  h+=`<div class="diag"><h4>Presença hoje (${fmtDate(today)})</h4><table class="diag-t"><tr><th>Colaborador</th><th>Turno</th><th>Faixa</th><th>Status</th></tr>`;
+  for(const e of employees()){
+    const p=presenceFor(e,today);
+    const tag=p.present?'<span class="tag-ok">presente</span>':'<span class="tag-no">ausente</span>';
+    h+=`<tr><td>${esc(empName(e))}</td><td>${esc(p.label||"—")}</td><td>${esc((p.start||"—")+" – "+(p.end||"—"))}</td><td>${tag}</td></tr>`;
+  }
+  h+=`</table></div>`;
+  return h;
+}
+
+/* ===================================================================
+   11) MODAIS
+   =================================================================== */
+function closeModal(){$("#modalRoot").innerHTML=""}
+function openSheet(title,bodyHtml){
+  $("#modalRoot").innerHTML=`<div class="overlay" data-overlay><div class="sheet">
+    <div class="sheet-head"><h2>${esc(title)}</h2><button class="x" data-act="close">✕</button></div>
+    ${bodyHtml}</div></div>`;
+}
+
+/* ---- Form de tarefa (criar/editar) ---- */
+let formState=null;
+function openTaskForm(tid){
+  const t=tid?TASKS[tid]:null;
+  formState={
+    id:tid||null,
+    title:t?t.title:"",description:t?t.description:"",
+    sectorId:t?t.sectorId:(sectors()[0]?sectors()[0].id:""),
+    difficulty:t?t.difficulty:"media",startTime:t?(t.startTime||""):"",
+    responsibles:t?(t.responsibles||[]).slice():[],
+    recurrence:t?(t.recurrence||{type:"daily"}):{type:"daily"},
+    createdDate:t?t.createdDate:null,createdBy:t?t.createdBy:null
+  };
+  renderTaskForm();
+}
+function renderTaskForm(){
+  const f=formState;
+  const secOpts=sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(f.sectorId)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const respEmps=employees().filter(e=>!f.responsibles.map(String).includes(String(e.id))&&!f.responsibles.map(String).includes(String(e._key)));
+  const addOpts=respEmps.map(e=>`<option value="${esc(e._key!=null?e._key:e.id)}">${esc(empName(e))}</option>`).join("");
+  const respHtml=f.responsibles.length?f.responsibles.map((id,i)=>`
+    <div class="resp-item">
+      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
+      <div class="ord">
+        <button class="miniicon" data-act="resp-up" data-i="${i}" ${i===0?"disabled":""}>▲</button>
+        <button class="miniicon" data-act="resp-down" data-i="${i}" ${i===f.responsibles.length-1?"disabled":""}>▼</button>
+      </div>
+      <button class="miniicon rm" data-act="resp-rm" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
+  const wk=f.recurrence.type==="weekly";
+  const wkOpts=WEEKDAYS.map((d,i)=>`<option value="${i}" ${wk&&Number(f.recurrence.weekday)===i?"selected":""}>${d}</option>`).join("");
+
+  openSheet(f.id?"Editar tarefa":"Nova tarefa",`
+    <div class="field"><label>Título</label><input id="fTitle" value="${esc(f.title)}" placeholder="Ex.: Limpeza da piscina"></div>
+    <div class="field"><label>Descrição</label><textarea id="fDesc" placeholder="Detalhes da tarefa (opcional)">${esc(f.description)}</textarea></div>
+    <div class="row2">
+      <div class="field"><label>Setor</label><select id="fSector">${secOpts}</select></div>
+      <div class="field"><label>Horário de início (opcional)</label><input id="fTime" type="time" value="${esc(f.startTime||"")}"></div>
+    </div>
+    <div class="field"><label>Dificuldade</label>
+      <div class="seg diff" data-seg="difficulty">
+        <button type="button" data-v="simples" class="${f.difficulty==="simples"?"on":""}">Simples</button>
+        <button type="button" data-v="media" class="${f.difficulty==="media"?"on":""}">Média</button>
+        <button type="button" data-v="dificil" class="${f.difficulty==="dificil"?"on":""}">Difícil</button>
+      </div>
+    </div>
+    <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
+      <div class="resp-list">${respHtml}</div>
+      <div class="add-resp">
+        <select id="fAddResp"><option value="">＋ Adicionar responsável…</option>${addOpts}</select>
+        <button class="btn sm" data-act="resp-add">Adicionar</button>
+      </div>
+      <p class="note">A tarefa do dia vai para o R1; se ele estiver ausente ou fora do horário do turno, cai para o próximo R elegível.</p>
+    </div>
+    <div class="field"><label>Recorrência</label>
+      <div class="seg" data-seg="recurrence">
+        <button type="button" data-v="daily" class="${!wk?"on":""}">Diária</button>
+        <button type="button" data-v="weekly" class="${wk?"on":""}">Semanal</button>
+      </div>
+    </div>
+    <div class="field ${wk?"":"hidden"}" id="fWeekdayWrap"><label>Dia da semana</label><select id="fWeekday">${wkOpts}</select></div>
+    <button class="btn primary full" data-act="save-task">${f.id?"Salvar alterações":"Criar tarefa"}</button>
+  `);
+}
+function syncFormInputs(){
+  const f=formState;if(!f)return;
+  const t=$("#fTitle"),d=$("#fDesc"),s=$("#fSector"),tm=$("#fTime");
+  if(t)f.title=t.value;if(d)f.description=d.value;if(s)f.sectorId=s.value;if(tm)f.startTime=tm.value;
+  const wd=$("#fWeekday");if(wd&&f.recurrence.type==="weekly")f.recurrence.weekday=Number(wd.value);
+}
+
+/* ---- Transferir ---- */
+function openTransfer(iid){
+  const ins=INSTANCES[iid];const task=TASKS[ins.taskId];const today=todayKey();
+  const others=(task.responsibles||[]).filter(id=>String(id)!==String(ins.assignedTo));
+  const rows=others.map(id=>{
+    const emp=employeeById(id);if(!emp)return"";
+    const e=eligibility(emp,today,task.startTime);
+    const idx=(task.responsibles||[]).findIndex(x=>String(x)===String(id));
+    return `<div class="resp-item">
+      <span class="rlevel">R${idx+1}</span><span class="rname">${esc(empName(emp))}<br>
+        <small style="color:${e.ok?'var(--ok)':'var(--accent)'}">${e.ok?"elegível hoje":"indisponível ("+e.reason+")"}</small></span>
+      <button class="btn primary sm" data-act="do-transfer" data-iid="${iid}" data-to="${esc(id)}" ${e.ok?"":"disabled"}>Passar</button>
+    </div>`;
+  }).join("");
+  openSheet("Transferir tarefa",`
+    <p class="note" style="margin-bottom:12px"><b>${esc(task.title)}</b> — passe para outro responsável elegível ou adie para outro dia.</p>
+    <div class="section-title" style="margin-top:0">Outro responsável</div>
+    <div class="resp-list">${rows||'<p class="note">Esta tarefa não tem outros responsáveis cadastrados.</p>'}</div>
+    <div class="section-title">Adiar para outro dia</div>
+    <div class="add-resp">
+      <input id="postDate" type="date" min="${addDays(today,1)}" value="${addDays(today,1)}" style="flex:1;padding:11px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)">
+      <button class="btn sm" data-act="do-postpone" data-iid="${iid}">Adiar</button>
+    </div>
+  `);
+}
+
+/* ===================================================================
+   12) EVENTOS
+   =================================================================== */
+$("#lgBtn").addEventListener("click",doLogin);
+$("#lgPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
+$("#lgUser").addEventListener("keydown",e=>{if(e.key==="Enter")$("#lgPass").focus()});
+$("#logoutBtn").addEventListener("click",logout);
+$("#tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;state.view=t.dataset.view;setActiveTab();render()});
+
+document.addEventListener("click",e=>{
+  const a=e.target.closest("[data-act]");
+  if(e.target.closest("[data-overlay]")&&!e.target.closest(".sheet")){closeModal();return}
+  if(!a)return;
+  const act=a.dataset.act,iid=a.dataset.iid,tid=a.dataset.tid;
+  switch(act){
+    case"close":closeModal();break;
+    case"new-task":openTaskForm(null);break;
+    case"edit-task":openTaskForm(tid);break;
+    case"del-task":deleteTask(tid);break;
+    case"recalc":recalcQueue();break;
+    case"start":startTask(iid);break;
+    case"complete":completeTask(iid);break;
+    case"transfer":openTransfer(iid);break;
+    case"do-transfer":transferToR(iid,a.dataset.to);break;
+    case"do-postpone":{const d=$("#postDate").value;if(d)postpone(iid,d);break}
+    // form
+    case"resp-add":{const sel=$("#fAddResp");if(sel&&sel.value){syncFormInputs();formState.responsibles.push(sel.value);renderTaskForm()}break}
+    case"resp-rm":{syncFormInputs();formState.responsibles.splice(+a.dataset.i,1);renderTaskForm();break}
+    case"resp-up":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderTaskForm();break}
+    case"resp-down":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderTaskForm();break}
+    case"save-task":{
+      syncFormInputs();const f=formState;
+      if(!f.title.trim()){toast("Informe o título.");return}
+      if(!f.responsibles.length){toast("Adicione ao menos um responsável.");return}
+      saveTask(f,f.id);break;
+    }
+  }
+  // segmented controls
+  const seg=e.target.closest(".seg button");
+  if(seg&&formState){
+    const wrap=seg.closest("[data-seg]");const field=wrap.dataset.seg;const v=seg.dataset.v;
+    syncFormInputs();
+    if(field==="difficulty")formState.difficulty=v;
+    if(field==="recurrence"){formState.recurrence={type:v,weekday:v==="weekly"?(formState.recurrence.weekday??1):undefined}}
+    renderTaskForm();
+  }
+});
+
+/* ===================================================================
+   13) LISTENERS DE DADOS
+   =================================================================== */
+function afterData(){
+  if(state.ready){materialize();render();}
+}
+dbRef(PATH.escala).on("value",s=>{ESCALA=s.val()||{};afterData()},err=>{
+  $("#lgStatus").textContent="Erro ao ler a escala: "+err.code+". Verifique as regras do banco.";
+});
+dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};afterData()});
+
+/* carrega usuários para login */
+dbRef(PATH.users).once("value").then(s=>{
+  USERS=s.val()||{};
+  $("#lgStatus").textContent=toArray(USERS).length?"Pronto. Faça login.":"Nenhum usuário encontrado no banco.";
+}).catch(err=>{
+  $("#lgStatus").textContent="Erro ao conectar ("+err.code+"). Confira a config do Firebase e as regras do banco.";
+});
+</script>
+</body>
+</html>
