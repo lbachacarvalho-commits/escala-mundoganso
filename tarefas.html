@@ -9,8 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
 <!-- Firebase (compat) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>window.__fbFail=false;</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" onerror="window.__fbFail=true"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js" onerror="window.__fbFail=true"></script>
 
 <style>
 :root{
@@ -124,6 +125,10 @@ main{flex:1;padding:18px 16px 90px}
 .login .btn.primary{width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:6px}
 .error-msg{background:var(--accent-soft);color:#a8341f;border-radius:10px;padding:10px 12px;font-size:13px;
   font-weight:500;margin-bottom:14px}
+.linkbtn{display:block;width:100%;text-align:center;background:none;border:0;color:var(--primary);
+  font-size:13px;font-weight:600;margin-top:12px;padding:4px;text-decoration:underline}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--surface-2);
+  border:1px solid var(--line);border-radius:6px;padding:2px 6px;word-break:break-all}
 
 /* ---------- Modal ---------- */
 .overlay{position:fixed;inset:0;background:rgba(10,30,28,.55);backdrop-filter:blur(2px);z-index:60;
@@ -181,6 +186,20 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 .kv{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px}
 .kv span{color:var(--muted)} .kv b{color:var(--ink)}
 
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:2px 2px 6px}
+.filters select{flex:1;min-width:150px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface);font-size:13px;color:var(--ink);box-shadow:var(--shadow)}
+.filters .btn{flex:0 0 auto}
+.today-row{display:flex;align-items:center;gap:10px;background:var(--primary-soft);border-radius:11px;padding:9px 11px;margin-top:11px}
+.today-row.none{background:var(--accent-soft)}
+.today-row.muted{background:var(--surface-2);padding:8px 11px}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:grid;place-items:center;
+  font-weight:700;font-size:15px;flex:0 0 auto}
+.avatar.none{background:var(--accent)}
+.today-info{flex:1;display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.today-label{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--primary-deep);opacity:.85}
+.today-row.none .today-label{color:#b24722}
+.today-name{font-size:15px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);
   color:#fff;padding:11px 18px;border-radius:12px;font-size:14px;font-weight:500;z-index:90;opacity:0;
   transition:.25s;box-shadow:var(--shadow);max-width:90vw}
@@ -199,18 +218,19 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
   <div class="login">
     <div class="logo">🧹</div>
     <h1>Tarefas do Lazer</h1>
-    <p class="sub">Entre com seu usuário da escala.</p>
+    <p class="sub">Entre com seu CPF.</p>
     <div id="loginError" class="error-msg hidden"></div>
     <div class="field">
-      <label for="lgUser">Usuário</label>
-      <input id="lgUser" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="seu.usuario">
+      <label for="lgUser">CPF</label>
+      <input id="lgUser" inputmode="numeric" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="000.000.000-00">
     </div>
-    <div class="field">
-      <label for="lgPass">Senha</label>
-      <input id="lgPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    <div class="field hidden" id="pinField">
+      <label for="lgPass">Senha do gestor</label>
+      <input id="lgPass" type="password" autocomplete="off" placeholder="••••••">
     </div>
     <button class="btn primary" id="lgBtn">Entrar</button>
-    <p class="note" id="lgStatus" style="text-align:center;margin-top:14px">Conectando ao banco…</p>
+    <p class="note" id="hintGestor" style="text-align:center;margin-top:14px">É o gestor? Digite <b>gestor</b> no campo acima.</p>
+    <p class="note" id="lgStatus" style="text-align:center;margin-top:6px">Conectando ao banco…</p>
   </div>
 </div>
 
@@ -251,9 +271,13 @@ const firebaseConfig = {
   databaseURL: "https://escala-fb8b7-default-rtdb.firebaseio.com",
   projectId: "escala-fb8b7"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+const FB_OK = (typeof firebase !== "undefined") && !window.__fbFail;
+let db = null;
 const dbRef = p => db.ref(p);
+if (FB_OK) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+}
 
 /* Caminhos */
 const PATH = {
@@ -278,8 +302,15 @@ const SCHEMA = {
   // nomes que representam AUSÊNCIA (folga/férias/falta/afastado etc.)
   absenceNames: ["folga","feria","ferias","falta","afastad","atestado","licenc","ausente","off","f","dispensa"],
   // flags booleanas que marcam ausência numa célula/shiftType
-  absenceFlagFields: ["isAbsence","absence","folga","ausencia","off"]
+  absenceFlagFields: ["isAbsence","absence","folga","ausencia","off"],
+  // campo de CPF no cadastro de funcionário (login do colaborador)
+  cpfFields: ["cpf","CPF","documento","doc","cpfFuncionario","cpf_funcionario"]
 };
+
+/* Login do gestor: digite esta palavra no campo de CPF para entrar como gestor.
+   GESTOR_PIN vazio = sem senha (entra direto). Defina um PIN aqui para exigir senha. */
+const GESTOR_KEYWORD = "gestor";
+const GESTOR_PIN = "";
 
 const LOOKBACK_DAYS = 30;       // quantos dias para trás materializar/cobrar atrasos
 const WEEKDAYS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
@@ -291,7 +322,7 @@ let ESCALA = null;              // /escala_lazer/data
 let USERS  = null;              // /escala_users (carregado no login)
 let TASKS  = {};                // /escala_tarefas/tasks
 let INSTANCES = {};             // /escala_tarefas/instances
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false };
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",difficulty:""} };
 let materializing = false;
 
 /* ===================================================================
@@ -570,37 +601,67 @@ function resolveEmp(u){
   e=emps.find(e=>norm(e.username||e.user)===norm(u.username));if(e)return e;
   e=emps.find(e=>norm(empName(e))===norm(u.username));return e||null;
 }
-async function doLogin(){
-  const user=$("#lgUser").value.trim(),pass=$("#lgPass").value;
+function onlyDigits(s){return String(s==null?"":s).replace(/\D/g,"")}
+function cpf11(s){return onlyDigits(s).padStart(11,"0")}
+function doLogin(){
   const errBox=$("#loginError");errBox.classList.add("hidden");
-  if(!user||!pass){errBox.textContent="Preencha usuário e senha.";errBox.classList.remove("hidden");return}
-  if(!USERS){errBox.textContent="Ainda conectando ao banco. Tente de novo em instantes.";errBox.classList.remove("hidden");return}
-  const list=toArray(USERS);
-  const u=list.find(x=>norm(x.username)===norm(user))||list.find(x=>norm(x._key)===norm(user));
-  if(!u){errBox.textContent="Usuário não encontrado.";errBox.classList.remove("hidden");return}
-  const hash=await sha256Hex(pass);
-  if(norm(u.passwordHash)!==norm(hash)){errBox.textContent="Senha incorreta.";errBox.classList.remove("hidden");return}
-  enterApp(u);
+  const show=m=>{errBox.innerHTML=m;errBox.classList.remove("hidden")};
+  if(!FB_OK){show("O Firebase não carregou. Publique o arquivo no <b>GitHub Pages</b> (ou rode por um servidor local) para conectar ao banco.");return}
+  const raw=$("#lgUser").value.trim();
+  if(!raw){show("Digite seu CPF (ou <b>gestor</b>).");return}
+  // gestor
+  if(norm(raw)===norm(GESTOR_KEYWORD)){
+    if(GESTOR_PIN&&$("#lgPass").value!==GESTOR_PIN){show("Senha do gestor incorreta.");return}
+    enterAsManager();return;
+  }
+  // colaborador via CPF
+  if(!ESCALA||!ESCALA.employees){show("Ainda carregando os dados. Tente novamente em instantes.");return}
+  const digits=onlyDigits(raw);
+  if(digits.length<11){show("CPF incompleto — digite os 11 números.");return}
+  const alvo=cpf11(digits);
+  const emp=employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===alvo});
+  if(!emp){show("CPF não encontrado. Confira os números ou peça ao gestor para cadastrar seu CPF no funcionário.");return}
+  enterAsEmployee(emp);
 }
-function enterApp(u){
-  state.user={username:u.username||u._key,name:u.name||u.username||u._key,funcao:u.funcao||"",perms:u.perms,sectors:u.sectors};
-  state.admin=isAdminUser(u);
-  state.emp=resolveEmp(state.user);
-  try{localStorage.setItem("tarefas_session",JSON.stringify({username:state.user.username}))}catch(e){}
+function enterAsManager(){
+  state.user={username:"gestor",name:"Gestor",funcao:"Gestor",perms:"admin"};
+  state.admin=true;state.emp=null;state.session={type:"gestor"};
+  finishLogin();
+}
+function enterAsEmployee(emp){
+  const cpf=onlyDigits(pick(emp,SCHEMA.cpfFields));
+  state.user={username:cpf||empName(emp),name:empName(emp),funcao:pick(emp,["funcao","cargo","role","função"])||"Colaborador",perms:null};
+  state.admin=false;state.emp=emp;state.session={type:"emp",cpf};
+  finishLogin();
+}
+function finishLogin(){
+  try{localStorage.setItem("tarefas_session",JSON.stringify(state.session))}catch(e){}
   $("#loginScreen").classList.add("hidden");
   $("#appScreen").classList.remove("hidden");
   $("#tabAdmin").classList.toggle("hidden",!state.admin);
   $("#tabDiag").classList.toggle("hidden",!state.admin);
   renderWho();
-  state.view="mine";setActiveTab();
+  state.view=(state.admin&&!state.emp)?"admin":"mine";
+  setActiveTab();
   state.ready=true;
   materialize();render();
 }
+function tryRestore(){
+  if(state.ready||!FB_OK)return;
+  let s=null;try{s=JSON.parse(localStorage.getItem("tarefas_session")||"null")}catch(e){}
+  if(!s||!s.type)return;
+  if(s.type==="gestor"){enterAsManager();return}
+  if(s.type==="emp"&&ESCALA&&ESCALA.employees){
+    const emp=employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===cpf11(s.cpf)});
+    if(emp)enterAsEmployee(emp);
+  }
+}
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",difficulty:""}};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
-  $("#loginScreen").classList.remove("hidden");$("#lgPass").value="";
+  $("#loginScreen").classList.remove("hidden");
+  $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
 }
 function renderWho(){
   const sec=state.emp?(pick(state.emp,["sectorId","setorId","sector","setor"])):null;
@@ -655,9 +716,8 @@ function taskCardMine({iid,ins,task},opts={}){
 
 function viewMine(){
   if(!state.emp){
-    return `<div class="empty"><b>Não encontramos seu cadastro de colaborador na escala.</b>
-      Seu usuário (<b>${esc(state.user.username)}</b>) não casou com nenhum funcionário. Peça ao gestor para alinhar o nome,
-      ou ajuste o vínculo. ${state.admin?"Como gestor, você ainda pode criar e gerenciar tarefas na aba Gestão.":""}</div>`;
+    if(state.admin)return `<div class="empty"><b>Você está logado como gestor.</b>Use a aba <b>Gestão</b> para criar tarefas e acompanhar quem é responsável a cada dia.</div>`;
+    return `<div class="empty"><b>Seu CPF não está vinculado a um colaborador.</b>Peça ao gestor para cadastrar seu CPF no seu funcionário da escala.</div>`;
   }
   const {today,late,coresp}=myInstances();
   let h="";
@@ -676,27 +736,82 @@ function viewMine(){
 }
 
 function viewAdmin(){
-  const list=Object.entries(TASKS).filter(([,t])=>t.active!==false);
   const today=todayKey();
+  const F=state.adminFilter;
+  const all=Object.entries(TASKS).filter(([,t])=>t.active!==false);
+
+  // colaboradores que aparecem em alguma fila (para o filtro)
+  const usedEmp=new Set();
+  all.forEach(([,t])=>(t.responsibles||[]).forEach(id=>usedEmp.add(String(id))));
+  const empOpts=[...usedEmp].map(id=>({id,name:empName(employeeById(id))}))
+    .filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
+
+  // aplica filtros
+  const list=all.filter(([,t])=>{
+    if(F.sector&&String(t.sectorId)!==String(F.sector))return false;
+    if(F.emp&&!(t.responsibles||[]).map(String).includes(String(F.emp)))return false;
+    if(F.difficulty&&t.difficulty!==F.difficulty)return false;
+    return true;
+  });
+
+  // resumo de hoje (sempre sobre todas as tarefas)
   let pend=0,prog=0,done=0,unassigned=0;
   for(const iid in INSTANCES){const ins=INSTANCES[iid];if(!ins||ins.date!==today)continue;const t=TASKS[ins.taskId];if(!t||t.active===false)continue;
     if(ins.status==="concluida")done++;else if(ins.status==="em_andamento")prog++;else if(ins.status==="pendente"){pend++;if(!ins.assignedTo)unassigned++}}
+
+  const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empOpts.map(e=>`<option value="${esc(e.id)}" ${String(e.id)===String(F.emp)?"selected":""}>${esc(e.name)}</option>`).join("");
+  const diffOpts=`<option value="">Todas as dificuldades</option>`+[["simples","Simples"],["media","Média"],["dificil","Difícil"]].map(([v,l])=>`<option value="${v}" ${F.difficulty===v?"selected":""}>${l}</option>`).join("");
+  const hasFilter=F.sector||F.emp||F.difficulty;
+
   let h=`<div class="diag"><div class="kv">
     <span>Hoje:</span> <b>${pend}</b> <span>pendentes</span>
     <b>${prog}</b> <span>em andamento</span>
     <b>${done}</b> <span>concluídas</span>
     ${unassigned?`<b style="color:var(--accent)">${unassigned}</b> <span>sem responsável elegível</span>`:""}
   </div><div class="actions"><button class="btn sm" data-act="recalc">↻ Recalcular fila de hoje</button></div></div>`;
-  h+=`<div class="section-title">Tarefas <span class="count-pill">${list.length}</span></div>`;
-  if(!list.length)h+=`<div class="empty"><b>Nenhuma tarefa cadastrada.</b>Toque em “Nova tarefa” para começar.</div>`;
+
+  h+=`<div class="filters">
+    <select data-filter="sector">${secOpts}</select>
+    <select data-filter="emp">${empFilterOpts}</select>
+    <select data-filter="difficulty">${diffOpts}</select>
+    ${hasFilter?`<button class="btn sm ghost" data-act="clear-filters">Limpar</button>`:""}
+  </div>`;
+
+  h+=`<div class="section-title">Tarefas <span class="count-pill">${list.length}${list.length!==all.length?" de "+all.length:""}</span></div>`;
+  if(!all.length){h+=`<div class="empty"><b>Nenhuma tarefa cadastrada.</b>Toque em "Nova tarefa" para começar.</div>`;return h}
+  if(!list.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
+
   for(const [tid,t] of list){
     const recur=t.recurrence&&t.recurrence.type==="weekly"?`Semanal · ${WEEKDAYS[t.recurrence.weekday]}`:"Diária";
     const resp=(t.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
+
+    // responsável de HOJE, em destaque
+    let todayRow;
+    if(occursOn(t,today)){
+      const ins=INSTANCES[`${tid}__${today}`];
+      const assignee=ins?ins.assignedTo:computeAssignee(t,today);
+      const status=ins?ins.status:"pendente";
+      if(assignee){
+        const nm=empName(employeeById(assignee))||"—";
+        const ini=esc(nm.trim().charAt(0).toUpperCase()||"?");
+        todayRow=`<div class="today-row"><span class="avatar">${ini}</span>
+          <div class="today-info"><span class="today-label">Responsável hoje</span><span class="today-name">${esc(nm)}</span></div>
+          ${statusBadge(status)}</div>`;
+      }else{
+        todayRow=`<div class="today-row none"><span class="avatar none">!</span>
+          <div class="today-info"><span class="today-label">Hoje</span><span class="today-name">Sem responsável elegível</span></div></div>`;
+      }
+    }else{
+      todayRow=`<div class="today-row muted"><div class="today-info"><span class="today-name" style="color:var(--muted);font-weight:500">Não ocorre hoje</span></div></div>`;
+    }
+
     h+=`<div class="tcard"><div class="tcard-head"><div>
       <h3>${esc(t.title)}</h3>
       <div class="small">${esc(sectorName(t.sectorId))} · ${recur}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
-      <div class="small">${resp}</div>
     </div>${diffChip(t.difficulty)}</div>
+    ${todayRow}
+    <div class="small" style="margin-top:8px">Fila: ${resp}</div>
     <div class="actions">
       <button class="btn sm" data-act="edit-task" data-tid="${tid}">Editar</button>
       <button class="btn sm danger" data-act="del-task" data-tid="${tid}">Excluir</button>
@@ -714,7 +829,7 @@ function viewDiag(){
     <span>Colaboradores:</span><b>${employees().length}</b>
     <span>Tipos de turno:</span><b>${shiftTypes().length}</b>
     <span>Usuários:</span><b>${toArray(USERS).length}</b>
-  </div><p class="note">Seu vínculo: usuário <b>${esc(state.user.username)}</b> → colaborador <b>${esc(state.emp?empName(state.emp):"NÃO ENCONTRADO")}</b></p></div>`;
+  </div><p class="note">Login atual: <b>${state.admin&&!state.emp?"Gestor (palavra-chave)":("CPF → "+esc(state.emp?empName(state.emp):"—"))}</b></p></div>`;
 
   h+=`<div class="diag"><h4>Tipos de turno detectados</h4><table class="diag-t"><tr><th>Nome</th><th>Início</th><th>Fim</th><th>Interpretação</th></tr>`;
   for(const s of shiftTypes()){
@@ -732,6 +847,17 @@ function viewDiag(){
     h+=`<tr><td>${esc(empName(e))}</td><td>${esc(p.label||"—")}</td><td>${esc((p.start||"—")+" – "+(p.end||"—"))}</td><td>${tag}</td></tr>`;
   }
   h+=`</table></div>`;
+
+  // quem consegue entrar por CPF
+  const cpfMask=c=>{const d=onlyDigits(c);return d.length>=11?`•••.${d.slice(3,6)}.${d.slice(6,9)}-••`:null};
+  let semCpf=0;
+  h+=`<div class="diag"><h4>Login por CPF</h4><table class="diag-t"><tr><th>Colaborador</th><th>CPF</th><th>Acesso</th></tr>`;
+  for(const e of employees()){
+    const m=cpfMask(pick(e,SCHEMA.cpfFields));
+    if(!m)semCpf++;
+    h+=`<tr><td>${esc(empName(e))}</td><td>${m||"—"}</td><td>${m?'<span class="tag-ok">pode entrar</span>':'<span class="tag-no">sem CPF</span>'}</td></tr>`;
+  }
+  h+=`</table><p class="note">${semCpf?`<b>${semCpf}</b> colaborador(es) sem CPF não conseguem entrar — cadastre o CPF no app de escalas. `:""}Se o CPF aparecer como “sem CPF” mas existir no cadastro, ajuste <b>cpfFields</b> no bloco SCHEMA.</p></div>`;
   return h;
 }
 
@@ -847,13 +973,36 @@ function openTransfer(iid){
    =================================================================== */
 $("#lgBtn").addEventListener("click",doLogin);
 $("#lgPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
-$("#lgUser").addEventListener("keydown",e=>{if(e.key==="Enter")$("#lgPass").focus()});
+$("#lgUser").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
+$("#lgUser").addEventListener("input",e=>{
+  const v=e.target.value;
+  if(/[a-zA-Z]/.test(v)){ // pode ser a palavra "gestor"
+    $("#pinField").classList.toggle("hidden",!(GESTOR_PIN&&norm(v.trim())===norm(GESTOR_KEYWORD)));
+    return;
+  }
+  $("#pinField").classList.add("hidden");
+  const d=onlyDigits(v).slice(0,11);let out=d;
+  if(d.length>9)out=d.slice(0,3)+"."+d.slice(3,6)+"."+d.slice(6,9)+"-"+d.slice(9);
+  else if(d.length>6)out=d.slice(0,3)+"."+d.slice(3,6)+"."+d.slice(6);
+  else if(d.length>3)out=d.slice(0,3)+"."+d.slice(3);
+  e.target.value=out;
+});
 $("#logoutBtn").addEventListener("click",logout);
 $("#tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;state.view=t.dataset.view;setActiveTab();render()});
 
 document.addEventListener("click",e=>{
-  const a=e.target.closest("[data-act]");
+  // fecha modal ao tocar fora
   if(e.target.closest("[data-overlay]")&&!e.target.closest(".sheet")){closeModal();return}
+  // botões segmentados (dificuldade / recorrência) — não têm data-act
+  const seg=e.target.closest(".seg button");
+  if(seg&&formState){
+    const field=seg.closest("[data-seg]").dataset.seg, v=seg.dataset.v;
+    syncFormInputs();
+    if(field==="difficulty")formState.difficulty=v;
+    if(field==="recurrence")formState.recurrence={type:v,weekday:v==="weekly"?(formState.recurrence.weekday??1):undefined};
+    renderTaskForm();return;
+  }
+  const a=e.target.closest("[data-act]");
   if(!a)return;
   const act=a.dataset.act,iid=a.dataset.iid,tid=a.dataset.tid;
   switch(act){
@@ -862,6 +1011,7 @@ document.addEventListener("click",e=>{
     case"edit-task":openTaskForm(tid);break;
     case"del-task":deleteTask(tid);break;
     case"recalc":recalcQueue();break;
+    case"clear-filters":state.adminFilter={sector:"",emp:"",difficulty:""};render();break;
     case"start":startTask(iid);break;
     case"complete":completeTask(iid);break;
     case"transfer":openTransfer(iid);break;
@@ -879,15 +1029,12 @@ document.addEventListener("click",e=>{
       saveTask(f,f.id);break;
     }
   }
-  // segmented controls
-  const seg=e.target.closest(".seg button");
-  if(seg&&formState){
-    const wrap=seg.closest("[data-seg]");const field=wrap.dataset.seg;const v=seg.dataset.v;
-    syncFormInputs();
-    if(field==="difficulty")formState.difficulty=v;
-    if(field==="recurrence"){formState.recurrence={type:v,weekday:v==="weekly"?(formState.recurrence.weekday??1):undefined}}
-    renderTaskForm();
-  }
+});
+
+/* selects de filtro do gestor */
+document.addEventListener("change",e=>{
+  const f=e.target.closest("[data-filter]");
+  if(f){state.adminFilter[f.dataset.filter]=f.value;render();}
 });
 
 /* ===================================================================
@@ -896,18 +1043,28 @@ document.addEventListener("click",e=>{
 function afterData(){
   if(state.ready){materialize();render();}
 }
-dbRef(PATH.escala).on("value",s=>{ESCALA=s.val()||{};afterData()},err=>{
-  $("#lgStatus").textContent="Erro ao ler a escala: "+err.code+". Verifique as regras do banco.";
-});
-dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};afterData()});
+if(FB_OK){
+  dbRef(PATH.escala).on("value",s=>{
+    ESCALA=s.val()||{};
+    const n=employees().length;
+    $("#lgStatus").textContent=n?("Pronto. "+n+" colaboradores na escala."):"Nenhum colaborador encontrado na escala.";
+    tryRestore();afterData();
+  },err=>{
+    $("#lgStatus").textContent="Erro ao ler a escala: "+err.code+". Verifique as regras do banco.";
+  });
+  dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};afterData()});
 
-/* carrega usuários para login */
-dbRef(PATH.users).once("value").then(s=>{
-  USERS=s.val()||{};
-  $("#lgStatus").textContent=toArray(USERS).length?"Pronto. Faça login.":"Nenhum usuário encontrado no banco.";
-}).catch(err=>{
-  $("#lgStatus").textContent="Erro ao conectar ("+err.code+"). Confira a config do Firebase e as regras do banco.";
-});
+  /* usuários: opcional agora (login é por CPF). Mantido só para o Diagnóstico. */
+  dbRef(PATH.users).once("value").then(s=>{USERS=s.val()||{}}).catch(()=>{USERS={}});
+
+  /* sessão de gestor pode ser restaurada sem esperar a escala */
+  tryRestore();
+}else{
+  $("#lgStatus").innerHTML="⚠️ Firebase não carregou — abra este arquivo no GitHub Pages (ou via servidor local) para conectar.";
+  const errBox=$("#loginError");
+  errBox.innerHTML="Sem conexão com o Firebase neste ambiente. O app funciona quando hospedado (GitHub Pages) ou servido por http local.";
+  errBox.classList.remove("hidden");
+}
 </script>
 </body>
 </html>
