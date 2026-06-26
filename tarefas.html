@@ -309,7 +309,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
       </div>
     </div>
     <div class="tabs" id="tabs">
-      <button class="tab active" data-view="mine">Minhas tarefas</button>
+      <button class="tab active" data-view="mine" id="tabMine">Minhas tarefas</button>
       <button class="tab hidden" data-view="resp" id="tabResp">Minhas responsabilidades</button>
       <button class="tab hidden" data-view="admin" id="tabAdmin">Gestão</button>
       <button class="tab hidden" data-view="diag" id="tabDiag">Diagnóstico</button>
@@ -387,7 +387,7 @@ let ESCALA = null;              // /escala_lazer/data
 let USERS  = null;              // /escala_users (carregado no login)
 let TASKS  = {};                // /escala_tarefas/tasks
 let INSTANCES = {};             // /escala_tarefas/instances
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:""}, respFilter:{sector:"",level:""} };
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""} };
 let materializing = false;
 
 /* ===================================================================
@@ -763,11 +763,12 @@ function finishLogin(){
   try{localStorage.setItem("tarefas_session",JSON.stringify(state.session))}catch(e){}
   $("#loginScreen").classList.add("hidden");
   $("#appScreen").classList.remove("hidden");
+  $("#tabMine").classList.toggle("hidden",state.admin);
   $("#tabAdmin").classList.toggle("hidden",!state.admin);
   $("#tabDiag").classList.toggle("hidden",!state.admin);
   $("#tabResp").classList.toggle("hidden",!state.emp);
   renderWho();
-  state.view=(state.admin&&!state.emp)?"admin":"mine";
+  state.view=state.admin?"admin":"mine";
   setActiveTab();
   state.ready=true;
   materialize();render();
@@ -784,7 +785,7 @@ function tryRestore(){
 }
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:""},respFilter:{sector:"",level:""}};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""}};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
@@ -1022,7 +1023,15 @@ function viewAdmin(){
   // aplica filtros
   const list=all.filter(([tid,t])=>{
     if(F.sector&&String(t.sectorId)!==String(F.sector))return false;
-    if(F.emp&&!(t.responsibles||[]).map(String).includes(String(F.emp)))return false;
+    const respIdx=F.emp?(t.responsibles||[]).findIndex(id=>String(id)===String(F.emp)):-2;
+    if(F.emp&&respIdx<0)return false; // colaborador não está nessa fila
+    if(F.level){
+      if(F.emp){
+        if(respIdx+1!==Number(F.level))return false; // precisa estar EXATAMENTE nesse nível
+      }else{
+        if((t.responsibles||[]).length<Number(F.level))return false; // a fila precisa ter esse nível
+      }
+    }
     if(F.status&&todayStatusOf(tid,t)!==F.status)return false;
     if(F.nature&&(t.nature||"executar")!==F.nature)return false;
     return true;
@@ -1036,12 +1045,15 @@ function viewAdmin(){
     else if(ins.status==="em_andamento")prog++;
     else if(ins.status==="pendente"){pend++;if(!ins.assignedTo)unassigned++}}
 
+  const maxLevel=Math.max(1,...all.map(([,t])=>(t.responsibles||[]).length));
+  const levelOpts=`<option value="">Todos os níveis</option>`+Array.from({length:maxLevel},(_,i)=>i+1)
+    .map(l=>`<option value="${l}" ${String(F.level)===String(l)?"selected":""}>R${l}${F.emp?"":" (fila com "+l+"+)"}</option>`).join("");
   const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
   const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empOpts.map(e=>`<option value="${esc(e.id)}" ${String(e.id)===String(F.emp)?"selected":""}>${esc(e.name)}</option>`).join("");
   const statusLabels={pendente:"Pendente hoje",em_andamento:"Em andamento",concluida:"Concluída hoje",adiada:"Adiada",nao_realizada:"Não realizada hoje",sem_responsavel:"Sem responsável",nao_ocorre:"Não ocorre hoje"};
   const statusOpts=`<option value="">Todos os status</option>`+Object.entries(statusLabels).map(([v,l])=>`<option value="${v}" ${F.status===v?"selected":""}>${l}</option>`).join("");
   const natureOpts=`<option value="">Todas as naturezas</option>`+Object.entries(natureLabels).map(([v,l])=>`<option value="${v}" ${F.nature===v?"selected":""}>${l}</option>`).join("");
-  const hasFilter=F.sector||F.emp||F.status||F.nature;
+  const hasFilter=F.sector||F.emp||F.status||F.nature||F.level;
 
   let h=`<div class="diag"><div class="kv">
     <span>Hoje:</span> <b>${pend}</b> <span>pendentes</span>
@@ -1057,10 +1069,12 @@ function viewAdmin(){
   h+=`<div class="filters">
     <select data-filter="sector">${secOpts}</select>
     <select data-filter="emp">${empFilterOpts}</select>
+    <select data-filter="level">${levelOpts}</select>
     <select data-filter="status">${statusOpts}</select>
     <select data-filter="nature">${natureOpts}</select>
     ${hasFilter?`<button class="btn sm ghost" data-act="clear-filters">Limpar</button>`:""}
   </div>`;
+  h+=F.emp&&F.level?`<p class="note" style="margin:-4px 2px 12px">Mostrando tarefas onde <b>${esc(empName(employeeById(F.emp)))}</b> é exatamente R${F.level}.</p>`:"";
 
   h+=`<div class="section-title">Tarefas <span class="count-pill">${list.length}${list.length!==all.length?" de "+all.length:""}</span></div>`;
   if(!all.length){h+=`<div class="empty"><b>Nenhuma tarefa cadastrada.</b>Toque em "Nova tarefa" para começar.</div>`;return h}
@@ -1562,7 +1576,7 @@ document.addEventListener("click",e=>{
     case"edit-task":openTaskForm(tid);break;
     case"del-task":deleteTask(tid);break;
     case"recalc":recalcQueue();break;
-    case"clear-filters":state.adminFilter={sector:"",emp:"",status:"",nature:""};render();break;
+    case"clear-filters":state.adminFilter={sector:"",emp:"",status:"",nature:"",level:""};render();break;
     case"clear-resp-filters":state.respFilter={sector:"",level:""};render();break;
     case"start":startTask(iid);break;
     case"open-complete":openCompleteModal(iid);break;
