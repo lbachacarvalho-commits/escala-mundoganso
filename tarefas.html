@@ -43,11 +43,12 @@ header.bar{position:sticky;top:0;z-index:20;background:var(--primary-deep);color
 .who{font-size:12.5px;color:#bfe6e3;text-align:right;line-height:1.25}
 .who b{color:#eafcfb;font-weight:600}
 .iconbtn{background:rgba(255,255,255,.12);border:0;color:#eafcfb;border-radius:9px;padding:7px 10px;font-size:13px;font-weight:600}
-.tabs{display:flex;gap:4px}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:0 16px}
+.tabs::-webkit-scrollbar{display:none}
 .tab{flex:0 0 auto;background:transparent;border:0;color:#a9dad6;padding:11px 14px;font-weight:600;font-size:14px;
-  border-bottom:3px solid transparent;border-radius:8px 8px 0 0}
+  white-space:nowrap;border-bottom:3px solid transparent;border-radius:8px 8px 0 0}
 .tab.active{color:#fff;border-bottom-color:var(--accent)}
-main{flex:1;padding:18px 16px 90px}
+main{flex:1;padding:18px 16px 110px;min-width:0}
 
 /* ---------- Generic ---------- */
 .section-title{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
@@ -81,6 +82,7 @@ main{flex:1;padding:18px 16px 90px}
 .status.em_andamento{background:#e7f0ff;color:#2b6cb0}
 .status.concluida{background:var(--ok-soft);color:#1d7a4f}
 .status.adiada{background:#f0ecff;color:#6a5acd}
+.status.nao_realizada{background:#f3e3e0;color:#8a3b2a}
 .assignee{font-size:13px;color:var(--muted);margin-top:9px}
 .assignee b{color:var(--ink);font-weight:600}
 
@@ -180,7 +182,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
   box-shadow:0 10px 24px -6px rgba(14,110,110,.6);z-index:30;display:flex;align-items:center;gap:8px}
 
 /* diagnostics */
-.diag{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.diag{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;overflow-x:auto}
 .diag h4{margin:0 0 8px;font-size:14px}
 table.diag-t{width:100%;border-collapse:collapse;font-size:12.5px}
 table.diag-t th,table.diag-t td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -247,6 +249,30 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
   border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+
+/* ---------- Ajustes para telas estreitas ---------- */
+@media (max-width:480px){
+  main{padding:16px 12px 110px}
+  header.bar{padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 0}
+  .brand{font-size:16px}
+  .who{font-size:11.5px}
+  .row2{grid-template-columns:1fr;gap:10px} /* empilha setor/horário, intervalo/dia etc */
+  .add-resp{flex-direction:column}
+  .add-resp select,.add-resp button{width:100%}
+  .card-body{padding:12px 13px 12px 16px}
+  .card h3{font-size:15px}
+  .sheet{padding:18px 16px 18px;border-radius:16px;max-width:none;width:calc(100% - 8px)}
+  .sheet-actions{flex-direction:column-reverse;gap:8px}
+  .sheet-actions .btn{width:100%}
+  .actions{gap:6px}
+  .btn.sm{padding:8px 12px;font-size:13px}
+  .filters select{min-width:0;flex:1 1 calc(50% - 4px)}
+  .fab{right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);padding:13px 16px;font-size:14px}
+  .stat-grid{grid-template-columns:repeat(2,1fr)}
+  .partner-row,.resp-task-row,.tcard{padding:11px 12px}
+  table.diag-t{font-size:11.5px}
+  table.diag-t th,table.diag-t td{padding:5px 6px}
+}
 </style>
 </head>
 <body>
@@ -361,7 +387,7 @@ let ESCALA = null;              // /escala_lazer/data
 let USERS  = null;              // /escala_users (carregado no login)
 let TASKS  = {};                // /escala_tarefas/tasks
 let INSTANCES = {};             // /escala_tarefas/instances
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:""}, respFilter:{sector:"",level:""} };
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:""}, respFilter:{sector:"",level:""} };
 let materializing = false;
 
 /* ===================================================================
@@ -526,11 +552,27 @@ function materialize(){
   const updates={};
   for(const tid in TASKS){
     const task=TASKS[tid];if(!task||task.active===false)continue;
+    const nature=task.nature||"executar";
     let d=maxKey(floor,task.createdDate||floor);
     while(d<=today){
       if(occursOn(task,d)){
         const iid=`${tid}__${d}`;
         if(!INSTANCES[iid]){
+          // sob demanda / preocupação contínua: a instância do dia anterior que ficou pendente
+          // ou em andamento não "atrasa" — expira como não realizada antes da nova nascer.
+          if(nature==="demanda"||nature==="continua"){
+            const prevD=addDays(d,-1);
+            const prevIid=`${tid}__${prevD}`;
+            const prevIns=INSTANCES[prevIid];
+            if(prevIns&&(prevIns.status==="pendente"||prevIns.status==="em_andamento")){
+              updates[`instances/${prevIid}/status`]="nao_realizada";
+              updates[`instances/${prevIid}/autoExpired`]=true;
+              const hist=Array.isArray(prevIns.history)?prevIns.history.slice():[];
+              hist.push({type:"nao_realizada",by:"sistema",at:Date.now(),note:"Expirou automaticamente (virou o dia)"});
+              updates[`instances/${prevIid}/history`]=hist;
+              prevIns.status="nao_realizada"; // reflete localmente p/ não reprocessar no mesmo ciclo
+            }
+          }
           updates[`instances/${iid}`]={taskId:tid,date:d,occurrenceDate:d,
             assignedTo:computeAssignee(task,d),autoAssigned:true,status:"pendente",createdAt:Date.now()};
         }
@@ -552,18 +594,21 @@ function materialize(){
   }else{materializing=false}
 }
 
-/* instâncias do empregado logado */
+/* instâncias do empregado logado, agrupadas por natureza da tarefa */
 function myInstances(){
-  const me=state.emp;if(!me)return {today:[],late:[],coresp:[]};
+  if(!state.emp)return {today:{executar:[],demanda:[],continua:[]},late:[],coresp:[],done:[]};
+  const me=state.emp;
   const today=todayKey();const myIds=[me._key,me.id].filter(v=>v!=null).map(String);
   const mine=id=>myIds.includes(String(id));
-  const todayArr=[],lateArr=[],coresp=[];
+  const todayG={executar:[],demanda:[],continua:[]},lateArr=[],coresp=[],doneArr=[];
   for(const iid in INSTANCES){
     const ins=INSTANCES[iid];if(!ins)continue;const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
     if(mine(ins.assignedTo)){
-      if(ins.status==="concluida"||ins.status==="adiada")continue;
-      if(ins.date===today)todayArr.push({iid,ins,task});
-      else if(ins.date<today)lateArr.push({iid,ins,task});
+      if(ins.status==="adiada"||ins.status==="nao_realizada")continue; // terminais, saem das listas ativas
+      if(ins.status==="concluida"){if(ins.date===today)doneArr.push({iid,ins,task});continue}
+      const nature=task.nature||"executar";
+      if(ins.date===today)(todayG[nature]||todayG.executar).push({iid,ins,task});
+      else if(ins.date<today)lateArr.push({iid,ins,task}); // atraso só acumula de fato p/ "executar" (demanda/continua já expiram na materialização)
     }
   }
   // co-responsável: tarefas de hoje onde estou na lista mas não sou o responsável ativo
@@ -573,8 +618,10 @@ function myInstances(){
     if(idx>=0&&!mine(ins.assignedTo)&&ins.status!=="adiada")coresp.push({iid,ins,task,rlevel:idx+1});
   }
   const ord=(a,b)=>(timeToMin(a.task.startTime)??1e9)-(timeToMin(b.task.startTime)??1e9);
-  todayArr.sort(ord);lateArr.sort((a,b)=>a.ins.date<b.ins.date?-1:1);
-  return {today:todayArr,late:lateArr,coresp};
+  todayG.executar.sort(ord);todayG.demanda.sort(ord);todayG.continua.sort(ord);
+  lateArr.sort((a,b)=>a.ins.date<b.ins.date?-1:1);
+  doneArr.sort((a,b)=>(b.ins.completedAt||0)-(a.ins.completedAt||0));
+  return {today:todayG,late:lateArr,coresp,done:doneArr};
 }
 
 /* ===================================================================
@@ -602,10 +649,17 @@ function completeTask(iid,note){
   dbRef(`${PATH.tarefas}/instances/${iid}`).update(upd);
   toast("Tarefa concluída ✓");
 }
+function markNotDone(iid,note){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  const upd={status:"nao_realizada",completedAt:null,history:pushHistory(iid,{type:"nao_realizada",note:note||null})};
+  if(note&&note.trim())upd.completionNote=note.trim();
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update(upd);
+  toast("Marcada como não realizada");
+}
 function reopenTask(iid){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
   if(!confirm("Reabrir esta tarefa? Ela volta para pendente."))return;
-  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"pendente",completedAt:null,completionNote:null,
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"pendente",completedAt:null,completionNote:null,autoExpired:null,
     history:pushHistory(iid,{type:"reaberta"})});
   toast("Tarefa reaberta");
 }
@@ -637,6 +691,7 @@ function saveTask(data,id){
   const tid=id||genId("t");
   const payload={
     title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
+    nature:data.nature||"executar",
     startTime:data.startTime||null,responsibles:data.responsibles,
     recurrence:data.recurrence,active:true,
     createdDate:data.createdDate||todayKey(),createdBy:data.createdBy||state.user.username,updatedAt:Date.now()
@@ -729,7 +784,7 @@ function tryRestore(){
 }
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:""},respFilter:{sector:"",level:""}};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:""},respFilter:{sector:"",level:""}};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
@@ -756,26 +811,33 @@ function render(){
   else if(state.view==="diag")m.innerHTML=viewDiag();
 }
 
-function statusBadge(s){const map={pendente:"Pendente",em_andamento:"Em andamento",concluida:"Concluída",adiada:"Adiada"};return `<span class="status ${s}">${map[s]||s}</span>`}
+function statusBadge(s){const map={pendente:"Pendente",em_andamento:"Em andamento",concluida:"Concluída",adiada:"Adiada",nao_realizada:"Não realizada"};return `<span class="status ${s}">${map[s]||s}</span>`}
 
 function taskCardMine({iid,ins,task},opts={}){
-  const late=ins.date<todayKey()&&ins.status!=="concluida";
+  const today=todayKey();
+  const isTerminal=ins.status==="concluida"||ins.status==="nao_realizada";
+  const late=ins.date<today&&!isTerminal;
+  const daysLate=late?daysBetween(ins.date,today):0;
   const myIdx=(task.responsibles||[]).findIndex(id=>[state.emp._key,state.emp.id].map(String).includes(String(id)));
   const cls=["card"];if(late)cls.push("late");
   let meta=`<span class="chip sector">${esc(sectorName(task.sectorId))}</span>`;
   if(task.startTime)meta+=`<span class="chip time">🕐 ${esc(task.startTime)}</span>`;
   if(myIdx>=0)meta+=`<span class="chip r">R${myIdx+1}</span>`;
   if(ins.autoAssigned===false)meta+=`<span class="chip transferred">Recebida</span>`;
-  if(late)meta+=`<span class="chip late">Atrasada · ${fmtDate(ins.date)}</span>`;
+  if(late)meta+=`<span class="chip late">${daysLate} dia(s) em atraso</span>`;
   let actions="";
   if(opts.coresp){
     actions=`<div class="assignee">Responsável hoje: <b>${esc(empName(employeeById(ins.assignedTo)))||"—"}</b></div>`;
   }else{
     actions='<div class="actions">';
-    if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">Iniciar</button>`;
-    if(ins.status!=="concluida")actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}">Concluir</button>`;
-    else actions+=`<button class="btn ghost sm" data-act="reopen" data-iid="${iid}">Reabrir</button>`;
-    actions+=`<button class="btn ghost sm" data-act="transfer" data-iid="${iid}">Transferir</button>`;
+    if(!isTerminal){
+      if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">Iniciar</button>`;
+      actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}">Concluir</button>`;
+      actions+=`<button class="btn ghost sm" data-act="open-notdone" data-iid="${iid}">Não realizada</button>`;
+      actions+=`<button class="btn ghost sm" data-act="transfer" data-iid="${iid}">Transferir</button>`;
+    }else{
+      actions+=`<button class="btn ghost sm" data-act="reopen" data-iid="${iid}">Reabrir</button>`;
+    }
     actions+="</div>";
   }
   return `<article class="${cls.join(" ")}" data-act="open-detail" data-iid="${iid}" style="cursor:pointer"><div class="card-body">
@@ -790,18 +852,29 @@ function viewMine(){
     if(state.admin)return `<div class="empty"><b>Você está logado como gestor.</b>Use a aba <b>Gestão</b> para criar tarefas e acompanhar quem é responsável a cada dia.</div>`;
     return `<div class="empty"><b>Seu CPF não está vinculado a um colaborador.</b>Peça ao gestor para cadastrar seu CPF no seu funcionário da escala.</div>`;
   }
-  const {today,late,coresp}=myInstances();
+  const {today,late,coresp,done}=myInstances();
   let h="";
-  h+=`<div class="section-title">Hoje <span class="count-pill">${today.length}</span></div>`;
-  h+=today.length?today.map(t=>taskCardMine(t)).join(""):
+  if(coresp.length){
+    h+=`<button type="button" class="btn ghost full" data-act="show-coresp" style="margin-bottom:14px">👀 Você é co-responsável em ${coresp.length} tarefa(s) hoje</button>`;
+  }
+  h+=`<div class="section-title">Hoje <span class="count-pill">${today.executar.length}</span></div>`;
+  h+=today.executar.length?today.executar.map(t=>taskCardMine(t)).join(""):
     `<div class="empty"><b>Sem tarefas para você hoje.</b>Aproveite — ou confira se há algo atrasado abaixo.</div>`;
+  if(today.demanda.length){
+    h+=`<div class="section-title">Sob demanda <span class="count-pill">${today.demanda.length}</span></div>`;
+    h+=today.demanda.map(t=>taskCardMine(t)).join("");
+  }
+  if(today.continua.length){
+    h+=`<div class="section-title">Preocupações contínuas <span class="count-pill">${today.continua.length}</span></div>`;
+    h+=today.continua.map(t=>taskCardMine(t)).join("");
+  }
   if(late.length){
     h+=`<div class="section-title">Atrasadas <span class="count-pill">${late.length}</span></div>`;
     h+=late.map(t=>taskCardMine(t)).join("");
   }
-  if(coresp.length){
-    h+=`<div class="section-title">Você é co-responsável <span class="count-pill">${coresp.length}</span></div>`;
-    h+=coresp.map(t=>taskCardMine(t,{coresp:true})).join("");
+  if(done.length){
+    h+=`<div class="section-title">Concluídas hoje <span class="count-pill">${done.length}</span></div>`;
+    h+=done.map(t=>taskCardMine(t)).join("");
   }
   return h;
 }
@@ -913,10 +986,12 @@ function viewResp(){
   if(!filtered.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
 
   for(const t of filtered){
+    const natureLabels={executar:"A executar",demanda:"Sob demanda",continua:"Preocupação contínua"};
     h+=`<div class="resp-task-row">
       <div class="rlevelbig">R${t._level}</div>
       <div class="rmain"><span class="rtitle">${esc(t.title)}</span>
         <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>
+          <span class="chip">${esc(natureLabels[t.nature||"executar"])}</span>
           <span class="chip">${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}</span>${t.startTime?`<span class="chip time">🕐 ${esc(t.startTime)}</span>`:""}</div>
       </div></div>`;
   }
@@ -927,6 +1002,7 @@ function viewAdmin(){
   const today=todayKey();
   const F=state.adminFilter;
   const all=Object.entries(TASKS).filter(([,t])=>t.active!==false);
+  const natureLabels={executar:"A executar",demanda:"Sob demanda",continua:"Preocupação contínua"};
 
   // colaboradores que aparecem em alguma fila (para o filtro)
   const usedEmp=new Set();
@@ -948,24 +1024,30 @@ function viewAdmin(){
     if(F.sector&&String(t.sectorId)!==String(F.sector))return false;
     if(F.emp&&!(t.responsibles||[]).map(String).includes(String(F.emp)))return false;
     if(F.status&&todayStatusOf(tid,t)!==F.status)return false;
+    if(F.nature&&(t.nature||"executar")!==F.nature)return false;
     return true;
   });
 
   // resumo de hoje (sempre sobre todas as tarefas)
-  let pend=0,prog=0,done=0,unassigned=0;
+  let pend=0,prog=0,done=0,unassigned=0,notDone=0;
   for(const iid in INSTANCES){const ins=INSTANCES[iid];if(!ins||ins.date!==today)continue;const t=TASKS[ins.taskId];if(!t||t.active===false)continue;
-    if(ins.status==="concluida")done++;else if(ins.status==="em_andamento")prog++;else if(ins.status==="pendente"){pend++;if(!ins.assignedTo)unassigned++}}
+    if(ins.status==="concluida")done++;
+    else if(ins.status==="nao_realizada")notDone++;
+    else if(ins.status==="em_andamento")prog++;
+    else if(ins.status==="pendente"){pend++;if(!ins.assignedTo)unassigned++}}
 
   const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
   const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empOpts.map(e=>`<option value="${esc(e.id)}" ${String(e.id)===String(F.emp)?"selected":""}>${esc(e.name)}</option>`).join("");
-  const statusLabels={pendente:"Pendente hoje",em_andamento:"Em andamento",concluida:"Concluída hoje",adiada:"Adiada",sem_responsavel:"Sem responsável",nao_ocorre:"Não ocorre hoje"};
+  const statusLabels={pendente:"Pendente hoje",em_andamento:"Em andamento",concluida:"Concluída hoje",adiada:"Adiada",nao_realizada:"Não realizada hoje",sem_responsavel:"Sem responsável",nao_ocorre:"Não ocorre hoje"};
   const statusOpts=`<option value="">Todos os status</option>`+Object.entries(statusLabels).map(([v,l])=>`<option value="${v}" ${F.status===v?"selected":""}>${l}</option>`).join("");
-  const hasFilter=F.sector||F.emp||F.status;
+  const natureOpts=`<option value="">Todas as naturezas</option>`+Object.entries(natureLabels).map(([v,l])=>`<option value="${v}" ${F.nature===v?"selected":""}>${l}</option>`).join("");
+  const hasFilter=F.sector||F.emp||F.status||F.nature;
 
   let h=`<div class="diag"><div class="kv">
     <span>Hoje:</span> <b>${pend}</b> <span>pendentes</span>
     <b>${prog}</b> <span>em andamento</span>
     <b>${done}</b> <span>concluídas</span>
+    ${notDone?`<b>${notDone}</b> <span>não realizadas</span>`:""}
     ${unassigned?`<b style="color:var(--accent)">${unassigned}</b> <span>sem responsável elegível</span>`:""}
   </div><div class="actions">
     <button class="btn sm" data-act="recalc">↻ Recalcular fila de hoje</button>
@@ -976,6 +1058,7 @@ function viewAdmin(){
     <select data-filter="sector">${secOpts}</select>
     <select data-filter="emp">${empFilterOpts}</select>
     <select data-filter="status">${statusOpts}</select>
+    <select data-filter="nature">${natureOpts}</select>
     ${hasFilter?`<button class="btn sm ghost" data-act="clear-filters">Limpar</button>`:""}
   </div>`;
 
@@ -985,6 +1068,7 @@ function viewAdmin(){
 
   for(const [tid,t] of list){
     const resp=(t.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
+    const nature=t.nature||"executar";
 
     // responsável de HOJE, em destaque
     let todayRow;
@@ -1006,9 +1090,23 @@ function viewAdmin(){
       todayRow=`<div class="today-row muted"><div class="today-info"><span class="today-name" style="color:var(--muted);font-weight:500">Não ocorre hoje</span></div></div>`;
     }
 
+    // tarefas executar com instâncias atrasadas (pendente/em_andamento de dias anteriores)
+    let lateInfo="";
+    if(nature==="executar"){
+      let oldest=null;
+      for(const iid in INSTANCES){
+        const ins=INSTANCES[iid];if(!ins||ins.taskId!==tid)continue;
+        if((ins.status==="pendente"||ins.status==="em_andamento")&&ins.date<today){
+          if(!oldest||ins.date<oldest)oldest=ins.date;
+        }
+      }
+      if(oldest)lateInfo=`<span class="chip late">${daysBetween(oldest,today)} dia(s) em atraso</span>`;
+    }
+
     h+=`<div class="tcard"><div class="tcard-head"><div>
       <h3>${esc(t.title)}</h3>
       <div class="small">${esc(sectorName(t.sectorId))} · ${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
+      <div class="meta" style="margin-top:6px"><span class="chip">${esc(natureLabels[nature])}</span>${lateInfo}</div>
     </div></div>
     ${todayRow}
     <div class="small" style="margin-top:8px">Fila: ${resp}</div>
@@ -1079,6 +1177,7 @@ function openTaskForm(tid){
     id:tid||null,
     title:t?t.title:"",description:t?t.description:"",
     sectorId:t?t.sectorId:(sectors()[0]?sectors()[0].id:""),
+    nature:t?(t.nature||"executar"):"executar",
     startTime:t?(t.startTime||""):"",
     responsibles:t?(t.responsibles||[]).slice():[],
     recurrence:t?(t.recurrence||{type:"daily",interval:1}):{type:"daily",interval:1},
@@ -1109,9 +1208,20 @@ function renderTaskForm(){
   const refDay=f.recurrence.day||(parseKey(f.createdDate||todayKey()).getDate());
   const unitLabel=isWeekly?"semana(s)":isMonthly?"mês(es)":"dia(s)";
 
+  const natureHelp={executar:"Tem início e fim claros no dia (ex.: limpar, repor estoque).",
+    demanda:"Só acontece quando a situação surge (ex.: mediar um conflito).",
+    continua:"Uma atenção constante durante o turno (ex.: garantir bom acolhimento)."};
   openSheet(f.id?"Editar tarefa":"Nova tarefa",`
     <div class="field"><label>Título</label><input id="fTitle" value="${esc(f.title)}" placeholder="Ex.: Limpeza da piscina"></div>
     <div class="field"><label>Descrição</label><textarea id="fDesc" placeholder="Detalhes da tarefa (opcional)">${esc(f.description)}</textarea></div>
+    <div class="field"><label>Natureza da tarefa</label>
+      <div class="seg" data-seg="nature">
+        <button type="button" data-v="executar" class="${f.nature==="executar"?"on":""}">A executar</button>
+        <button type="button" data-v="demanda" class="${f.nature==="demanda"?"on":""}">Sob demanda</button>
+        <button type="button" data-v="continua" class="${f.nature==="continua"?"on":""}">Preocupação contínua</button>
+      </div>
+      <p class="note" id="fNatureHelp">${natureHelp[f.nature]}</p>
+    </div>
     <div class="row2">
       <div class="field"><label>Setor</label><select id="fSector">${secOpts}</select></div>
       <div class="field"><label>Horário de início (opcional)</label><input id="fTime" type="time" value="${esc(f.startTime||"")}"></div>
@@ -1180,8 +1290,8 @@ function openTaskDetail(iid){
   }).join(" ");
   const hist=Array.isArray(ins.history)?ins.history.slice().reverse():[];
   const histHtml=hist.length?hist.map(h=>{
-    const labels={iniciada:"Iniciada",concluida:"Concluída",reaberta:"Reaberta",transferida:"Transferida",adiada:"Adiada","recebida-adiamento":"Recebida (adiamento)"};
-    const who=empName(employeeById(h.by))!=="—"?empName(employeeById(h.by)):(h.by||"—");
+    const labels={iniciada:"Iniciada",concluida:"Concluída",nao_realizada:"Não realizada",reaberta:"Reaberta",transferida:"Transferida",adiada:"Adiada","recebida-adiamento":"Recebida (adiamento)"};
+    const who=h.by==="sistema"?"Sistema":(empName(employeeById(h.by))!=="—"?empName(employeeById(h.by)):(h.by||"—"));
     let extra="";
     if(h.type==="transferida")extra=` → ${esc(empName(employeeById(h.to)))}`;
     if(h.type==="adiada")extra=` → ${esc(fmtDate(h.to))}`;
@@ -1189,6 +1299,10 @@ function openTaskDetail(iid){
     return `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${labels[h.type]||h.type}</b>${extra} — ${esc(who)} · ${new Date(h.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>`;
   }).join(""):'<p class="note">Sem movimentações ainda.</p>';
 
+  const isTerminal=ins.status==="concluida"||ins.status==="nao_realizada";
+  const actionBtns=isTerminal
+    ?`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`
+    :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}">Concluir</button>`;
   openSheet(task.title,`
     <div class="meta" style="margin-bottom:4px">
       <span class="chip sector">${esc(sectorName(task.sectorId))}</span>
@@ -1197,14 +1311,14 @@ function openTaskDetail(iid){
       ${statusBadge(ins.status)}
     </div>
     ${task.description?`<p class="desc" style="margin:10px 2px">${esc(task.description)}</p>`:'<p class="note" style="margin:10px 2px">Sem descrição.</p>'}
-    ${ins.completionNote?`<div class="diag" style="margin:10px 0 4px"><b style="font-size:13px">Observação ao concluir</b><p class="note" style="margin-top:4px">${esc(ins.completionNote)}</p></div>`:""}
+    ${ins.completionNote?`<div class="diag" style="margin:10px 0 4px"><b style="font-size:13px">Observação</b><p class="note" style="margin-top:4px">${esc(ins.completionNote)}</p></div>`:""}
     <div class="section-title" style="margin-top:14px">Fila de responsáveis</div>
     <div class="meta">${resp}</div>
     <div class="section-title">Movimentações desta ocorrência</div>
     ${histHtml}
     <div class="sheet-actions">
       <button class="btn ghost" data-act="close">Fechar</button>
-      ${ins.status!=="concluida"?`<button class="btn ok" data-act="open-complete" data-iid="${iid}">Concluir</button>`:`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`}
+      ${actionBtns}
     </div>
   `);
 }
@@ -1220,6 +1334,37 @@ function openCompleteModal(iid){
       <button class="btn ghost" data-act="close">Cancelar</button>
       <button class="btn ok" data-act="confirm-complete" data-iid="${iid}">Concluir</button>
     </div>
+  `);
+}
+function openNotDoneModal(iid){
+  const ins=INSTANCES[iid];if(!ins)return;
+  const task=TASKS[ins.taskId];if(!task)return;
+  openSheet("Marcar como não realizada",`
+    <p class="note" style="margin-bottom:12px"><b>${esc(task.title)}</b> — por que não foi possível realizar? (opcional, ajuda o gestor a entender)</p>
+    <div class="field"><textarea id="completeNote" placeholder="Ex.: não houve tempo, situação não ocorreu, faltou recurso…"></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn danger" data-act="confirm-notdone" data-iid="${iid}">Marcar como não realizada</button>
+    </div>
+  `);
+}
+
+/* ---- Co-responsável: tarefas de hoje onde você não é o titular ---- */
+function openCorespModal(){
+  const {coresp}=myInstances();
+  const rows=coresp.map(c=>{
+    const nm=empName(employeeById(c.ins.assignedTo))||"—";
+    return `<div class="resp-task-row">
+      <div class="rlevelbig">R${c.rlevel}</div>
+      <div class="rmain"><span class="rtitle">${esc(c.task.title)}</span>
+        <div class="rmeta"><span class="chip sector">${esc(sectorName(c.task.sectorId))}</span>
+          ${statusBadge(c.ins.status)}<span class="chip">Responsável hoje: ${esc(nm)}</span></div>
+      </div></div>`;
+  }).join("");
+  openSheet("Você é co-responsável",`
+    <p class="note" style="margin-bottom:12px">Hoje, em ${coresp.length} tarefa(s), você está na fila mas não é o titular do dia.</p>
+    ${rows||'<p class="empty">Nenhuma agora.</p>'}
+    <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
   `);
 }
 
@@ -1253,7 +1398,7 @@ function openDailyReport(){
   const startOfDay=parseKey(today).getTime();
   const endOfDay=startOfDay+86400000;
   const byEmp={}; // username -> [{time,label,taskTitle,extra}]
-  const moveLabels={iniciada:"Iniciou",concluida:"Concluiu",reaberta:"Reabriu",transferida:"Transferiu",adiada:"Adiou",
+  const moveLabels={iniciada:"Iniciou",concluida:"Concluiu",nao_realizada:"Marcou não realizada",reaberta:"Reabriu",transferida:"Transferiu",adiada:"Adiou",
     "recebida-adiamento":"Recebeu (adiamento)"};
   for(const iid in INSTANCES){
     const ins=INSTANCES[iid];if(!ins||!Array.isArray(ins.history))continue;
@@ -1285,6 +1430,37 @@ function openDailyReport(){
       body+=`</div>`;
     }
   }
+
+  // tarefas "a executar" atualmente atrasadas (dias acumulados), por colaborador responsável
+  const lateByEmp={};const lateUnassigned=[];
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||ins.date>=today)continue;
+    if(ins.status!=="pendente"&&ins.status!=="em_andamento")continue;
+    const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
+    const who=ins.assignedTo;
+    const days=daysBetween(ins.date,today);
+    if(!who){lateUnassigned.push({title:task.title,days,date:ins.date});continue}
+    const nm=empName(employeeById(who))||"—";
+    (lateByEmp[nm]=lateByEmp[nm]||[]).push({title:task.title,days});
+  }
+  const lateEmps=Object.keys(lateByEmp).sort((a,b)=>Math.max(...lateByEmp[b].map(x=>x.days))-Math.max(...lateByEmp[a].map(x=>x.days)));
+  if(lateEmps.length){
+    body+=`<div class="section-title">Tarefas em atraso (acumulado)</div>`;
+    for(const nm of lateEmps){
+      const items=lateByEmp[nm].sort((a,b)=>b.days-a.days);
+      body+=`<div class="diag" style="margin-bottom:10px"><h4>${esc(nm)}</h4>`;
+      body+=items.map(it=>`<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(it.title)} <span class="chip late" style="margin-left:4px">${it.days} dia(s)</span></div>`).join("");
+      body+=`</div>`;
+    }
+  }
+  if(lateUnassigned.length){
+    body+=`<div class="section-title">Sem responsável elegível (não chegaram a ninguém)</div>
+      <p class="note" style="margin:-2px 2px 10px">Nenhum colaborador da fila estava presente/elegível nesses dias — ninguém recebeu a tarefa.</p>`;
+    body+=`<div class="diag">`;
+    body+=lateUnassigned.sort((a,b)=>b.days-a.days).map(it=>`<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(it.title)} · ${esc(fmtDate(it.date))} <span class="chip late" style="margin-left:4px">${it.days} dia(s)</span></div>`).join("");
+    body+=`</div>`;
+  }
+
   openSheet("Relatório do dia",body+`<div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>`);
 }
 
@@ -1362,11 +1538,12 @@ document.addEventListener("input",e=>{
 document.addEventListener("click",e=>{
   // fecha modal ao tocar fora
   if(e.target.closest("[data-overlay]")&&!e.target.closest(".sheet")){closeModal();return}
-  // botões segmentados (recorrência) — não têm data-act
+  // botões segmentados (natureza / recorrência) — não têm data-act
   const seg=e.target.closest(".seg button");
   if(seg&&formState){
     const field=seg.closest("[data-seg]").dataset.seg, v=seg.dataset.v;
     syncFormInputs();
+    if(field==="nature")formState.nature=v;
     if(field==="recurrence"){
       const keepInterval=formState.recurrence.interval||1;
       const rec={type:v,interval:keepInterval};
@@ -1385,14 +1562,17 @@ document.addEventListener("click",e=>{
     case"edit-task":openTaskForm(tid);break;
     case"del-task":deleteTask(tid);break;
     case"recalc":recalcQueue();break;
-    case"clear-filters":state.adminFilter={sector:"",emp:"",status:""};render();break;
+    case"clear-filters":state.adminFilter={sector:"",emp:"",status:"",nature:""};render();break;
     case"clear-resp-filters":state.respFilter={sector:"",level:""};render();break;
     case"start":startTask(iid);break;
     case"open-complete":openCompleteModal(iid);break;
     case"confirm-complete":{const note=$("#completeNote")?$("#completeNote").value:"";completeTask(iid,note);closeModal();break}
+    case"open-notdone":openNotDoneModal(iid);break;
+    case"confirm-notdone":{const note=$("#completeNote")?$("#completeNote").value:"";markNotDone(iid,note);closeModal();break}
     case"reopen":reopenTask(iid);closeModal();break;
     case"open-detail":openTaskDetail(iid);break;
     case"show-partner":openPartnerTasks(a.dataset.emp);break;
+    case"show-coresp":openCorespModal();break;
     case"open-report":openDailyReport();break;
     case"transfer":openTransfer(iid);break;
     case"sel-r":transferState.sel={type:"r",empId:a.dataset.to};renderTransfer();break;
