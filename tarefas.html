@@ -809,11 +809,13 @@ function openTicketConversation(tid){
   }).join("");
   const isOpen=t.status==="aberto";
   const canReply=isOpen; // autor e gestor podem responder enquanto aberto
+  const newTicketBtn=isAuthor?`<button class="btn ghost" data-act="open-new-ticket" data-tid="${esc(t.taskId)}">＋ Nova sugestão</button>`:"";
   let footer;
   if(canReply){
     footer=`<div class="field"><textarea id="ticketReply" placeholder="Escrever uma resposta…" style="min-height:54px"></textarea></div>
       <div class="sheet-actions">
         <button class="btn ghost" data-act="close">Fechar</button>
+        ${newTicketBtn}
         ${state.admin?`<button class="btn ghost" data-act="edit-task-from-ticket" data-tid="${esc(t.taskId)}">Editar tarefa</button>`:""}
         ${state.admin?`<button class="btn danger" data-act="close-ticket" data-id="${tid}">Encerrar</button>`:""}
         <button class="btn primary" data-act="send-ticket-reply" data-id="${tid}">Responder</button>
@@ -821,6 +823,7 @@ function openTicketConversation(tid){
   }else{
     footer=`<p class="note" style="text-align:center">Conversa encerrada${t.closedBy?" por "+esc(t.closedBy==="gestor"||/gestor/i.test(t.closedBy)?"Gestor":t.closedBy):""}.</p>
       <div class="sheet-actions">
+        ${newTicketBtn}
         ${state.admin?`<button class="btn ghost" data-act="edit-task-from-ticket" data-tid="${esc(t.taskId)}">Editar tarefa</button>`:""}
         <button class="btn primary" data-act="close" style="${state.admin?"":"flex:none;width:100%"}">Fechar</button>
       </div>`;
@@ -1054,9 +1057,12 @@ function taskCardMine({iid,ins,task},opts={}){
     }
     actions+="</div>";
   }
-  const myOpenTickets=opts.coresp?0:myTickets().filter(t=>t.taskId===ins.taskId&&t.status==="aberto").length;
-  const suggestBtn=opts.coresp?"":`<button type="button" class="btn-suggest${myOpenTickets?" has-open":""}" data-act="open-new-ticket" data-tid="${esc(ins.taskId)}">
-    💬 ${myOpenTickets?myOpenTickets+" em aberto":"Falar com o gestor"}</button>`;
+  const myOpenForTask=opts.coresp?[]:myTickets().filter(t=>t.taskId===ins.taskId&&t.status==="aberto").sort((a,b)=>b.createdAt-a.createdAt);
+  const suggestBtn=opts.coresp?"":(myOpenForTask.length
+    ?`<button type="button" class="btn-suggest has-open" data-act="open-ticket" data-id="${esc(myOpenForTask[0].id)}">
+        💬 ${myOpenForTask.length} em aberto</button>`
+    :`<button type="button" class="btn-suggest" data-act="open-new-ticket" data-tid="${esc(ins.taskId)}">
+        💬 Falar com o gestor</button>`);
   return `<article class="${cls.join(" ")}" data-act="open-detail" data-iid="${iid}" style="cursor:pointer"><div class="card-body">
     <div class="card-head"><h3>${esc(task.title)}</h3>
       <div class="card-head-right" data-stop="1">${statusBadge(ins.status)}${suggestBtn}</div>
