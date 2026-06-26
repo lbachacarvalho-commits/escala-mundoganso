@@ -86,9 +86,10 @@ main{flex:1;padding:18px 16px 110px;min-width:0}
   border-color:#d9d5f3;box-shadow:none}
 .card.v-continua::before{background:var(--continua);width:4px}
 
-/* Sob demanda: visual "standby", sinaliza prontidão sem exigir ação agora */
-.card.v-demanda{background:var(--surface);border-style:dashed;border-color:#e8cf9a}
-.card.v-demanda::before{background:repeating-linear-gradient(180deg,var(--demanda) 0 8px,transparent 8px 14px);width:4px}
+/* Sob demanda: mesma linguagem visual (cor + fade), com a cor própria da natureza */
+.card.v-demanda{background:linear-gradient(135deg,var(--demanda-soft) 0%,var(--surface) 55%);
+  border-color:#ecdbb0;box-shadow:none}
+.card.v-demanda::before{background:var(--demanda);width:4px}
 
 .card-body{padding:14px 16px 14px 18px}
 .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
@@ -1088,14 +1089,14 @@ function viewMine(){
 
   // ordem pensada para contar o dia: primeiro o "estado de espírito", depois o que pode surgir, por fim o que executar
   if(today.continua.length){
-    h+=dayBlockHead("continua","👁","Mantenha isso em mente hoje","Uma atenção constante, não uma tarefa para marcar como feita",today.continua.length);
+    h+=dayBlockHead("continua","👁","Mantenha isso em mente hoje","Preocupações contínuas que você precisa ter hoje.",today.continua.length);
     h+=today.continua.map(t=>taskCardMine(t)).join("");
   }
   if(today.demanda.length){
-    h+=dayBlockHead("demanda","📡","Fique atento — pode surgir hoje","Só vira ação se a situação realmente acontecer",today.demanda.length);
+    h+=dayBlockHead("demanda","📡","Fique atento — pode surgir hoje","Você está responsável por responder caso essas situações aconteçam.",today.demanda.length);
     h+=today.demanda.map(t=>taskCardMine(t)).join("");
   }
-  h+=dayBlockHead("executar","✅","Suas tarefas de hoje",null,today.executar.length);
+  h+=dayBlockHead("executar","✅","Tarefas que você precisa executar hoje",null,today.executar.length);
   h+=today.executar.length?today.executar.map(t=>taskCardMine(t)).join(""):
     `<div class="empty"><b>Sem tarefas para executar hoje.</b>Aproveite — ou confira se há algo atrasado abaixo.</div>`;
 
