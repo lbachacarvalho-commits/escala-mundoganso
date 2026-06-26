@@ -293,8 +293,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
       <input id="lgPass" type="password" autocomplete="off" placeholder="••••••">
     </div>
     <button class="btn primary" id="lgBtn">Entrar</button>
-    <p class="note" id="hintGestor" style="text-align:center;margin-top:14px">É o gestor? Digite <b>gestor</b> no campo acima.</p>
-    <p class="note" id="lgStatus" style="text-align:center;margin-top:6px">Conectando ao banco…</p>
+    <p class="note" id="lgStatus" style="text-align:center;margin-top:14px">Conectando ao banco…</p>
   </div>
 </div>
 
@@ -637,6 +636,13 @@ function pushHistory(iid,entry){
   hist.push({...entry,by:state.user.username,at:Date.now()});
   return hist;
 }
+/* a tarefa tem checklist e está toda marcada nesta instância? */
+function checklistComplete(task,ins){
+  const items=task&&task.checklist;
+  if(!items||!items.length)return true;
+  const st=(ins&&ins.checklistState)||{};
+  return items.every(it=>st[it.id]===true);
+}
 function startTask(iid){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
   dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"em_andamento",startedAt:Date.now(),history:pushHistory(iid,{type:"iniciada"})});
@@ -644,6 +650,8 @@ function startTask(iid){
 }
 function completeTask(iid,note){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  const task=TASKS[ins.taskId];
+  if(!checklistComplete(task,ins)){toast("Marque todos os itens do checklist antes de concluir.");return}
   const upd={status:"concluida",completedAt:Date.now(),history:pushHistory(iid,{type:"concluida",note:note||null})};
   if(note&&note.trim())upd.completionNote=note.trim();
   dbRef(`${PATH.tarefas}/instances/${iid}`).update(upd);
@@ -693,7 +701,7 @@ function saveTask(data,id){
     title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
     nature:data.nature||"executar",
     startTime:data.startTime||null,responsibles:data.responsibles,
-    recurrence:data.recurrence,active:true,
+    recurrence:data.recurrence,checklist:data.checklist||[],active:true,
     createdDate:data.createdDate||todayKey(),createdBy:data.createdBy||state.user.username,updatedAt:Date.now()
   };
   return dbRef(`${PATH.tarefas}/tasks/${tid}`).set(payload).then(()=>{closeModal();toast(id?"Tarefa atualizada":"Tarefa criada")});
@@ -826,6 +834,12 @@ function taskCardMine({iid,ins,task},opts={}){
   if(myIdx>=0)meta+=`<span class="chip r">R${myIdx+1}</span>`;
   if(ins.autoAssigned===false)meta+=`<span class="chip transferred">Recebida</span>`;
   if(late)meta+=`<span class="chip late">${daysLate} dia(s) em atraso</span>`;
+  const hasChecklist=task.checklist&&task.checklist.length>0;
+  const checklistOk=checklistComplete(task,ins);
+  if(hasChecklist&&!isTerminal){
+    const done=task.checklist.filter(it=>(ins.checklistState&&ins.checklistState[it.id])===true).length;
+    meta+=`<span class="chip${checklistOk?"":" late"}">☑ ${done}/${task.checklist.length}</span>`;
+  }
   let actions="";
   if(opts.coresp){
     actions=`<div class="assignee">Responsável hoje: <b>${esc(empName(employeeById(ins.assignedTo)))||"—"}</b></div>`;
@@ -833,7 +847,7 @@ function taskCardMine({iid,ins,task},opts={}){
     actions='<div class="actions">';
     if(!isTerminal){
       if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">Iniciar</button>`;
-      actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}">Concluir</button>`;
+      actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
       actions+=`<button class="btn ghost sm" data-act="open-notdone" data-iid="${iid}">Não realizada</button>`;
       actions+=`<button class="btn ghost sm" data-act="transfer" data-iid="${iid}">Transferir</button>`;
     }else{
@@ -1195,6 +1209,7 @@ function openTaskForm(tid){
     startTime:t?(t.startTime||""):"",
     responsibles:t?(t.responsibles||[]).slice():[],
     recurrence:t?(t.recurrence||{type:"daily",interval:1}):{type:"daily",interval:1},
+    checklist:t?(t.checklist||[]).slice():[],
     createdDate:t?t.createdDate:null,createdBy:t?t.createdBy:null
   };
   if(formState.recurrence.interval==null)formState.recurrence.interval=1; // tarefas antigas
@@ -1214,6 +1229,12 @@ function renderTaskForm(){
       </div>
       <button class="miniicon rm" data-act="resp-rm" data-i="${i}">✕</button>
     </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
+
+  const checklistHtml=f.checklist.length?f.checklist.map((item,i)=>`
+    <div class="resp-item">
+      <span class="rname">${esc(item.text)}</span>
+      <button class="miniicon rm" data-act="check-rm" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
 
   const rtype=f.recurrence.type||"daily";
   const interval=f.recurrence.interval||1;
@@ -1247,6 +1268,14 @@ function renderTaskForm(){
         <button class="btn sm" data-act="resp-add">Adicionar</button>
       </div>
       <p class="note">A tarefa do dia vai para o R1; se ele estiver ausente ou fora do horário do turno, cai para o próximo R elegível.</p>
+    </div>
+    <div class="field"><label>Checklist (opcional)</label>
+      <div class="resp-list">${checklistHtml}</div>
+      <div class="add-resp">
+        <input id="fAddCheck" placeholder="Ex.: Testar som do ambiente" style="flex:1">
+        <button class="btn sm" data-act="check-add">Adicionar</button>
+      </div>
+      <p class="note">${f.checklist.length?"Todos os itens precisam estar marcados para a tarefa poder ser concluída.":"Sem itens, a tarefa pode ser concluída livremente."}</p>
     </div>
     <div class="field"><label>Repetir</label>
       <div class="seg" data-seg="recurrence">
@@ -1314,9 +1343,21 @@ function openTaskDetail(iid){
   }).join(""):'<p class="note">Sem movimentações ainda.</p>';
 
   const isTerminal=ins.status==="concluida"||ins.status==="nao_realizada";
+  const checklistOk=checklistComplete(task,ins);
+  const checklistHtml=(task.checklist&&task.checklist.length)?`
+    <div class="section-title" style="margin-top:14px">Checklist ${checklistOk?"✓":`(${task.checklist.filter(it=>(ins.checklistState&&ins.checklistState[it.id])===true).length}/${task.checklist.length})`}</div>
+    <div class="resp-list">${task.checklist.map(it=>{
+      const checked=(ins.checklistState&&ins.checklistState[it.id])===true;
+      return `<button type="button" class="opt ${checked?"sel":""}" data-act="toggle-check" data-iid="${iid}" data-item="${esc(it.id)}" style="text-align:left">
+        <span class="opt-check" style="order:-1">${checked?"☑":"☐"}</span>
+        <span class="opt-main"><span class="opt-name" style="${checked?'text-decoration:line-through;color:var(--muted)':''}">${esc(it.text)}</span></span>
+      </button>`;
+    }).join("")}</div>
+    ${!checklistOk?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
+  `:"";
   const actionBtns=isTerminal
     ?`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`
-    :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}">Concluir</button>`;
+    :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
   openSheet(task.title,`
     <div class="meta" style="margin-bottom:4px">
       <span class="chip sector">${esc(sectorName(task.sectorId))}</span>
@@ -1326,6 +1367,7 @@ function openTaskDetail(iid){
     </div>
     ${task.description?`<p class="desc" style="margin:10px 2px">${esc(task.description)}</p>`:'<p class="note" style="margin:10px 2px">Sem descrição.</p>'}
     ${ins.completionNote?`<div class="diag" style="margin:10px 0 4px"><b style="font-size:13px">Observação</b><p class="note" style="margin-top:4px">${esc(ins.completionNote)}</p></div>`:""}
+    ${checklistHtml}
     <div class="section-title" style="margin-top:14px">Fila de responsáveis</div>
     <div class="meta">${resp}</div>
     <div class="section-title">Movimentações desta ocorrência</div>
@@ -1548,6 +1590,14 @@ document.addEventListener("input",e=>{
     const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
   }
 });
+document.addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&e.target.id==="fAddCheck"){
+    e.preventDefault();
+    syncFormInputs();
+    const text=e.target.value.trim();
+    if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm()}
+  }
+});
 
 document.addEventListener("click",e=>{
   // fecha modal ao tocar fora
@@ -1585,6 +1635,16 @@ document.addEventListener("click",e=>{
     case"confirm-notdone":{const note=$("#completeNote")?$("#completeNote").value:"";markNotDone(iid,note);closeModal();break}
     case"reopen":reopenTask(iid);closeModal();break;
     case"open-detail":openTaskDetail(iid);break;
+    case"toggle-check":{
+      const itemId=a.dataset.item;
+      const ins=INSTANCES[iid];if(!ins||!canAct(ins))break;
+      ins.checklistState=ins.checklistState||{};
+      const newVal=!(ins.checklistState[itemId]===true);
+      ins.checklistState[itemId]=newVal; // otimista, antes do round-trip do Firebase
+      dbRef(`${PATH.tarefas}/instances/${iid}/checklistState/${itemId}`).set(newVal);
+      openTaskDetail(iid); // re-renderiza o modal já refletindo o novo estado
+      break;
+    }
     case"show-partner":openPartnerTasks(a.dataset.emp);break;
     case"show-coresp":openCorespModal();break;
     case"open-report":openDailyReport();break;
@@ -1602,6 +1662,13 @@ document.addEventListener("click",e=>{
     case"resp-rm":{syncFormInputs();formState.responsibles.splice(+a.dataset.i,1);renderTaskForm();break}
     case"resp-up":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderTaskForm();break}
     case"resp-down":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderTaskForm();break}
+    case"check-add":{
+      syncFormInputs();
+      const inp=$("#fAddCheck");const text=inp?inp.value.trim():"";
+      if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm()}
+      break;
+    }
+    case"check-rm":{syncFormInputs();formState.checklist.splice(+a.dataset.i,1);renderTaskForm();break}
     case"save-task":{
       syncFormInputs();const f=formState;
       if(!f.title.trim()){toast("Informe o título.");return}
