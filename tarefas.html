@@ -21,7 +21,6 @@
   --accent:#e8744f; --accent-soft:#fbe6dd;
   --ok:#2f9e6b; --ok-soft:#dcf0e6;
   --warn:#d98a1f;
-  --simples:#3fa66a; --media:#dca227; --dificil:#d9543b;
   --radius:14px; --radius-sm:10px;
   --shadow:0 1px 2px rgba(16,40,38,.06),0 6px 20px -8px rgba(16,40,38,.18);
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -64,9 +63,6 @@ main{flex:1;padding:18px 16px 90px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
   margin-bottom:12px;overflow:hidden;position:relative}
 .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--muted-2)}
-.card.d-simples::before{background:var(--simples)}
-.card.d-media::before{background:var(--media)}
-.card.d-dificil::before{background:var(--dificil)}
 .card.late::before{background:var(--accent)}
 .card-body{padding:14px 16px 14px 18px}
 .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
@@ -78,9 +74,6 @@ main{flex:1;padding:18px 16px 90px}
 .chip.sector{background:var(--primary-soft);border-color:transparent;color:var(--primary-deep)}
 .chip.r{background:#ecebfb;border-color:transparent;color:#4a45a8}
 .chip.time{background:#eef6ff;border-color:transparent;color:#2b6cb0}
-.chip.simples{background:var(--ok-soft);border-color:transparent;color:#1d7a4f}
-.chip.media{background:#fbf0d8;border-color:transparent;color:#9a6a12}
-.chip.dificil{background:#fbe1dc;border-color:transparent;color:#a8341f}
 .chip.late{background:var(--accent-soft);border-color:transparent;color:#b24722}
 .chip.transferred{background:#fff4e6;border-color:transparent;color:#a8651a}
 .status{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
@@ -159,9 +152,6 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 .seg button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;
   padding:10px;font-weight:600;font-size:13px;color:var(--muted)}
 .seg button.on{background:var(--primary);border-color:var(--primary);color:#fff}
-.seg.diff button.on[data-v=simples]{background:var(--simples);border-color:var(--simples)}
-.seg.diff button.on[data-v=media]{background:var(--media);border-color:var(--media)}
-.seg.diff button.on[data-v=dificil]{background:var(--dificil);border-color:var(--dificil)}
 
 /* responsibles picker */
 .resp-list{display:flex;flex-direction:column;gap:7px;margin-top:6px}
@@ -371,7 +361,7 @@ let ESCALA = null;              // /escala_lazer/data
 let USERS  = null;              // /escala_users (carregado no login)
 let TASKS  = {};                // /escala_tarefas/tasks
 let INSTANCES = {};             // /escala_tarefas/instances
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",difficulty:""}, respFilter:{sector:"",level:""} };
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:""}, respFilter:{sector:"",level:""} };
 let materializing = false;
 
 /* ===================================================================
@@ -493,14 +483,36 @@ function computeAssignee(task,dKey){
   return null;
 }
 
-/* a tarefa ocorre nesse dia? */
+/* dias inteiros entre duas datas-chave */
+function daysBetween(a,b){return Math.round((parseKey(b)-parseKey(a))/86400000)}
+
+/* a tarefa ocorre nesse dia?
+   Suporta: daily (a cada N dias), weekly (a cada N semanas, num dia da semana),
+   monthly (a cada N meses, num dia fixo do mês). `interval` ausente = 1 (comportamento
+   original, 100% compatível com tarefas criadas antes desta versão). */
 function occursOn(task,dKey){
   if(task.active===false)return false;
-  if(task.createdDate&&dKey<task.createdDate)return false;
+  const base=task.createdDate||dKey;
+  if(dKey<base)return false;
   const rec=task.recurrence||{type:"daily"};
-  if(rec.type==="daily")return true;
-  if(rec.type==="weekly")return weekdayOf(dKey)===Number(rec.weekday);
-  return false;
+  const interval=Math.max(1,Number(rec.interval)||1);
+  if(rec.type==="weekly"){
+    if(weekdayOf(dKey)!==Number(rec.weekday))return false;
+    if(interval===1)return true;
+    return Math.floor(daysBetween(base,dKey)/7)%interval===0;
+  }
+  if(rec.type==="monthly"){
+    const dayOfMonth=Number(rec.day)||parseKey(base).getDate();
+    const d=parseKey(dKey);
+    if(d.getDate()!==dayOfMonth)return false;
+    if(interval===1)return true;
+    const b=parseKey(base);
+    const monthsDiff=(d.getFullYear()-b.getFullYear())*12+(d.getMonth()-b.getMonth());
+    return monthsDiff>=0&&monthsDiff%interval===0;
+  }
+  // daily (padrão)
+  if(interval===1)return true;
+  return daysBetween(base,dKey)%interval===0;
 }
 
 /* ===================================================================
@@ -583,10 +595,19 @@ function startTask(iid){
   dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"em_andamento",startedAt:Date.now(),history:pushHistory(iid,{type:"iniciada"})});
   toast("Tarefa iniciada");
 }
-function completeTask(iid){
+function completeTask(iid,note){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
-  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"concluida",completedAt:Date.now(),history:pushHistory(iid,{type:"concluida"})});
+  const upd={status:"concluida",completedAt:Date.now(),history:pushHistory(iid,{type:"concluida",note:note||null})};
+  if(note&&note.trim())upd.completionNote=note.trim();
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update(upd);
   toast("Tarefa concluída ✓");
+}
+function reopenTask(iid){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  if(!confirm("Reabrir esta tarefa? Ela volta para pendente."))return;
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"pendente",completedAt:null,completionNote:null,
+    history:pushHistory(iid,{type:"reaberta"})});
+  toast("Tarefa reaberta");
 }
 function transferToR(iid,toEmpId){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
@@ -616,7 +637,7 @@ function saveTask(data,id){
   const tid=id||genId("t");
   const payload={
     title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
-    difficulty:data.difficulty,startTime:data.startTime||null,responsibles:data.responsibles,
+    startTime:data.startTime||null,responsibles:data.responsibles,
     recurrence:data.recurrence,active:true,
     createdDate:data.createdDate||todayKey(),createdBy:data.createdBy||state.user.username,updatedAt:Date.now()
   };
@@ -708,7 +729,7 @@ function tryRestore(){
 }
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",difficulty:""},respFilter:{sector:"",level:""}};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:""},respFilter:{sector:"",level:""}};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
@@ -735,14 +756,13 @@ function render(){
   else if(state.view==="diag")m.innerHTML=viewDiag();
 }
 
-function diffChip(d){const map={simples:"Simples",media:"Média",dificil:"Difícil"};return `<span class="chip ${d}">${map[d]||d}</span>`}
 function statusBadge(s){const map={pendente:"Pendente",em_andamento:"Em andamento",concluida:"Concluída",adiada:"Adiada"};return `<span class="status ${s}">${map[s]||s}</span>`}
 
 function taskCardMine({iid,ins,task},opts={}){
   const late=ins.date<todayKey()&&ins.status!=="concluida";
   const myIdx=(task.responsibles||[]).findIndex(id=>[state.emp._key,state.emp.id].map(String).includes(String(id)));
-  const cls=["card","d-"+task.difficulty];if(late)cls.push("late");
-  let meta=`<span class="chip sector">${esc(sectorName(task.sectorId))}</span>${diffChip(task.difficulty)}`;
+  const cls=["card"];if(late)cls.push("late");
+  let meta=`<span class="chip sector">${esc(sectorName(task.sectorId))}</span>`;
   if(task.startTime)meta+=`<span class="chip time">🕐 ${esc(task.startTime)}</span>`;
   if(myIdx>=0)meta+=`<span class="chip r">R${myIdx+1}</span>`;
   if(ins.autoAssigned===false)meta+=`<span class="chip transferred">Recebida</span>`;
@@ -753,15 +773,15 @@ function taskCardMine({iid,ins,task},opts={}){
   }else{
     actions='<div class="actions">';
     if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">Iniciar</button>`;
-    if(ins.status!=="concluida")actions+=`<button class="btn ok sm" data-act="complete" data-iid="${iid}">Concluir</button>`;
+    if(ins.status!=="concluida")actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}">Concluir</button>`;
+    else actions+=`<button class="btn ghost sm" data-act="reopen" data-iid="${iid}">Reabrir</button>`;
     actions+=`<button class="btn ghost sm" data-act="transfer" data-iid="${iid}">Transferir</button>`;
     actions+="</div>";
   }
-  return `<article class="${cls.join(" ")}"><div class="card-body">
+  return `<article class="${cls.join(" ")}" data-act="open-detail" data-iid="${iid}" style="cursor:pointer"><div class="card-body">
     <div class="card-head"><h3>${esc(task.title)}</h3>${statusBadge(ins.status)}</div>
-    ${task.description?`<p class="desc">${esc(task.description)}</p>`:""}
     <div class="meta">${meta}</div>
-    ${actions}
+    <div data-stop="1">${actions}</div>
   </div></article>`;
 }
 
@@ -829,31 +849,45 @@ function viewResp(){
   for(const l of levels)h+=`<div class="stat-box ${lvlClass(l)}"><div class="num">${byLevelCount[l]}</div><div class="lbl">Você é R${l}</div></div>`;
   h+="</div>";
 
-  // ---- distribuição por setor (sobre todas, antes do filtro) ----
+  // ---- distribuição por setor: % arredondado a inteiros e sempre soma 100 ----
   const secCounts={};all.forEach(t=>{const k=String(t.sectorId||"");secCounts[k]=(secCounts[k]||0)+1});
-  const secRows=Object.entries(secCounts).map(([id,n])=>({id,n,pct:Math.round(n/all.length*1000)/10})).sort((a,b)=>b.n-a.n);
+  const secEntries=Object.entries(secCounts).sort((a,b)=>b[1]-a[1]);
+  const rawPct=secEntries.map(([id,n])=>n/all.length*100);
+  const pctInt=rawPct.map(Math.floor);
+  let remainder=100-pctInt.reduce((s,v)=>s+v,0);
+  // distribui o resto do arredondamento pelos maiores restos fracionários, pra somar exatamente 100
+  const order=rawPct.map((v,i)=>({i,frac:v-pctInt[i]})).sort((a,b)=>b.frac-a.frac);
+  for(let k=0;k<remainder;k++)pctInt[order[k%order.length].i]++;
+  const secRows=secEntries.map(([id,n],i)=>({id,n,pct:pctInt[i]}));
+
   h+=`<div class="section-title">Sua distribuição por setor</div>`;
-  for(const r of secRows){
-    h+=`<div class="bar-row"><span class="blabel">${esc(sectorName(r.id))}</span>
-      <span class="bar-track"><span class="bar-fill" style="width:${r.pct}%"></span></span>
-      <span class="bar-pct">${r.pct}% · ${r.n}</span></div>`;
+  if(secRows.length===1){
+    h+=`<p class="note" style="margin:-2px 2px 10px">Todas as suas ${all.length} tarefa(s) são do setor <b>${esc(sectorName(secRows[0].id))}</b>.</p>`;
+  }else{
+    for(const r of secRows){
+      h+=`<div class="bar-row"><span class="blabel">${esc(sectorName(r.id))}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${r.pct}%"></span></span>
+        <span class="bar-pct">${r.pct}% (${r.n})</span></div>`;
+    }
   }
 
-  // ---- parceiros (sobre todas) ----
+  // ---- parceiros (sobre todas) — clicável para ver tarefas em comum ----
   const partners=computePartners(all);
   if(partners.length){
-    h+=`<div class="section-title">Seus principais parceiros</div>`;
+    h+=`<div class="section-title">Seus principais parceiros</div>
+      <p class="note" style="margin:-2px 2px 10px">Toque num parceiro para ver as tarefas que dividem com você.</p>`;
     for(const p of partners.slice(0,6)){
       const emp=employeeById(p.empId);const nm=empName(emp)||"—";
       const ini=esc(nm.trim().charAt(0).toUpperCase()||"?");
       let sub;
-      if(p.asNext&&p.asPrev)sub=`pega seu R, e você pega o dele · ${p.together} tarefa(s) juntos`;
-      else if(p.asNext)sub=`pega depois de você em ${p.asNext} tarefa(s)`;
-      else if(p.asPrev)sub=`você pega depois dele em ${p.asPrev} tarefa(s)`;
-      else sub=`${p.together} tarefa(s) em comum`;
-      h+=`<div class="partner-row"><span class="avatar">${ini}</span>
+      if(p.asNext&&p.asPrev)sub=`pega seu R, e você pega o dele`;
+      else if(p.asNext)sub=`pega depois de você`;
+      else if(p.asPrev)sub=`você pega depois dele`;
+      else sub=`mesma(s) tarefa(s), níveis não-adjacentes`;
+      h+=`<button type="button" class="partner-row" style="width:100%;text-align:left;border:1px solid var(--line);cursor:pointer" data-act="show-partner" data-emp="${esc(p.empId)}">
+        <span class="avatar">${ini}</span>
         <div class="partner-main"><span class="partner-name">${esc(nm)}</span><span class="partner-sub">${sub}</span></div>
-        <div class="partner-count"><b>${p.together}</b><span>juntos</span></div></div>`;
+        <div class="partner-count"><b>${p.together}</b><span>juntos</span></div></button>`;
     }
   }
 
@@ -879,12 +913,11 @@ function viewResp(){
   if(!filtered.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
 
   for(const t of filtered){
-    const recur=t.recurrence&&t.recurrence.type==="weekly"?`Semanal · ${WEEKDAYS[t.recurrence.weekday]}`:"Diária";
     h+=`<div class="resp-task-row">
       <div class="rlevelbig">R${t._level}</div>
       <div class="rmain"><span class="rtitle">${esc(t.title)}</span>
-        <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>${diffChip(t.difficulty)}
-          <span class="chip">${recur}</span>${t.startTime?`<span class="chip time">🕐 ${esc(t.startTime)}</span>`:""}</div>
+        <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>
+          <span class="chip">${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}</span>${t.startTime?`<span class="chip time">🕐 ${esc(t.startTime)}</span>`:""}</div>
       </div></div>`;
   }
   return h;
@@ -901,11 +934,20 @@ function viewAdmin(){
   const empOpts=[...usedEmp].map(id=>({id,name:empName(employeeById(id))}))
     .filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
 
+  // status "de hoje" de cada tarefa (para exibir e para filtrar)
+  const todayStatusOf=(tid,t)=>{
+    if(!occursOn(t,today))return "nao_ocorre";
+    const ins=INSTANCES[`${tid}__${today}`];
+    const assignee=ins?ins.assignedTo:computeAssignee(t,today);
+    if(!assignee)return "sem_responsavel";
+    return ins?ins.status:"pendente";
+  };
+
   // aplica filtros
-  const list=all.filter(([,t])=>{
+  const list=all.filter(([tid,t])=>{
     if(F.sector&&String(t.sectorId)!==String(F.sector))return false;
     if(F.emp&&!(t.responsibles||[]).map(String).includes(String(F.emp)))return false;
-    if(F.difficulty&&t.difficulty!==F.difficulty)return false;
+    if(F.status&&todayStatusOf(tid,t)!==F.status)return false;
     return true;
   });
 
@@ -916,20 +958,24 @@ function viewAdmin(){
 
   const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
   const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empOpts.map(e=>`<option value="${esc(e.id)}" ${String(e.id)===String(F.emp)?"selected":""}>${esc(e.name)}</option>`).join("");
-  const diffOpts=`<option value="">Todas as dificuldades</option>`+[["simples","Simples"],["media","Média"],["dificil","Difícil"]].map(([v,l])=>`<option value="${v}" ${F.difficulty===v?"selected":""}>${l}</option>`).join("");
-  const hasFilter=F.sector||F.emp||F.difficulty;
+  const statusLabels={pendente:"Pendente hoje",em_andamento:"Em andamento",concluida:"Concluída hoje",adiada:"Adiada",sem_responsavel:"Sem responsável",nao_ocorre:"Não ocorre hoje"};
+  const statusOpts=`<option value="">Todos os status</option>`+Object.entries(statusLabels).map(([v,l])=>`<option value="${v}" ${F.status===v?"selected":""}>${l}</option>`).join("");
+  const hasFilter=F.sector||F.emp||F.status;
 
   let h=`<div class="diag"><div class="kv">
     <span>Hoje:</span> <b>${pend}</b> <span>pendentes</span>
     <b>${prog}</b> <span>em andamento</span>
     <b>${done}</b> <span>concluídas</span>
     ${unassigned?`<b style="color:var(--accent)">${unassigned}</b> <span>sem responsável elegível</span>`:""}
-  </div><div class="actions"><button class="btn sm" data-act="recalc">↻ Recalcular fila de hoje</button></div></div>`;
+  </div><div class="actions">
+    <button class="btn sm" data-act="recalc">↻ Recalcular fila de hoje</button>
+    <button class="btn sm" data-act="open-report">📋 Relatório do dia</button>
+  </div></div>`;
 
   h+=`<div class="filters">
     <select data-filter="sector">${secOpts}</select>
     <select data-filter="emp">${empFilterOpts}</select>
-    <select data-filter="difficulty">${diffOpts}</select>
+    <select data-filter="status">${statusOpts}</select>
     ${hasFilter?`<button class="btn sm ghost" data-act="clear-filters">Limpar</button>`:""}
   </div>`;
 
@@ -938,7 +984,6 @@ function viewAdmin(){
   if(!list.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
 
   for(const [tid,t] of list){
-    const recur=t.recurrence&&t.recurrence.type==="weekly"?`Semanal · ${WEEKDAYS[t.recurrence.weekday]}`:"Diária";
     const resp=(t.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
 
     // responsável de HOJE, em destaque
@@ -963,8 +1008,8 @@ function viewAdmin(){
 
     h+=`<div class="tcard"><div class="tcard-head"><div>
       <h3>${esc(t.title)}</h3>
-      <div class="small">${esc(sectorName(t.sectorId))} · ${recur}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
-    </div>${diffChip(t.difficulty)}</div>
+      <div class="small">${esc(sectorName(t.sectorId))} · ${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
+    </div></div>
     ${todayRow}
     <div class="small" style="margin-top:8px">Fila: ${resp}</div>
     <div class="actions">
@@ -1034,11 +1079,12 @@ function openTaskForm(tid){
     id:tid||null,
     title:t?t.title:"",description:t?t.description:"",
     sectorId:t?t.sectorId:(sectors()[0]?sectors()[0].id:""),
-    difficulty:t?t.difficulty:"media",startTime:t?(t.startTime||""):"",
+    startTime:t?(t.startTime||""):"",
     responsibles:t?(t.responsibles||[]).slice():[],
-    recurrence:t?(t.recurrence||{type:"daily"}):{type:"daily"},
+    recurrence:t?(t.recurrence||{type:"daily",interval:1}):{type:"daily",interval:1},
     createdDate:t?t.createdDate:null,createdBy:t?t.createdBy:null
   };
+  if(formState.recurrence.interval==null)formState.recurrence.interval=1; // tarefas antigas
   renderTaskForm();
 }
 function renderTaskForm(){
@@ -1055,8 +1101,13 @@ function renderTaskForm(){
       </div>
       <button class="miniicon rm" data-act="resp-rm" data-i="${i}">✕</button>
     </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
-  const wk=f.recurrence.type==="weekly";
-  const wkOpts=WEEKDAYS.map((d,i)=>`<option value="${i}" ${wk&&Number(f.recurrence.weekday)===i?"selected":""}>${d}</option>`).join("");
+
+  const rtype=f.recurrence.type||"daily";
+  const interval=f.recurrence.interval||1;
+  const isWeekly=rtype==="weekly",isMonthly=rtype==="monthly",isDaily=!isWeekly&&!isMonthly;
+  const wkOpts=WEEKDAYS.map((d,i)=>`<option value="${i}" ${isWeekly&&Number(f.recurrence.weekday)===i?"selected":""}>${d}</option>`).join("");
+  const refDay=f.recurrence.day||(parseKey(f.createdDate||todayKey()).getDate());
+  const unitLabel=isWeekly?"semana(s)":isMonthly?"mês(es)":"dia(s)";
 
   openSheet(f.id?"Editar tarefa":"Nova tarefa",`
     <div class="field"><label>Título</label><input id="fTitle" value="${esc(f.title)}" placeholder="Ex.: Limpeza da piscina"></div>
@@ -1064,13 +1115,6 @@ function renderTaskForm(){
     <div class="row2">
       <div class="field"><label>Setor</label><select id="fSector">${secOpts}</select></div>
       <div class="field"><label>Horário de início (opcional)</label><input id="fTime" type="time" value="${esc(f.startTime||"")}"></div>
-    </div>
-    <div class="field"><label>Dificuldade</label>
-      <div class="seg diff" data-seg="difficulty">
-        <button type="button" data-v="simples" class="${f.difficulty==="simples"?"on":""}">Simples</button>
-        <button type="button" data-v="media" class="${f.difficulty==="media"?"on":""}">Média</button>
-        <button type="button" data-v="dificil" class="${f.difficulty==="dificil"?"on":""}">Difícil</button>
-      </div>
     </div>
     <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
       <div class="resp-list">${respHtml}</div>
@@ -1080,24 +1124,168 @@ function renderTaskForm(){
       </div>
       <p class="note">A tarefa do dia vai para o R1; se ele estiver ausente ou fora do horário do turno, cai para o próximo R elegível.</p>
     </div>
-    <div class="field"><label>Recorrência</label>
+    <div class="field"><label>Repetir</label>
       <div class="seg" data-seg="recurrence">
-        <button type="button" data-v="daily" class="${!wk?"on":""}">Diária</button>
-        <button type="button" data-v="weekly" class="${wk?"on":""}">Semanal</button>
+        <button type="button" data-v="daily" class="${isDaily?"on":""}">Diária</button>
+        <button type="button" data-v="weekly" class="${isWeekly?"on":""}">Semanal</button>
+        <button type="button" data-v="monthly" class="${isMonthly?"on":""}">Mensal</button>
       </div>
     </div>
-    <div class="field ${wk?"":"hidden"}" id="fWeekdayWrap"><label>Dia da semana</label><select id="fWeekday">${wkOpts}</select></div>
+    <div class="row2">
+      <div class="field"><label>A cada</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="fInterval" type="number" min="1" max="365" value="${interval}" style="width:74px;flex:0 0 auto">
+          <span class="note" style="margin:0">${unitLabel}</span>
+        </div>
+      </div>
+      <div class="field ${isWeekly?"":"hidden"}" id="fWeekdayWrap"><label>Dia da semana</label><select id="fWeekday">${wkOpts}</select></div>
+      <div class="field ${isMonthly?"":"hidden"}" id="fMonthDayWrap"><label>Dia do mês</label><input id="fMonthDay" type="number" min="1" max="31" value="${refDay}"></div>
+    </div>
+    <p class="note" id="fRecurPreview" style="margin-top:-4px">${recurrenceLabel(f.recurrence)}</p>
     <div class="sheet-actions">
       <button class="btn ghost" data-act="close">Cancelar</button>
       <button class="btn primary" data-act="save-task">${f.id?"Salvar alterações":"Criar tarefa"}</button>
     </div>
   `);
 }
+function recurrenceLabel(rec){
+  const n=Math.max(1,Number(rec.interval)||1);
+  if(rec.type==="weekly"){
+    const dia=WEEKDAYS[Number(rec.weekday)||0];
+    return n===1?`Toda(o) ${dia}.`:`A cada ${n} semanas, ${dia}.`;
+  }
+  if(rec.type==="monthly"){
+    const d=rec.day||1;
+    return n===1?`Todo dia ${d} do mês.`:`A cada ${n} meses, no dia ${d}.`;
+  }
+  return n===1?"Todos os dias.":`A cada ${n} dias.`;
+}
 function syncFormInputs(){
   const f=formState;if(!f)return;
   const t=$("#fTitle"),d=$("#fDesc"),s=$("#fSector"),tm=$("#fTime");
   if(t)f.title=t.value;if(d)f.description=d.value;if(s)f.sectorId=s.value;if(tm)f.startTime=tm.value;
+  const iv=$("#fInterval");if(iv)f.recurrence.interval=Math.max(1,parseInt(iv.value,10)||1);
   const wd=$("#fWeekday");if(wd&&f.recurrence.type==="weekly")f.recurrence.weekday=Number(wd.value);
+  const md=$("#fMonthDay");if(md&&f.recurrence.type==="monthly")f.recurrence.day=Math.min(31,Math.max(1,parseInt(md.value,10)||1));
+}
+
+/* ---- Detalhes da tarefa (clique no card) ---- */
+function openTaskDetail(iid){
+  const ins=INSTANCES[iid];if(!ins)return;
+  const task=TASKS[ins.taskId];if(!task)return;
+  const resp=(task.responsibles||[]).map((id,i)=>{
+    const myIds=[state.emp&&state.emp._key,state.emp&&state.emp.id].map(String);
+    const isMe=myIds.includes(String(id));
+    return `<span class="chip r" style="${isMe?'box-shadow:0 0 0 1.5px var(--primary) inset':''}">R${i+1} ${esc(empName(employeeById(id)))}${isMe?" (você)":""}</span>`;
+  }).join(" ");
+  const hist=Array.isArray(ins.history)?ins.history.slice().reverse():[];
+  const histHtml=hist.length?hist.map(h=>{
+    const labels={iniciada:"Iniciada",concluida:"Concluída",reaberta:"Reaberta",transferida:"Transferida",adiada:"Adiada","recebida-adiamento":"Recebida (adiamento)"};
+    const who=empName(employeeById(h.by))!=="—"?empName(employeeById(h.by)):(h.by||"—");
+    let extra="";
+    if(h.type==="transferida")extra=` → ${esc(empName(employeeById(h.to)))}`;
+    if(h.type==="adiada")extra=` → ${esc(fmtDate(h.to))}`;
+    if(h.note)extra+=`<br><span class="note" style="margin:2px 0 0">"${esc(h.note)}"</span>`;
+    return `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${labels[h.type]||h.type}</b>${extra} — ${esc(who)} · ${new Date(h.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>`;
+  }).join(""):'<p class="note">Sem movimentações ainda.</p>';
+
+  openSheet(task.title,`
+    <div class="meta" style="margin-bottom:4px">
+      <span class="chip sector">${esc(sectorName(task.sectorId))}</span>
+      <span class="chip">${recurrenceLabel(task.recurrence||{type:"daily",interval:1})}</span>
+      ${task.startTime?`<span class="chip time">🕐 ${esc(task.startTime)}</span>`:""}
+      ${statusBadge(ins.status)}
+    </div>
+    ${task.description?`<p class="desc" style="margin:10px 2px">${esc(task.description)}</p>`:'<p class="note" style="margin:10px 2px">Sem descrição.</p>'}
+    ${ins.completionNote?`<div class="diag" style="margin:10px 0 4px"><b style="font-size:13px">Observação ao concluir</b><p class="note" style="margin-top:4px">${esc(ins.completionNote)}</p></div>`:""}
+    <div class="section-title" style="margin-top:14px">Fila de responsáveis</div>
+    <div class="meta">${resp}</div>
+    <div class="section-title">Movimentações desta ocorrência</div>
+    ${histHtml}
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Fechar</button>
+      ${ins.status!=="concluida"?`<button class="btn ok" data-act="open-complete" data-iid="${iid}">Concluir</button>`:`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`}
+    </div>
+  `);
+}
+
+/* ---- Concluir com observação opcional ---- */
+function openCompleteModal(iid){
+  const ins=INSTANCES[iid];if(!ins)return;
+  const task=TASKS[ins.taskId];if(!task)return;
+  openSheet("Concluir tarefa",`
+    <p class="note" style="margin-bottom:12px"><b>${esc(task.title)}</b> — quer deixar alguma observação? (opcional)</p>
+    <div class="field"><textarea id="completeNote" placeholder="Ex.: faltou material, deixei para o próximo turno…"></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn ok" data-act="confirm-complete" data-iid="${iid}">Concluir</button>
+    </div>
+  `);
+}
+
+/* ---- Parceiro: tarefas relacionadas ---- */
+function openPartnerTasks(empId){
+  const all=myActiveTasksWithLevel();
+  const shared=all.filter(t=>(t.responsibles||[]).map(String).includes(String(empId)));
+  const nm=empName(employeeById(empId))||"—";
+  const myIds=[state.emp._key,state.emp.id].map(String);
+  const rows=shared.map(t=>{
+    const resp=t.responsibles||[];
+    const myIdx=resp.findIndex(id=>myIds.includes(String(id)));
+    const hisIdx=resp.findIndex(id=>String(id)===String(empId));
+    return `<div class="resp-task-row">
+      <div class="rlevelbig">R${myIdx+1}</div>
+      <div class="rmain"><span class="rtitle">${esc(t.title)}</span>
+        <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>
+          <span class="chip r">Você: R${myIdx+1}</span><span class="chip r">${esc(nm)}: R${hisIdx+1}</span></div>
+      </div></div>`;
+  }).join("");
+  openSheet(`Tarefas com ${nm}`,`
+    <p class="note" style="margin-bottom:12px">${shared.length} tarefa(s) em que você e <b>${esc(nm)}</b> estão na mesma fila.</p>
+    ${rows||'<p class="empty">Nenhuma tarefa em comum.</p>'}
+    <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
+  `);
+}
+
+/* ---- Relatório do dia: movimentações de hoje, agrupadas por colaborador ---- */
+function openDailyReport(){
+  const today=todayKey();
+  const startOfDay=parseKey(today).getTime();
+  const endOfDay=startOfDay+86400000;
+  const byEmp={}; // username -> [{time,label,taskTitle,extra}]
+  const moveLabels={iniciada:"Iniciou",concluida:"Concluiu",reaberta:"Reabriu",transferida:"Transferiu",adiada:"Adiou",
+    "recebida-adiamento":"Recebeu (adiamento)"};
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||!Array.isArray(ins.history))continue;
+    const task=TASKS[ins.taskId];const title=task?task.title:"(tarefa removida)";
+    for(const h of ins.history){
+      if(!h.at||h.at<startOfDay||h.at>=endOfDay)continue;
+      const who=h.by||"—";
+      let extra="";
+      if(h.type==="transferida")extra=` → ${empName(employeeById(h.to))||h.to}`;
+      if(h.type==="adiada")extra=` → ${fmtDate(h.to)}`;
+      if(h.note)extra+=` ("${h.note}")`;
+      (byEmp[who]=byEmp[who]||[]).push({time:h.at,label:moveLabels[h.type]||h.type,title,extra});
+    }
+  }
+  const emps=Object.keys(byEmp).sort((a,b)=>byEmp[b].length-byEmp[a].length);
+  let body=`<p class="note" style="margin-bottom:14px">Movimentações de hoje (${fmtDate(today)}), por colaborador. Login usado no app (CPF) identifica quem fez a ação.</p>`;
+  if(!emps.length){
+    body+=`<div class="empty"><b>Nenhuma movimentação registrada hoje ainda.</b></div>`;
+  }else{
+    for(const who of emps){
+      const moves=byEmp[who].sort((a,b)=>a.time-b.time);
+      const emp=employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===cpf11(who)});
+      const label=emp?empName(emp):(who==="gestor"?"Gestor":who);
+      body+=`<div class="diag" style="margin-bottom:10px"><h4>${esc(label)} <span class="count-pill">${moves.length}</span></h4>`;
+      body+=moves.map(m=>`<div class="small" style="padding:5px 0;border-bottom:1px solid var(--line)">
+        <b>${esc(m.label)}</b> — ${esc(m.title)}${esc(m.extra)}
+        <span style="color:var(--muted-2)"> · ${new Date(m.time).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>
+      </div>`).join("");
+      body+=`</div>`;
+    }
+  }
+  openSheet("Relatório do dia",body+`<div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>`);
 }
 
 /* ---- Transferir ---- */
@@ -1163,17 +1351,29 @@ $("#lgUser").addEventListener("input",e=>{
 });
 $("#logoutBtn").addEventListener("click",logout);
 $("#tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;state.view=t.dataset.view;setActiveTab();render()});
+document.addEventListener("input",e=>{
+  if(!formState)return;
+  if(["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
+    syncFormInputs();
+    const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
+  }
+});
 
 document.addEventListener("click",e=>{
   // fecha modal ao tocar fora
   if(e.target.closest("[data-overlay]")&&!e.target.closest(".sheet")){closeModal();return}
-  // botões segmentados (dificuldade / recorrência) — não têm data-act
+  // botões segmentados (recorrência) — não têm data-act
   const seg=e.target.closest(".seg button");
   if(seg&&formState){
     const field=seg.closest("[data-seg]").dataset.seg, v=seg.dataset.v;
     syncFormInputs();
-    if(field==="difficulty")formState.difficulty=v;
-    if(field==="recurrence")formState.recurrence={type:v,weekday:v==="weekly"?(formState.recurrence.weekday??1):undefined};
+    if(field==="recurrence"){
+      const keepInterval=formState.recurrence.interval||1;
+      const rec={type:v,interval:keepInterval};
+      if(v==="weekly")rec.weekday=formState.recurrence.weekday??1;
+      if(v==="monthly")rec.day=formState.recurrence.day||parseKey(formState.createdDate||todayKey()).getDate();
+      formState.recurrence=rec;
+    }
     renderTaskForm();return;
   }
   const a=e.target.closest("[data-act]");
@@ -1185,10 +1385,15 @@ document.addEventListener("click",e=>{
     case"edit-task":openTaskForm(tid);break;
     case"del-task":deleteTask(tid);break;
     case"recalc":recalcQueue();break;
-    case"clear-filters":state.adminFilter={sector:"",emp:"",difficulty:""};render();break;
+    case"clear-filters":state.adminFilter={sector:"",emp:"",status:""};render();break;
     case"clear-resp-filters":state.respFilter={sector:"",level:""};render();break;
     case"start":startTask(iid);break;
-    case"complete":completeTask(iid);break;
+    case"open-complete":openCompleteModal(iid);break;
+    case"confirm-complete":{const note=$("#completeNote")?$("#completeNote").value:"";completeTask(iid,note);closeModal();break}
+    case"reopen":reopenTask(iid);closeModal();break;
+    case"open-detail":openTaskDetail(iid);break;
+    case"show-partner":openPartnerTasks(a.dataset.emp);break;
+    case"open-report":openDailyReport();break;
     case"transfer":openTransfer(iid);break;
     case"sel-r":transferState.sel={type:"r",empId:a.dataset.to};renderTransfer();break;
     case"sel-day":transferState.sel={type:"day"};renderTransfer();setTimeout(()=>{const el=$("#postDate");if(el)el.focus()},0);break;
@@ -1219,6 +1424,10 @@ document.addEventListener("change",e=>{
   const f2=e.target.closest("[data-filter2]");
   if(f2){state.respFilter[f2.dataset.filter2]=f2.value;render();return}
   if(e.target.id==="postDate"&&transferState){transferState.date=e.target.value}
+  if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
+    syncFormInputs();
+    const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
+  }
 });
 
 /* ===================================================================
