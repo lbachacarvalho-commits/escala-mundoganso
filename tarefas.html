@@ -132,15 +132,29 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 
 /* ---------- Modal ---------- */
 .overlay{position:fixed;inset:0;background:rgba(10,30,28,.55);backdrop-filter:blur(2px);z-index:60;
-  display:grid;place-items:end center;padding:0}
-.sheet{background:var(--surface);width:100%;max-width:760px;max-height:92dvh;overflow:auto;
-  border-radius:20px 20px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 22px);
-  animation:slideUp .22s ease}
-@keyframes slideUp{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+  display:grid;place-items:center;padding:16px}
+.sheet{background:var(--surface);width:100%;max-width:560px;max-height:90dvh;overflow:auto;
+  border-radius:18px;padding:22px 22px 20px;box-shadow:0 24px 70px -20px rgba(0,0,0,.55);
+  animation:popIn .18s ease}
+@keyframes popIn{from{transform:translateY(10px) scale(.985);opacity:0}to{transform:none;opacity:1}}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .sheet-head h2{margin:0;font-size:19px;letter-spacing:-.01em}
 .x{background:var(--surface-2);border:0;width:34px;height:34px;border-radius:9px;font-size:18px;color:var(--muted)}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* opções selecionáveis (transferir) */
+.opt-list{display:flex;flex-direction:column;gap:8px}
+.opt{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface-2);
+  border:1.5px solid var(--line);border-radius:12px;padding:11px 13px;transition:.12s;font:inherit;color:inherit;cursor:pointer}
+.opt:hover:not(.disabled){border-color:var(--muted-2)}
+.opt.sel{border-color:var(--primary);background:var(--primary-soft)}
+.opt.disabled{opacity:.55;cursor:not-allowed}
+.opt .rlevel{background:#ecebfb;color:#4a45a8;font-weight:700;font-size:12px;border-radius:7px;padding:2px 8px;flex:0 0 auto}
+.opt-main{flex:1;display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.opt-name{font-weight:600;font-size:14.5px}
+.opt-check{color:var(--primary);font-size:18px;width:18px;text-align:center;flex:0 0 auto}
+.sheet-actions{display:flex;gap:10px;margin-top:22px;position:sticky;bottom:-20px;background:var(--surface);
+  padding-top:8px}
+.sheet-actions .btn{flex:1;justify-content:center;padding:12px}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
 .seg button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;
   padding:10px;font-weight:600;font-size:13px;color:var(--muted)}
@@ -246,6 +260,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-view="mine">Minhas tarefas</button>
+      <button class="tab hidden" data-view="resp" id="tabResp">Minhas responsabilidades</button>
       <button class="tab hidden" data-view="admin" id="tabAdmin">Gestão</button>
       <button class="tab hidden" data-view="diag" id="tabDiag">Diagnóstico</button>
     </div>
@@ -640,6 +655,7 @@ function finishLogin(){
   $("#appScreen").classList.remove("hidden");
   $("#tabAdmin").classList.toggle("hidden",!state.admin);
   $("#tabDiag").classList.toggle("hidden",!state.admin);
+  $("#tabResp").classList.toggle("hidden",!state.emp);
   renderWho();
   state.view=(state.admin&&!state.emp)?"admin":"mine";
   setActiveTab();
@@ -680,6 +696,7 @@ function render(){
   const m=$("#main");
   if(!ESCALA){m.innerHTML='<div class="loading"><div class="spinner"></div>Carregando escala…</div>';return}
   if(state.view==="mine")m.innerHTML=viewMine();
+  else if(state.view==="resp")m.innerHTML=viewResp();
   else if(state.view==="admin")m.innerHTML=viewAdmin();
   else if(state.view==="diag")m.innerHTML=viewDiag();
 }
@@ -731,6 +748,60 @@ function viewMine(){
   if(coresp.length){
     h+=`<div class="section-title">Você é co-responsável <span class="count-pill">${coresp.length}</span></div>`;
     h+=coresp.map(t=>taskCardMine(t,{coresp:true})).join("");
+  }
+  return h;
+}
+
+/* ---- Minhas responsabilidades: agrupado por nível R, sem filtro de dia ---- */
+function respCardFor(task,rlevel){
+  const today=todayKey();
+  const occurs=occursOn(task,today);
+  const ins=occurs?INSTANCES[`${task._tid}__${today}`]:null;
+  const todayAssignee=occurs?(ins?ins.assignedTo:computeAssignee(task,today)):null;
+  const recur=task.recurrence&&task.recurrence.type==="weekly"?`Semanal · ${WEEKDAYS[task.recurrence.weekday]}`:"Diária";
+  let meta=`<span class="chip sector">${esc(sectorName(task.sectorId))}</span>${diffChip(task.difficulty)}<span class="chip">${recur}</span>`;
+  if(task.startTime)meta+=`<span class="chip time">🕐 ${esc(task.startTime)}</span>`;
+  let todayLine;
+  if(!occurs){
+    todayLine=`<div class="today-row muted"><div class="today-info"><span class="today-name" style="color:var(--muted);font-weight:500">Não ocorre hoje</span></div></div>`;
+  }else{
+    const myIds=[state.emp._key,state.emp.id].map(String);
+    const isMe=myIds.includes(String(todayAssignee));
+    const nm=todayAssignee?(empName(employeeById(todayAssignee))||"—"):null;
+    if(nm){
+      const ini=esc(nm.trim().charAt(0).toUpperCase()||"?");
+      todayLine=`<div class="today-row"><span class="avatar">${ini}</span>
+        <div class="today-info"><span class="today-label">${isMe?"Hoje é com você":"Responsável hoje"}</span><span class="today-name">${esc(nm)}</span></div>
+        ${ins?statusBadge(ins.status):""}</div>`;
+    }else{
+      todayLine=`<div class="today-row none"><span class="avatar none">!</span>
+        <div class="today-info"><span class="today-label">Hoje</span><span class="today-name">Sem responsável elegível</span></div></div>`;
+    }
+  }
+  return `<article class="card d-${task.difficulty}"><div class="card-body">
+    <div class="card-head"><h3>${esc(task.title)}</h3><span class="chip r">R${rlevel}</span></div>
+    ${task.description?`<p class="desc">${esc(task.description)}</p>`:""}
+    <div class="meta">${meta}</div>
+    ${todayLine}
+  </div></article>`;
+}
+function viewResp(){
+  if(!state.emp)return `<div class="empty"><b>Disponível só para colaboradores.</b>Faça login com seu CPF para ver suas responsabilidades.</div>`;
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  const byLevel={};
+  for(const tid in TASKS){
+    const t=TASKS[tid];if(!t||t.active===false)continue;
+    const idx=(t.responsibles||[]).findIndex(id=>myIds.includes(String(id)));
+    if(idx<0)continue;
+    const lvl=idx+1;(byLevel[lvl]=byLevel[lvl]||[]).push({...t,_tid:tid});
+  }
+  const levels=Object.keys(byLevel).map(Number).sort((a,b)=>a-b);
+  if(!levels.length)return `<div class="empty"><b>Você ainda não está na fila de nenhuma tarefa.</b>Quando o gestor te adicionar como responsável, ela aparece aqui.</div>`;
+  let h="";
+  for(const lvl of levels){
+    const tasks=byLevel[lvl];
+    h+=`<div class="section-title">Você é R${lvl} <span class="count-pill">${tasks.length}</span></div>`;
+    h+=tasks.map(t=>respCardFor(t,lvl)).join("");
   }
   return h;
 }
@@ -864,7 +935,7 @@ function viewDiag(){
 /* ===================================================================
    11) MODAIS
    =================================================================== */
-function closeModal(){$("#modalRoot").innerHTML=""}
+function closeModal(){$("#modalRoot").innerHTML="";transferState=null;formState=null;}
 function openSheet(title,bodyHtml){
   $("#modalRoot").innerHTML=`<div class="overlay" data-overlay><div class="sheet">
     <div class="sheet-head"><h2>${esc(title)}</h2><button class="x" data-act="close">✕</button></div>
@@ -932,7 +1003,10 @@ function renderTaskForm(){
       </div>
     </div>
     <div class="field ${wk?"":"hidden"}" id="fWeekdayWrap"><label>Dia da semana</label><select id="fWeekday">${wkOpts}</select></div>
-    <button class="btn primary full" data-act="save-task">${f.id?"Salvar alterações":"Criar tarefa"}</button>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn primary" data-act="save-task">${f.id?"Salvar alterações":"Criar tarefa"}</button>
+    </div>
   `);
 }
 function syncFormInputs(){
@@ -943,27 +1017,43 @@ function syncFormInputs(){
 }
 
 /* ---- Transferir ---- */
+let transferState=null;
 function openTransfer(iid){
-  const ins=INSTANCES[iid];const task=TASKS[ins.taskId];const today=todayKey();
+  const ins=INSTANCES[iid];if(!ins)return;
+  transferState={iid,taskId:ins.taskId,sel:null,date:addDays(todayKey(),1)};
+  renderTransfer();
+}
+function renderTransfer(){
+  const ts=transferState;const ins=INSTANCES[ts.iid];const task=TASKS[ts.taskId];const today=todayKey();
   const others=(task.responsibles||[]).filter(id=>String(id)!==String(ins.assignedTo));
   const rows=others.map(id=>{
     const emp=employeeById(id);if(!emp)return"";
     const e=eligibility(emp,today,task.startTime);
     const idx=(task.responsibles||[]).findIndex(x=>String(x)===String(id));
-    return `<div class="resp-item">
-      <span class="rlevel">R${idx+1}</span><span class="rname">${esc(empName(emp))}<br>
+    const sel=ts.sel&&ts.sel.type==="r"&&String(ts.sel.empId)===String(id);
+    return `<button type="button" class="opt ${sel?"sel":""} ${e.ok?"":"disabled"}" ${e.ok?`data-act="sel-r" data-to="${esc(id)}"`:""}>
+      <span class="rlevel">R${idx+1}</span>
+      <span class="opt-main"><span class="opt-name">${esc(empName(emp))}</span>
         <small style="color:${e.ok?'var(--ok)':'var(--accent)'}">${e.ok?"elegível hoje":"indisponível ("+e.reason+")"}</small></span>
-      <button class="btn primary sm" data-act="do-transfer" data-iid="${iid}" data-to="${esc(id)}" ${e.ok?"":"disabled"}>Passar</button>
-    </div>`;
+      <span class="opt-check">${sel?"●":""}</span>
+    </button>`;
   }).join("");
+  const daySel=ts.sel&&ts.sel.type==="day";
   openSheet("Transferir tarefa",`
-    <p class="note" style="margin-bottom:12px"><b>${esc(task.title)}</b> — passe para outro responsável elegível ou adie para outro dia.</p>
-    <div class="section-title" style="margin-top:0">Outro responsável</div>
-    <div class="resp-list">${rows||'<p class="note">Esta tarefa não tem outros responsáveis cadastrados.</p>'}</div>
-    <div class="section-title">Adiar para outro dia</div>
-    <div class="add-resp">
-      <input id="postDate" type="date" min="${addDays(today,1)}" value="${addDays(today,1)}" style="flex:1;padding:11px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)">
-      <button class="btn sm" data-act="do-postpone" data-iid="${iid}">Adiar</button>
+    <p class="note" style="margin-bottom:14px"><b>${esc(task.title)}</b> — escolha para quem passar, ou adie para outro dia, e confirme.</p>
+    <div class="section-title" style="margin-top:0">Passar para outro responsável</div>
+    <div class="opt-list">${rows||'<p class="note">Esta tarefa não tem outros responsáveis cadastrados.</p>'}</div>
+    <div class="section-title">Ou adiar para outro dia</div>
+    <button type="button" class="opt ${daySel?"sel":""}" data-act="sel-day">
+      <span class="opt-main"><span class="opt-name">Adiar a tarefa</span>
+        <small style="color:var(--muted)">reagenda e recalcula a fila no novo dia</small></span>
+      <span class="opt-check">${daySel?"●":""}</span>
+    </button>
+    <input id="postDate" type="date" min="${addDays(today,1)}" value="${ts.date}" class="${daySel?"":"hidden"}"
+      style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)">
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn primary" data-act="confirm-transfer" ${ts.sel?"":"disabled"}>Confirmar</button>
     </div>
   `);
 }
@@ -1015,8 +1105,14 @@ document.addEventListener("click",e=>{
     case"start":startTask(iid);break;
     case"complete":completeTask(iid);break;
     case"transfer":openTransfer(iid);break;
-    case"do-transfer":transferToR(iid,a.dataset.to);break;
-    case"do-postpone":{const d=$("#postDate").value;if(d)postpone(iid,d);break}
+    case"sel-r":transferState.sel={type:"r",empId:a.dataset.to};renderTransfer();break;
+    case"sel-day":transferState.sel={type:"day"};renderTransfer();setTimeout(()=>{const el=$("#postDate");if(el)el.focus()},0);break;
+    case"confirm-transfer":{
+      const ts=transferState;if(!ts||!ts.sel)break;
+      if(ts.sel.type==="r")transferToR(ts.iid,ts.sel.empId);
+      else{const d=($("#postDate")&&$("#postDate").value)||ts.date;postpone(ts.iid,d)}
+      break;
+    }
     // form
     case"resp-add":{const sel=$("#fAddResp");if(sel&&sel.value){syncFormInputs();formState.responsibles.push(sel.value);renderTaskForm()}break}
     case"resp-rm":{syncFormInputs();formState.responsibles.splice(+a.dataset.i,1);renderTaskForm();break}
@@ -1034,7 +1130,8 @@ document.addEventListener("click",e=>{
 /* selects de filtro do gestor */
 document.addEventListener("change",e=>{
   const f=e.target.closest("[data-filter]");
-  if(f){state.adminFilter[f.dataset.filter]=f.value;render();}
+  if(f){state.adminFilter[f.dataset.filter]=f.value;render();return}
+  if(e.target.id==="postDate"&&transferState){transferState.date=e.target.value}
 });
 
 /* ===================================================================
