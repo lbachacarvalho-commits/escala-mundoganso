@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Tarefas · Lazer</title>
+<title>Tarefas - Ganso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -247,6 +247,39 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 .stat-box.r2 .num{color:#6a5acd}
 .stat-box.r3 .num{color:var(--accent)}
 
+/* ---------- Card de nota semanal (colaborador) ---------- */
+.score-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:20px 18px;margin-bottom:18px;text-align:center}
+.score-num{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.score-num.good{color:var(--ok)}
+.score-num.mid{color:var(--demanda-deep)}
+.score-num.bad{color:#c0392b}
+.score-num.none{color:var(--muted-2);font-size:28px}
+.score-label{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px}
+.score-period{font-size:11.5px;color:var(--muted-2);margin-top:2px}
+.score-trend{display:inline-flex;align-items:center;gap:4px;margin-top:10px;font-size:12.5px;font-weight:700;
+  padding:3px 10px;border-radius:999px}
+.score-trend.up{background:var(--ok-soft);color:#1d7a4f}
+.score-trend.down{background:#fbe1dc;color:#a8341f}
+.score-trend.flat{background:var(--surface-2);color:var(--muted)}
+.score-history{display:flex;gap:6px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.score-history .wk{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:38px}
+.score-history .wk .bar{width:18px;height:36px;background:var(--surface-2);border-radius:4px;position:relative;overflow:hidden}
+.score-history .wk .bar .fill{position:absolute;bottom:0;left:0;right:0;border-radius:4px}
+.score-history .wk .pct{font-size:10px;color:var(--muted);font-weight:700}
+
+/* ---------- Desempenho da equipe (gestor) ---------- */
+.perf-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:11px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+.perf-row .pname{flex:1;min-width:0;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.perf-row .psub{font-size:11.5px;color:var(--muted);margin-top:1px}
+.perf-pct{flex:0 0 auto;font-size:18px;font-weight:800;min-width:52px;text-align:right}
+.perf-pct.good{color:var(--ok)}.perf-pct.mid{color:var(--demanda-deep)}.perf-pct.bad{color:#c0392b}.perf-pct.none{color:var(--muted-2);font-size:13px}
+.alert-card{display:flex;align-items:flex-start;gap:10px;border-radius:12px;padding:11px 13px;margin-bottom:8px;font-size:13px}
+.alert-card.down{background:#fbe1dc;color:#7a2818}
+.alert-card.up{background:var(--ok-soft);color:#175c3f}
+.alert-card b{display:block;font-size:13.5px;margin-bottom:1px}
+
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .bar-row .blabel{flex:0 0 108px;font-size:13px;color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bar-track{flex:1;height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden}
@@ -327,7 +360,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 <div id="loginScreen" class="login-wrap">
   <div class="login">
     <div class="logo">🧹</div>
-    <h1>Tarefas do Lazer</h1>
+    <h1>Tarefas - Ganso</h1>
     <p class="sub">Entre com seu CPF.</p>
     <div id="loginError" class="error-msg hidden"></div>
     <div class="field">
@@ -357,9 +390,10 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
       <button class="tab active" data-view="mine" id="tabMine">Minhas tarefas</button>
       <button class="tab hidden" data-view="resp" id="tabResp">Minhas responsabilidades</button>
       <button class="tab hidden" data-view="suggestions" id="tabSuggestions">Minhas sugestões</button>
-      <button class="tab hidden" data-view="admin" id="tabAdmin">Gestão</button>
+      <button class="tab hidden" data-view="admin" id="tabAdmin">Tarefas</button>
       <button class="tab hidden" data-view="tickets" id="tabTickets">Sugestões</button>
-      <button class="tab hidden" data-view="diag" id="tabDiag">Diagnóstico</button>
+      <button class="tab hidden" data-view="performance" id="tabPerformance">Desempenho da equipe</button>
+      <button class="tab hidden" data-view="diag" id="tabDiag">Informações</button>
     </div>
   </header>
   <main id="main"><div class="loading"><div class="spinner"></div>Carregando…</div></main>
@@ -435,7 +469,9 @@ let USERS  = null;              // /escala_users (carregado no login)
 let TASKS  = {};                // /escala_tarefas/tasks
 let INSTANCES = {};             // /escala_tarefas/instances
 let TICKETS = {};               // /escala_tarefas/tickets (sugestões/dúvidas sobre a tarefa)
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""} };
+let WEEKLY_SCORES = {};         // /escala_tarefas/weeklyScores/{empCpf}/{mondayKey} (notas semanais fechadas)
+let SCORE_RESET_AT = null;      // /escala_tarefas/scoreResetAt — instâncias anteriores a esta data não contam na nota
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:""} };
 let materializing = false;
 
 /* ===================================================================
@@ -455,6 +491,11 @@ function todayKey(){return dateKey(new Date())}
 function parseKey(k){const[y,m,d]=String(k).split("-").map(Number);return new Date(y,m-1,d)}
 function addDays(k,n){const d=parseKey(k);d.setDate(d.getDate()+n);return dateKey(d)}
 function weekdayOf(k){return parseKey(k).getDay()}
+/* segunda-feira da semana (seg→dom) que contém dKey; usada como identificador único da semana */
+function mondayOf(dKey){const wd=weekdayOf(dKey);const diff=wd===0?-6:1-wd;return addDays(dKey,diff)}
+function sundayOf(dKey){return addDays(mondayOf(dKey),6)}
+function weekLabel(mondayKey){const d=parseKey(mondayKey);const end=parseKey(sundayOf(mondayKey));
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} – ${String(end.getDate()).padStart(2,"0")}/${String(end.getMonth()+1).padStart(2,"0")}`}
 function maxKey(a,b){return a>=b?a:b}
 function fmtDate(k){const d=parseKey(k);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"short"})}
 
@@ -637,9 +678,115 @@ function materialize(){
       if((should||null)!==(ins.assignedTo||null))updates[`instances/${iid}/assignedTo`]=should;
     }
   }
+  closeCompletedWeeks(updates);
   if(Object.keys(updates).length){
     dbRef(PATH.tarefas).update(updates).catch(e=>console.warn("materialize",e)).finally(()=>{materializing=false});
   }else{materializing=false}
+}
+
+/* ===================================================================
+   6b) DESEMPENHO: índice de conclusão semanal por colaborador
+   Regra: conta instâncias TERMINAIS (concluída / não realizada) com
+   responsável definido (assignedTo preenchido). Pendentes/em andamento
+   ainda não "fecharam" o dia; sem responsável não conta contra ninguém.
+   ===================================================================== */
+function empCpfKey(emp){return cpf11(onlyDigits(pick(emp,SCHEMA.cpfFields))||"")}
+
+/* {completed, notDone, pct|null} de um colaborador num intervalo [from,to] inclusive */
+function scoreForRange(empCpfNorm,from,to){
+  const effectiveFrom=SCORE_RESET_AT&&SCORE_RESET_AT>from?SCORE_RESET_AT:from;
+  let completed=0,notDone=0;
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||!ins.assignedTo)continue;
+    if(ins.date<effectiveFrom||ins.date>to)continue;
+    const emp=employeeById(ins.assignedTo);if(!emp)continue;
+    if(empCpfKey(emp)!==empCpfNorm)continue;
+    if(ins.status==="concluida")completed++;
+    else if(ins.status==="nao_realizada")notDone++;
+  }
+  const total=completed+notDone;
+  return {completed,notDone,total,pct:total?Math.round(completed/total*100):null};
+}
+/* nota da semana corrente (parcial, seg→hoje), recalculada ao vivo — não é o registro fechado */
+function currentWeekScore(empCpfNorm,today){
+  today=today||todayKey();
+  return scoreForRange(empCpfNorm,mondayOf(today),today);
+}
+/* nota FECHADA da semana imediatamente anterior (seg→dom completos), para comparação de tendência.
+   Usa o registro salvo em WEEKLY_SCORES quando existe; senão calcula direto pelo intervalo completo
+   (mesmo resultado, só não depende da materialização já ter rodado e salvo o registro). */
+function previousClosedWeekScore(empCpfNorm,today){
+  today=today||todayKey();
+  const prevMonday=addDays(mondayOf(today),-7);
+  const saved=WEEKLY_SCORES[empCpfNorm]&&WEEKLY_SCORES[empCpfNorm][prevMonday];
+  if(saved)return {completed:saved.completed,notDone:saved.notDone,total:saved.completed+saved.notDone,pct:saved.pct};
+  return scoreForRange(empCpfNorm,prevMonday,sundayOf(prevMonday));
+}
+/* fecha semanas inteiras (seg→dom) já totalmente passadas que ainda não têm registro salvo,
+   para cada colaborador com CPF cadastrado. Roda dentro da materialização. */
+function closeCompletedWeeks(updates){
+  const today=todayKey();
+  const curMonday=mondayOf(today);
+  const allEmps=employees().filter(e=>empCpfKey(e));
+  const weeksBack=Math.ceil(LOOKBACK_DAYS/7);
+  for(const emp of allEmps){
+    const cpfNorm=empCpfKey(emp);
+    const saved=WEEKLY_SCORES[cpfNorm]||{};
+    // sempre múltiplos exatos de 7 dias a partir da segunda-feira atual, garantindo cair em segundas-feiras reais
+    for(let i=weeksBack;i>=1;i--){
+      const d=addDays(curMonday,-7*i);
+      if(!saved[d]){
+        const sunday=sundayOf(d);
+        const r=scoreForRange(cpfNorm,d,sunday);
+        if(r.total>0){ // só registra semana em que houve ao menos 1 instância terminal
+          updates[`weeklyScores/${cpfNorm}/${d}`]={pct:r.pct,completed:r.completed,notDone:r.notDone,closedAt:Date.now()};
+        }
+      }
+    }
+  }
+}
+function resetWeeklyScores(){
+  if(!state.admin)return;
+  if(!confirm("Isso vai apagar TODO o histórico de notas semanais salvas (de todos os colaboradores). As tarefas e o histórico de execução não são afetados. A partir de agora, a nota passa a contar apenas tarefas concluídas/não realizadas a partir de amanhã. Confirma?"))return;
+  dbRef(PATH.tarefas).update({weeklyScores:null,scoreResetAt:addDays(todayKey(),1)}).then(()=>toast("Notas semanais zeradas"));
+}
+function scoreClass(pct){if(pct==null)return"none";if(pct>=80)return"good";if(pct>=50)return"mid";return"bad"}
+/* últimas N semanas FECHADAS (histórico salvo) de um colaborador, mais antiga→mais recente */
+function closedWeeksHistory(empCpfNorm,n){
+  const saved=WEEKLY_SCORES[empCpfNorm]||{};
+  return Object.keys(saved).sort().slice(-n).map(monday=>({monday,...saved[monday]}));
+}
+/* card de nota semanal para a tela do próprio colaborador */
+function scoreCardHtml(empCpfNorm){
+  const today=todayKey();
+  const cur=currentWeekScore(empCpfNorm,today);
+  const prev=previousClosedWeekScore(empCpfNorm,today);
+  const cls=scoreClass(cur.pct);
+  const numHtml=cur.pct==null?`<div class="score-num none">—</div>`:`<div class="score-num ${cls}">${cur.pct}%</div>`;
+  let trend="";
+  if(cur.pct!=null&&prev.pct!=null){
+    const diff=cur.pct-prev.pct;
+    if(diff>=5)trend=`<div class="score-trend up">▲ ${diff} em relação à nota final da semana passada</div>`;
+    else if(diff<=-5)trend=`<div class="score-trend down">▼ ${Math.abs(diff)} em relação à nota final da semana passada</div>`;
+    else trend=`<div class="score-trend flat">≈ estável em relação à semana passada</div>`;
+  }
+  const hist=closedWeeksHistory(empCpfNorm,6);
+  let histHtml="";
+  if(hist.length){
+    histHtml=`<div class="score-history">`+hist.map(w=>{
+      const c=scoreClass(w.pct);
+      const color=c==="good"?"var(--ok)":c==="mid"?"var(--demanda)":"#c0392b";
+      return `<div class="wk"><div class="bar"><div class="fill" style="height:${w.pct}%;background:${color}"></div></div>
+        <span class="pct">${w.pct}%</span></div>`;
+    }).join("")+`</div><p class="note" style="margin-top:8px">Últimas semanas fechadas (a mais recente à direita)</p>`;
+  }
+  return `<div class="score-card">
+    ${numHtml}
+    <div class="score-label">Sua nota desta semana</div>
+    <div class="score-period">${weekLabel(mondayOf(today))} · fecha domingo à noite · ${cur.total?`${cur.completed} de ${cur.total} tarefas`:"ainda sem tarefas fechadas esta semana"}</div>
+    ${trend}
+    ${histHtml}
+  </div>`;
 }
 
 /* instâncias do empregado logado, agrupadas por natureza da tarefa */
@@ -969,6 +1116,7 @@ function finishLogin(){
   $("#tabResp").classList.toggle("hidden",!state.emp);
   $("#tabSuggestions").classList.toggle("hidden",!state.emp);
   $("#tabTickets").classList.toggle("hidden",!state.admin);
+  $("#tabPerformance").classList.toggle("hidden",!state.admin);
   renderWho();
   state.view=state.admin?"admin":"mine";
   setActiveTab();
@@ -987,7 +1135,7 @@ function tryRestore(){
 }
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""}};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:""}};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
@@ -1013,6 +1161,7 @@ function render(){
   else if(state.view==="suggestions")m.innerHTML=viewMySuggestions();
   else if(state.view==="admin")m.innerHTML=viewAdmin();
   else if(state.view==="tickets")m.innerHTML=viewTickets();
+  else if(state.view==="performance")m.innerHTML=viewPerformance();
   else if(state.view==="diag")m.innerHTML=viewDiag();
 }
 
@@ -1083,7 +1232,7 @@ function dayBlockHead(type,icon,title,sub,count){
 }
 function viewMine(){
   if(!state.emp){
-    if(state.admin)return `<div class="empty"><b>Você está logado como gestor.</b>Use a aba <b>Gestão</b> para criar tarefas e acompanhar quem é responsável a cada dia.</div>`;
+    if(state.admin)return `<div class="empty"><b>Você está logado como gestor.</b>Use a aba <b>Tarefas</b> para criar tarefas e acompanhar quem é responsável a cada dia.</div>`;
     return `<div class="empty"><b>Seu CPF não está vinculado a um colaborador.</b>Peça ao gestor para cadastrar seu CPF no seu funcionário da escala.</div>`;
   }
   const {today,late,coresp,done}=myInstances();
@@ -1128,6 +1277,16 @@ function myActiveTasksWithLevel(){
   }
   return out;
 }
+/* setores das tarefas ativas em que um colaborador qualquer está na fila (qualquer nível) */
+function sectorsForEmployee(emp){
+  const ids=[emp._key,emp.id].filter(v=>v!=null).map(String);
+  const out=[];
+  for(const tid in TASKS){
+    const t=TASKS[tid];if(!t||t.active===false)continue;
+    if((t.responsibles||[]).some(id=>ids.includes(String(id))))out.push(t.sectorId);
+  }
+  return out;
+}
 function computePartners(myTasks){
   const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
   const partners={};
@@ -1147,14 +1306,16 @@ function computePartners(myTasks){
 }
 function viewResp(){
   if(!state.emp)return `<div class="empty"><b>Disponível só para colaboradores.</b>Faça login com seu CPF para ver suas responsabilidades.</div>`;
+  const myCpfNorm=empCpfKey(state.emp);
+  const scoreHtml=myCpfNorm?scoreCardHtml(myCpfNorm):"";
   const all=myActiveTasksWithLevel();
-  if(!all.length)return `<div class="empty"><b>Você ainda não está na fila de nenhuma tarefa.</b>Quando o gestor te adicionar como responsável, ela aparece aqui.</div>`;
+  if(!all.length)return scoreHtml+`<div class="empty"><b>Você ainda não está na fila de nenhuma tarefa.</b>Quando o gestor te adicionar como responsável, ela aparece aqui.</div>`;
 
   // ---- resumo por nível (sobre TODAS as suas tarefas, ignora filtro) ----
   const byLevelCount={};all.forEach(t=>byLevelCount[t._level]=(byLevelCount[t._level]||0)+1);
   const levels=Object.keys(byLevelCount).map(Number).sort((a,b)=>a-b);
   const lvlClass=l=>l===1?"r1":l===2?"r2":"r3";
-  let h=`<div class="section-title" style="margin-top:4px">Visão geral</div><div class="stat-grid">`;
+  let h=scoreHtml+`<div class="section-title" style="margin-top:4px">Visão geral</div><div class="stat-grid">`;
   h+=`<div class="stat-box"><div class="num">${all.length}</div><div class="lbl">Tarefas no total</div></div>`;
   for(const l of levels)h+=`<div class="stat-box ${lvlClass(l)}"><div class="num">${byLevelCount[l]}</div><div class="lbl">Você é R${l}</div></div>`;
   h+="</div>";
@@ -1367,7 +1528,135 @@ function viewAdmin(){
   return h;
 }
 
-/* ---------- Diagnóstico (valida o adaptador de schema) ---------- */
+/* ---------- Desempenho da equipe (gestor) ---------- */
+function viewPerformance(){
+  const today=todayKey();
+  const F=state.perfFilter;
+  const ALERT_THRESHOLD=15; // pontos percentuais de variação p/ disparar alerta
+  const allEmps=employees().filter(e=>empCpfKey(e));
+  if(!allEmps.length)return `<div class="empty"><b>Nenhum colaborador com CPF cadastrado ainda.</b>A nota depende do CPF estar vinculado ao funcionário.</div>`;
+
+  // calcula a nota de cada colaborador (semana atual parcial vs. nota fechada da semana anterior, p/ alerta)
+  const rows=allEmps.map(emp=>{
+    const cpfNorm=empCpfKey(emp);
+    const cur=currentWeekScore(cpfNorm,today);
+    const prev=previousClosedWeekScore(cpfNorm,today);
+    const sectorIds=[...new Set(sectorsForEmployee(emp).map(sid=>String(sid||"")))];
+    return {emp,cpfNorm,cur,prev,sectorIds};
+  });
+
+  // ---- visão geral: média da equipe (só quem tem dado na semana) ----
+  const withData=rows.filter(r=>r.cur.pct!=null);
+  const teamAvg=withData.length?Math.round(withData.reduce((s,r)=>s+r.cur.pct,0)/withData.length):null;
+
+  // ---- alertas: variação >= limiar entre semana atual (parcial) e a nota fechada da semana anterior ----
+  const alerts=rows.filter(r=>r.cur.pct!=null&&r.prev.pct!=null&&Math.abs(r.cur.pct-r.prev.pct)>=ALERT_THRESHOLD)
+    .sort((a,b)=>Math.abs(b.cur.pct-b.prev.pct)-Math.abs(a.cur.pct-a.prev.pct));
+
+  // ---- filtros ----
+  const usedSectors=sectors().filter(s=>rows.some(r=>r.sectorIds.includes(String(s.id))));
+  const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(s=>`<option value="${esc(s.id)}" ${F.sector===String(s.id)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const empOpts=`<option value="">Todos os colaboradores</option>`+allEmps.map(e=>`<option value="${esc(e.id)}" ${F.emp===String(e.id)?"selected":""}>${esc(empName(e))}</option>`).join("");
+  const hasFilter=F.sector||F.emp;
+
+  const filteredRows=rows.filter(r=>{
+    if(F.emp&&String(r.emp.id)!==String(F.emp))return false;
+    if(F.sector&&!r.sectorIds.includes(F.sector))return false;
+    return true;
+  }).sort((a,b)=>(b.cur.pct??-1)-(a.cur.pct??-1));
+
+  let h=`<div class="diag"><div class="kv">
+    <span>Média da equipe (semana atual):</span> <b style="font-size:18px">${teamAvg!=null?teamAvg+"%":"sem dados"}</b>
+  </div><p class="note" style="margin-top:6px">${weekLabel(mondayOf(today))} · parcial, fecha domingo à noite</p>
+  <div class="actions"><button class="btn sm danger" data-act="reset-scores">🗑 Zerar notas semanais</button></div></div>`;
+
+  if(alerts.length){
+    h+=`<div class="section-title">Pontos de atenção</div>`;
+    for(const r of alerts){
+      const diff=r.cur.pct-r.prev.pct;
+      const type=diff>0?"up":"down";
+      const verb=diff>0?"subiu":"caiu";
+      h+=`<div class="alert-card ${type}"><span>${type==="up"?"📈":"📉"}</span>
+        <div><b>${esc(empName(r.emp))}</b>${verb} ${Math.abs(diff)} pontos em relação à nota final da semana passada: ${r.prev.pct}% → ${r.cur.pct}%</div></div>`;
+    }
+  }
+
+  h+=`<div class="section-title">Por colaborador</div>
+    <div class="filters">
+      <select data-filter3="sector">${secOpts}</select>
+      <select data-filter3="emp">${empOpts}</select>
+      ${hasFilter?`<button class="btn sm ghost" data-act="clear-perf-filters">Limpar</button>`:""}
+    </div>`;
+
+  if(!filteredRows.length){h+=`<div class="empty"><b>Nenhum colaborador com esses filtros.</b></div>`}
+  for(const r of filteredRows){
+    const cls=scoreClass(r.cur.pct);
+    const pctText=r.cur.pct==null?"—":r.cur.pct+"%";
+    h+=`<button type="button" class="perf-row" style="width:100%;text-align:left;cursor:pointer" data-act="open-perf-detail" data-id="${esc(r.emp.id)}">
+      <div style="flex:1;min-width:0"><div class="pname">${esc(empName(r.emp))}</div>
+        <div class="psub">${r.cur.total?`${r.cur.completed} de ${r.cur.total} tarefas`:"sem tarefas fechadas esta semana"}</div></div>
+      <div class="perf-pct ${cls}">${pctText}</div>
+    </button>`;
+  }
+
+  // ---- distribuição por setor (média de cada setor, sobre quem tem dado) ----
+  const secAvg={};
+  for(const r of rows){
+    if(r.cur.pct==null)continue;
+    for(const sid of r.sectorIds){(secAvg[sid]=secAvg[sid]||[]).push(r.cur.pct)}
+  }
+  const secAvgRows=Object.entries(secAvg).map(([sid,arr])=>({sid,avg:Math.round(arr.reduce((s,v)=>s+v,0)/arr.length),n:arr.length}))
+    .sort((a,b)=>b.avg-a.avg);
+  if(secAvgRows.length){
+    h+=`<div class="section-title">Por setor</div>`;
+    for(const r of secAvgRows){
+      h+=`<div class="bar-row"><span class="blabel">${esc(sectorName(r.sid))}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${r.avg}%"></span></span>
+        <span class="bar-pct">${r.avg}% (${r.n})</span></div>`;
+    }
+  }
+
+  return h;
+}
+
+/* ---- Modal: detalhe de desempenho de um colaborador, com gráfico de evolução ---- */
+function openPerfDetail(empId){
+  const emp=employeeById(empId);if(!emp)return;
+  const cpfNorm=empCpfKey(emp);
+  const today=todayKey();
+  const cur=currentWeekScore(cpfNorm,today);
+  const closed=closedWeeksHistory(cpfNorm,8);
+  const points=[...closed.map(w=>({label:weekLabel(w.monday),pct:w.pct,partial:false})),
+    {label:weekLabel(mondayOf(today))+" (em andamento)",pct:cur.pct,partial:true}].filter(p=>p.pct!=null);
+
+  let chart="";
+  if(points.length>=2){
+    const W=300,H=110,pad=8;
+    const stepX=(W-pad*2)/(points.length-1);
+    const xy=points.map((p,i)=>({x:pad+i*stepX,y:pad+(H-pad*2)*(1-p.pct/100)}));
+    const path=xy.map((p,i)=>(i===0?"M":"L")+p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ");
+    const dots=xy.map((p,i)=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${points[i].partial?4.5:3.5}"
+      fill="${points[i].partial?"var(--accent)":"var(--primary)"}" stroke="var(--surface)" stroke-width="1.5"/>`).join("");
+    chart=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin:10px 0 4px" preserveAspectRatio="none">
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="var(--line)" stroke-width="1"/>
+      <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="var(--line)" stroke-width="1"/>
+      <path d="${path}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+      ${dots}
+    </svg>`;
+  }
+  const rows=points.slice().reverse().map(p=>`<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">
+    ${esc(p.label)} <b style="float:right">${p.pct}%</b></div>`).join("");
+
+  openSheet(`Desempenho — ${empName(emp)}`,`
+    <div class="meta" style="margin-bottom:6px"><span class="chip">Semana atual: ${cur.pct!=null?cur.pct+"%":"sem dados"}</span>
+      ${cur.total?`<span class="chip">${cur.completed}/${cur.total} tarefas</span>`:""}</div>
+    ${points.length>=2?chart:'<p class="note">Ainda não há semanas suficientes para mostrar evolução.</p>'}
+    <div class="section-title" style="margin-top:10px">Histórico</div>
+    ${rows||'<p class="note">Sem semanas fechadas ainda.</p>'}
+    <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
+  `);
+}
+
 function viewDiag(){
   const today=todayKey();
   let h=`<div class="section-title">Como o app está lendo seus dados</div>`;
@@ -1849,6 +2138,9 @@ document.addEventListener("click",e=>{
     case"recalc":recalcQueue();break;
     case"clear-filters":state.adminFilter={sector:"",emp:"",status:"",nature:"",level:""};render();break;
     case"clear-resp-filters":state.respFilter={sector:"",level:""};render();break;
+    case"clear-perf-filters":state.perfFilter={sector:"",emp:""};render();break;
+    case"reset-scores":resetWeeklyScores();break;
+    case"open-perf-detail":openPerfDetail(a.dataset.id);break;
     case"start":startTask(iid);break;
     case"open-complete":openCompleteModal(iid);break;
     case"confirm-complete":{const note=$("#completeNote")?$("#completeNote").value:"";completeTask(iid,note);closeModal();break}
@@ -1912,6 +2204,8 @@ document.addEventListener("change",e=>{
   if(f){state.adminFilter[f.dataset.filter]=f.value;render();return}
   const f2=e.target.closest("[data-filter2]");
   if(f2){state.respFilter[f2.dataset.filter2]=f2.value;render();return}
+  const f3=e.target.closest("[data-filter3]");
+  if(f3){state.perfFilter[f3.dataset.filter3]=f3.value;render();return}
   if(e.target.id==="postDate"&&transferState){transferState.date=e.target.value}
   if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
     syncFormInputs();
@@ -1934,7 +2228,7 @@ if(FB_OK){
   },err=>{
     $("#lgStatus").textContent="Erro ao ler a escala: "+err.code+". Verifique as regras do banco.";
   });
-  dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};TICKETS=v.tickets||{};afterData()});
+  dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};TICKETS=v.tickets||{};WEEKLY_SCORES=v.weeklyScores||{};SCORE_RESET_AT=v.scoreResetAt||null;afterData()});
 
   /* usuários: opcional agora (login é por CPF). Mantido só para o Diagnóstico. */
   dbRef(PATH.users).once("value").then(s=>{USERS=s.val()||{}}).catch(()=>{USERS={}});
