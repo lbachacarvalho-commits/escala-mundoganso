@@ -280,6 +280,18 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 .alert-card.up{background:var(--ok-soft);color:#175c3f}
 .alert-card b{display:block;font-size:13.5px;margin-bottom:1px}
 
+.rank-row{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:10px 13px;margin-bottom:7px;box-shadow:var(--shadow);width:100%;text-align:left;cursor:pointer}
+.rank-pos{flex:0 0 auto;width:24px;text-align:center;font-weight:800;font-size:13px;color:var(--muted-2)}
+.rank-pos.top{color:var(--demanda-deep)}
+.rank-main{flex:1;min-width:0}
+.rank-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-sub{font-size:11.5px;color:var(--muted)}
+.period-bar{display:flex;gap:6px;flex-wrap:wrap;margin:2px 2px 12px}
+.period-bar button{flex:0 0 auto;background:var(--surface);border:1px solid var(--line);border-radius:999px;
+  padding:6px 13px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.period-bar button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .bar-row .blabel{flex:0 0 108px;font-size:13px;color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bar-track{flex:1;height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden}
@@ -471,7 +483,7 @@ let INSTANCES = {};             // /escala_tarefas/instances
 let TICKETS = {};               // /escala_tarefas/tickets (sugestões/dúvidas sobre a tarefa)
 let WEEKLY_SCORES = {};         // /escala_tarefas/weeklyScores/{empCpf}/{mondayKey} (notas semanais fechadas)
 let SCORE_RESET_AT = null;      // /escala_tarefas/scoreResetAt — instâncias anteriores a esta data não contam na nota
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:""} };
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:"",weeks:4} };
 let materializing = false;
 
 /* ===================================================================
@@ -756,6 +768,35 @@ function closedWeeksHistory(empCpfNorm,n){
   const saved=WEEKLY_SCORES[empCpfNorm]||{};
   return Object.keys(saved).sort().slice(-n).map(monday=>({monday,...saved[monday]}));
 }
+/* nota de UMA semana específica (por mondayKey) de um colaborador: usa o registro fechado quando
+   existe; se for a semana atual (ainda não fechada), calcula ao vivo (parcial). */
+function weekScorePct(empCpfNorm,mondayKey,today){
+  today=today||todayKey();
+  if(mondayKey===mondayOf(today))return currentWeekScore(empCpfNorm,today).pct;
+  const saved=WEEKLY_SCORES[empCpfNorm]&&WEEKLY_SCORES[empCpfNorm][mondayKey];
+  if(saved)return saved.pct;
+  return scoreForRange(empCpfNorm,mondayKey,sundayOf(mondayKey)).pct;
+}
+/* as últimas N segundas-feiras (mondayKeys), da mais antiga para a mais recente, incluindo a atual */
+function lastNMondays(today,n){
+  const curMonday=mondayOf(today||todayKey());
+  const out=[];
+  for(let i=n-1;i>=0;i--)out.push(addDays(curMonday,-7*i));
+  return out;
+}
+/* média simples ignorando nulls (semanas sem dados); null se nenhuma tiver dado */
+function avgIgnoringNulls(arr){
+  const valid=arr.filter(v=>v!=null);
+  return valid.length?Math.round(valid.reduce((s,v)=>s+v,0)/valid.length):null;
+}
+/* série de pontos (1 por semana) para o gráfico: cpfNorms é a lista de colaboradores a agregar
+   (1 pessoa = linha individual; várias = média do grupo por semana) */
+function buildSeries(cpfNorms,weeks,today){
+  return weeks.map(monday=>{
+    const vals=cpfNorms.map(cpf=>weekScorePct(cpf,monday,today));
+    return {monday,pct:avgIgnoringNulls(vals),partial:monday===mondayOf(today||todayKey())};
+  });
+}
 /* card de nota semanal para a tela do próprio colaborador */
 function scoreCardHtml(empCpfNorm){
   const today=todayKey();
@@ -844,29 +885,62 @@ function startTask(iid){
   dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"em_andamento",startedAt:Date.now(),history:pushHistory(iid,{type:"iniciada"})});
   toast("Tarefa iniciada");
 }
+/* Se a instância alterada pertence a uma semana já FECHADA (registro salvo em weeklyScores),
+   recalcula esse registro na hora — sem isso, conclusões/reaberturas tardias de uma semana
+   antiga não atualizariam a nota que já tinha sido arquivada. */
+function patchClosedWeekIfNeeded(insDate,empId,updates){
+  const emp=employeeById(empId);if(!emp)return;
+  const cpfNorm=empCpfKey(emp);if(!cpfNorm)return;
+  const monday=mondayOf(insDate);
+  if(monday===mondayOf(todayKey()))return; // semana atual não é "fechada", recalcula sozinha ao vivo
+  const saved=WEEKLY_SCORES[cpfNorm]&&WEEKLY_SCORES[cpfNorm][monday];
+  if(!saved)return; // nunca foi fechada (ainda fora do histórico) — nada a corrigir
+  const r=scoreForRange(cpfNorm,monday,sundayOf(monday));
+  updates[`weeklyScores/${cpfNorm}/${monday}`]=r.total>0
+    ?{pct:r.pct,completed:r.completed,notDone:r.notDone,closedAt:Date.now()}
+    :null; // se não restou nenhuma instância terminal (raro), remove o registro em vez de salvar lixo
+}
 function completeTask(iid,note){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
   const task=TASKS[ins.taskId];
   if(!checklistComplete(task,ins)){toast("Marque todos os itens do checklist antes de concluir.");return}
-  const upd={status:"concluida",completedAt:Date.now(),history:pushHistory(iid,{type:"concluida",note:note||null})};
-  if(note&&note.trim())upd.completionNote=note.trim();
-  dbRef(`${PATH.tarefas}/instances/${iid}`).update(upd);
+  const updates={};
+  updates[`instances/${iid}/status`]="concluida";
+  updates[`instances/${iid}/completedAt`]=Date.now();
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"concluida",note:note||null});
+  if(note&&note.trim())updates[`instances/${iid}/completionNote`]=note.trim();
+  ins.status="concluida"; // reflete localmente ANTES de recalcular semana fechada, senão o cálculo usaria o status antigo
+  patchClosedWeekIfNeeded(ins.date,ins.assignedTo,updates);
+  dbRef(PATH.tarefas).update(updates);
   toast("Tarefa concluída ✓");
 }
 function markNotDone(iid,note){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
-  const upd={status:"nao_realizada",completedAt:null,history:pushHistory(iid,{type:"nao_realizada",note:note||null})};
-  if(note&&note.trim())upd.completionNote=note.trim();
-  dbRef(`${PATH.tarefas}/instances/${iid}`).update(upd);
+  const updates={};
+  updates[`instances/${iid}/status`]="nao_realizada";
+  updates[`instances/${iid}/completedAt`]=null;
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"nao_realizada",note:note||null});
+  if(note&&note.trim())updates[`instances/${iid}/completionNote`]=note.trim();
+  ins.status="nao_realizada";
+  patchClosedWeekIfNeeded(ins.date,ins.assignedTo,updates);
+  dbRef(PATH.tarefas).update(updates);
   toast("Marcada como não realizada");
 }
 function reopenTask(iid){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
   if(!confirm("Reabrir esta tarefa? Ela volta para pendente."))return;
-  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"pendente",completedAt:null,completionNote:null,autoExpired:null,
-    history:pushHistory(iid,{type:"reaberta"})});
+  const updates={};
+  updates[`instances/${iid}/status`]="pendente";
+  updates[`instances/${iid}/completedAt`]=null;
+  updates[`instances/${iid}/completionNote`]=null;
+  updates[`instances/${iid}/autoExpired`]=null;
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"reaberta"});
+  ins.status="pendente";
+  patchClosedWeekIfNeeded(ins.date,ins.assignedTo,updates);
+  dbRef(PATH.tarefas).update(updates);
   toast("Tarefa reaberta");
 }
+
 function transferToR(iid,toEmpId){
   const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
   dbRef(`${PATH.tarefas}/instances/${iid}`).update({assignedTo:String(toEmpId),autoAssigned:false,
@@ -1135,7 +1209,7 @@ function tryRestore(){
 }
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:""}};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:"",weeks:4}};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
@@ -1536,38 +1610,55 @@ function viewPerformance(){
   const allEmps=employees().filter(e=>empCpfKey(e));
   if(!allEmps.length)return `<div class="empty"><b>Nenhum colaborador com CPF cadastrado ainda.</b>A nota depende do CPF estar vinculado ao funcionário.</div>`;
 
-  // calcula a nota de cada colaborador (semana atual parcial vs. nota fechada da semana anterior, p/ alerta)
-  const rows=allEmps.map(emp=>{
+  const weeksN=Number(F.weeks)||4;
+  const weeks=lastNMondays(today,weeksN);
+
+  // nota de cada colaborador, semana a semana, no período escolhido
+  const empData=allEmps.map(emp=>{
     const cpfNorm=empCpfKey(emp);
+    const series=buildSeries([cpfNorm],weeks,today);
+    const avg=avgIgnoringNulls(series.map(p=>p.pct));
     const cur=currentWeekScore(cpfNorm,today);
     const prev=previousClosedWeekScore(cpfNorm,today);
     const sectorIds=[...new Set(sectorsForEmployee(emp).map(sid=>String(sid||"")))];
-    return {emp,cpfNorm,cur,prev,sectorIds};
+    return {emp,cpfNorm,series,avg,cur,prev,sectorIds};
   });
 
-  // ---- visão geral: média da equipe (só quem tem dado na semana) ----
-  const withData=rows.filter(r=>r.cur.pct!=null);
-  const teamAvg=withData.length?Math.round(withData.reduce((s,r)=>s+r.cur.pct,0)/withData.length):null;
+  // ---- visão geral: média da equipe no período ----
+  const teamAvg=avgIgnoringNulls(empData.map(r=>r.avg));
 
   // ---- alertas: variação >= limiar entre semana atual (parcial) e a nota fechada da semana anterior ----
-  const alerts=rows.filter(r=>r.cur.pct!=null&&r.prev.pct!=null&&Math.abs(r.cur.pct-r.prev.pct)>=ALERT_THRESHOLD)
+  const alerts=empData.filter(r=>r.cur.pct!=null&&r.prev.pct!=null&&Math.abs(r.cur.pct-r.prev.pct)>=ALERT_THRESHOLD)
     .sort((a,b)=>Math.abs(b.cur.pct-b.prev.pct)-Math.abs(a.cur.pct-a.prev.pct));
 
-  // ---- filtros ----
-  const usedSectors=sectors().filter(s=>rows.some(r=>r.sectorIds.includes(String(s.id))));
+  // ---- setores (lista usada nos filtros e no ranking) ----
+  const usedSectors=sectors().filter(s=>empData.some(r=>r.sectorIds.includes(String(s.id))));
+
+  // ---- série do GRÁFICO: depende do filtro (1 pessoa = linha dela; setor/todos = média do grupo) ----
+  let graphCpfs,graphLabel;
+  if(F.emp){
+    const r=empData.find(x=>String(x.emp.id)===String(F.emp));
+    graphCpfs=r?[r.cpfNorm]:[];
+    graphLabel=r?empName(r.emp):"";
+  }else if(F.sector){
+    const inSector=empData.filter(r=>r.sectorIds.includes(F.sector));
+    graphCpfs=inSector.map(r=>r.cpfNorm);
+    graphLabel="Média de "+esc(sectorName(F.sector));
+  }else{
+    graphCpfs=empData.map(r=>r.cpfNorm);
+    graphLabel="Média de todos os colaboradores";
+  }
+  const graphSeries=buildSeries(graphCpfs,weeks,today);
+
+  // ---- filtros (afetam o gráfico) ----
   const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(s=>`<option value="${esc(s.id)}" ${F.sector===String(s.id)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
   const empOpts=`<option value="">Todos os colaboradores</option>`+allEmps.map(e=>`<option value="${esc(e.id)}" ${F.emp===String(e.id)?"selected":""}>${esc(empName(e))}</option>`).join("");
   const hasFilter=F.sector||F.emp;
-
-  const filteredRows=rows.filter(r=>{
-    if(F.emp&&String(r.emp.id)!==String(F.emp))return false;
-    if(F.sector&&!r.sectorIds.includes(F.sector))return false;
-    return true;
-  }).sort((a,b)=>(b.cur.pct??-1)-(a.cur.pct??-1));
+  const weekOpts=[4,8,12].map(n=>`<button type="button" class="${weeksN===n?"on":""}" data-act="set-perf-weeks" data-n="${n}">${n} semanas</button>`).join("");
 
   let h=`<div class="diag"><div class="kv">
-    <span>Média da equipe (semana atual):</span> <b style="font-size:18px">${teamAvg!=null?teamAvg+"%":"sem dados"}</b>
-  </div><p class="note" style="margin-top:6px">${weekLabel(mondayOf(today))} · parcial, fecha domingo à noite</p>
+    <span>Média da equipe (período):</span> <b style="font-size:18px">${teamAvg!=null?teamAvg+"%":"sem dados"}</b>
+  </div><p class="note" style="margin-top:6px">${weekLabel(weeks[0]).split(" – ")[0]} – ${weekLabel(weeks[weeks.length-1]).split(" – ")[1]} · a semana mais recente ainda está em andamento</p>
   <div class="actions"><button class="btn sm danger" data-act="reset-scores">🗑 Zerar notas semanais</button></div></div>`;
 
   if(alerts.length){
@@ -1581,42 +1672,71 @@ function viewPerformance(){
     }
   }
 
-  h+=`<div class="section-title">Por colaborador</div>
+  // ---- gráfico de evolução ----
+  h+=`<div class="section-title">Evolução</div>
+    <div class="period-bar">${weekOpts}</div>
     <div class="filters">
       <select data-filter3="sector">${secOpts}</select>
       <select data-filter3="emp">${empOpts}</select>
       ${hasFilter?`<button class="btn sm ghost" data-act="clear-perf-filters">Limpar</button>`:""}
+    </div>
+    <div class="diag">${lineChartSvg(graphSeries)}
+      <p class="note" style="margin-top:6px;text-align:center">${graphLabel}</p>
     </div>`;
 
-  if(!filteredRows.length){h+=`<div class="empty"><b>Nenhum colaborador com esses filtros.</b></div>`}
-  for(const r of filteredRows){
-    const cls=scoreClass(r.cur.pct);
-    const pctText=r.cur.pct==null?"—":r.cur.pct+"%";
-    h+=`<button type="button" class="perf-row" style="width:100%;text-align:left;cursor:pointer" data-act="open-perf-detail" data-id="${esc(r.emp.id)}">
-      <div style="flex:1;min-width:0"><div class="pname">${esc(empName(r.emp))}</div>
-        <div class="psub">${r.cur.total?`${r.cur.completed} de ${r.cur.total} tarefas`:"sem tarefas fechadas esta semana"}</div></div>
-      <div class="perf-pct ${cls}">${pctText}</div>
+  // ---- ranking de funcionários (pela média do período) ----
+  const rankedEmps=empData.filter(r=>r.avg!=null).sort((a,b)=>b.avg-a.avg);
+  h+=`<div class="section-title">Ranking de colaboradores <span class="note" style="text-transform:none;font-weight:500;letter-spacing:0">média de ${weeksN} semanas</span></div>`;
+  if(!rankedEmps.length)h+=`<div class="empty"><b>Sem dados suficientes ainda neste período.</b></div>`;
+  rankedEmps.forEach((r,i)=>{
+    const cls=scoreClass(r.avg);
+    h+=`<button type="button" class="rank-row" data-act="open-perf-detail" data-id="${esc(r.emp.id)}">
+      <span class="rank-pos ${i<3?"top":""}">${i+1}º</span>
+      <div class="rank-main"><div class="rank-name">${esc(empName(r.emp))}</div>
+        <div class="rank-sub">semana atual: ${r.cur.pct!=null?r.cur.pct+"%":"sem dados"}</div></div>
+      <div class="perf-pct ${cls}">${r.avg}%</div>
     </button>`;
-  }
+  });
 
-  // ---- distribuição por setor (média de cada setor, sobre quem tem dado) ----
+  // ---- ranking de setores (média do período, sobre as médias dos colaboradores daquele setor) ----
   const secAvg={};
-  for(const r of rows){
-    if(r.cur.pct==null)continue;
-    for(const sid of r.sectorIds){(secAvg[sid]=secAvg[sid]||[]).push(r.cur.pct)}
+  for(const r of empData){
+    if(r.avg==null)continue;
+    for(const sid of r.sectorIds){(secAvg[sid]=secAvg[sid]||[]).push(r.avg)}
   }
-  const secAvgRows=Object.entries(secAvg).map(([sid,arr])=>({sid,avg:Math.round(arr.reduce((s,v)=>s+v,0)/arr.length),n:arr.length}))
+  const rankedSectors=Object.entries(secAvg).map(([sid,arr])=>({sid,avg:avgIgnoringNulls(arr),n:arr.length}))
     .sort((a,b)=>b.avg-a.avg);
-  if(secAvgRows.length){
-    h+=`<div class="section-title">Por setor</div>`;
-    for(const r of secAvgRows){
-      h+=`<div class="bar-row"><span class="blabel">${esc(sectorName(r.sid))}</span>
-        <span class="bar-track"><span class="bar-fill" style="width:${r.avg}%"></span></span>
-        <span class="bar-pct">${r.avg}% (${r.n})</span></div>`;
-    }
-  }
+  h+=`<div class="section-title">Ranking de setores <span class="note" style="text-transform:none;font-weight:500;letter-spacing:0">média de ${weeksN} semanas</span></div>`;
+  if(!rankedSectors.length)h+=`<div class="empty"><b>Sem dados suficientes ainda neste período.</b></div>`;
+  rankedSectors.forEach((r,i)=>{
+    const cls=scoreClass(r.avg);
+    h+=`<div class="rank-row" style="cursor:default">
+      <span class="rank-pos ${i<3?"top":""}">${i+1}º</span>
+      <div class="rank-main"><div class="rank-name">${esc(sectorName(r.sid))}</div>
+        <div class="rank-sub">${r.n} colaborador(es)</div></div>
+      <div class="perf-pct ${cls}">${r.avg}%</div>
+    </div>`;
+  });
 
   return h;
+}
+/* SVG de linha simples para a série de pontos semanais (1 ponto = 1 semana) */
+function lineChartSvg(points){
+  const valid=points.map((p,i)=>({...p,i})).filter(p=>p.pct!=null);
+  if(valid.length<2)return `<p class="note">Ainda não há semanas suficientes neste período para mostrar o gráfico.</p>`;
+  const W=320,H=130,pad=10;
+  const stepX=points.length>1?(W-pad*2)/(points.length-1):0;
+  const xy=valid.map(p=>({x:pad+p.i*stepX,y:pad+(H-pad*2)*(1-p.pct/100),pct:p.pct,partial:p.partial}));
+  const path=xy.map((p,i)=>(i===0?"M":"L")+p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ");
+  const dots=xy.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.partial?4.5:3.5}"
+    fill="${p.partial?"var(--accent)":"var(--primary)"}" stroke="var(--surface)" stroke-width="1.5"/>`).join("");
+  const labels=points.map((p,i)=>`<text x="${(pad+i*stepX).toFixed(1)}" y="${H-1}" font-size="8" fill="var(--muted-2)" text-anchor="middle">${parseKey(p.monday).getDate()}/${parseKey(p.monday).getMonth()+1}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" preserveAspectRatio="none">
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad-10}" stroke="var(--line)" stroke-width="1"/>
+    <line x1="${pad}" y1="${H-pad-10}" x2="${W-pad}" y2="${H-pad-10}" stroke="var(--line)" stroke-width="1"/>
+    <path d="${path}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+    ${dots}${labels}
+  </svg>`;
 }
 
 /* ---- Modal: detalhe de desempenho de um colaborador, com gráfico de evolução ---- */
@@ -2138,7 +2258,8 @@ document.addEventListener("click",e=>{
     case"recalc":recalcQueue();break;
     case"clear-filters":state.adminFilter={sector:"",emp:"",status:"",nature:"",level:""};render();break;
     case"clear-resp-filters":state.respFilter={sector:"",level:""};render();break;
-    case"clear-perf-filters":state.perfFilter={sector:"",emp:""};render();break;
+    case"clear-perf-filters":state.perfFilter={sector:"",emp:"",weeks:state.perfFilter.weeks};render();break;
+    case"set-perf-weeks":state.perfFilter.weeks=Number(a.dataset.n);render();break;
     case"reset-scores":resetWeeklyScores();break;
     case"open-perf-detail":openPerfDetail(a.dataset.id);break;
     case"start":startTask(iid);break;
