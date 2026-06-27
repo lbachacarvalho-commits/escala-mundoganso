@@ -253,15 +253,13 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 .bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),#34c0b6)}
 .bar-pct{flex:0 0 42px;text-align:right;font-size:12.5px;font-weight:700;color:var(--muted)}
 
-.partner-row{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);
-  border-radius:12px;padding:10px 13px;margin-bottom:8px;box-shadow:var(--shadow)}
-.partner-row .avatar{width:36px;height:36px;font-size:14px;background:#6a5acd}
-.partner-main{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
-.partner-name{font-size:14.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.partner-sub{font-size:12px;color:var(--muted)}
-.partner-count{flex:0 0 auto;text-align:center;background:var(--surface-2);border-radius:10px;padding:4px 11px}
-.partner-count b{display:block;font-size:16px;color:var(--primary-deep);line-height:1.1}
-.partner-count span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.partner-list{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:4px}
+.partner-line{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:6px 8px 6px 12px;cursor:pointer;font-size:13px;max-width:100%}
+.partner-line:hover{border-color:var(--primary)}
+.partner-line-name{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+.partner-line-count{background:var(--primary-soft);color:var(--primary-deep);border-radius:999px;
+  font-size:11.5px;font-weight:700;padding:1px 8px;flex:0 0 auto}
 
 .resp-task-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
   border-radius:12px;padding:11px 13px;margin-bottom:8px;box-shadow:var(--shadow)}
@@ -316,7 +314,8 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
   .filters select{min-width:0;flex:1 1 calc(50% - 4px)}
   .fab{right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);padding:13px 16px;font-size:14px}
   .stat-grid{grid-template-columns:repeat(2,1fr)}
-  .partner-row,.resp-task-row,.tcard{padding:11px 12px}
+  .resp-task-row,.tcard{padding:11px 12px}
+  .partner-line-name{max-width:120px}
   table.diag-t{font-size:11.5px}
   table.diag-t th,table.diag-t td{padding:5px 6px}
 }
@@ -1185,21 +1184,14 @@ function viewResp(){
   // ---- parceiros (sobre todas) — clicável para ver tarefas em comum ----
   const partners=computePartners(all);
   if(partners.length){
-    h+=`<div class="section-title">Seus principais parceiros</div>
-      <p class="note" style="margin:-2px 2px 10px">Toque num parceiro para ver as tarefas que dividem com você.</p>`;
-    for(const p of partners.slice(0,6)){
+    h+=`<div class="section-title">Sua rede de parceiros</div>
+      <div class="partner-list">`;
+    for(const p of partners){
       const emp=employeeById(p.empId);const nm=empName(emp)||"—";
-      const ini=esc(nm.trim().charAt(0).toUpperCase()||"?");
-      let sub;
-      if(p.asNext&&p.asPrev)sub=`pega seu R, e você pega o dele`;
-      else if(p.asNext)sub=`pega depois de você`;
-      else if(p.asPrev)sub=`você pega depois dele`;
-      else sub=`mesma(s) tarefa(s), níveis não-adjacentes`;
-      h+=`<button type="button" class="partner-row" style="width:100%;text-align:left;border:1px solid var(--line);cursor:pointer" data-act="show-partner" data-emp="${esc(p.empId)}">
-        <span class="avatar">${ini}</span>
-        <div class="partner-main"><span class="partner-name">${esc(nm)}</span><span class="partner-sub">${sub}</span></div>
-        <div class="partner-count"><b>${p.together}</b><span>juntos</span></div></button>`;
+      h+=`<button type="button" class="partner-line" data-act="show-partner" data-emp="${esc(p.empId)}">
+        <span class="partner-line-name">${esc(nm)}</span><span class="partner-line-count">${p.together}</span></button>`;
     }
+    h+=`</div>`;
   }
 
   // ---- filtros ----
