@@ -1929,7 +1929,7 @@ function viewDiag(){
   h+=`<div class="diag"><h4>⚠️ IDs dos colaboradores na escala</h4>
     <p class="note" style="margin-bottom:8px">O app salva responsáveis pelo <b>ID/chave</b> do funcionário na escala. Se o Firebase reorganizou os IDs (ex: após remover alguém), os responsáveis ficam apontando pra pessoa errada.</p>
     <table class="diag-t"><tr><th>Colaborador</th><th>ID atual</th><th>Estabilidade</th></tr>
-    ${employees().map(e=>{const n=/^\d+$/.test(String(e._key));return `<tr><td>${esc(empName(e))}</td><td><code>${esc(e._key)}</code></td><td>${n?'<span class="tag-no">numérico ⚠️</span>':'<span class="tag-ok">texto ✓</span>'}</td></tr>`}).join("")}
+    ${employees().map(e=>{const n=/^\d+$/.test(String(e._key))&&String(e._key).length<8;return `<tr><td>${esc(empName(e))}</td><td><code>${esc(e._key)}</code></td><td>${n?'<span class="tag-no">numérico ⚠️</span>':'<span class="tag-ok">estável ✓</span>'}</td></tr>`}).join("")}
     </table></div>
   <div class="diag"><h4>Cruzamento: responsáveis salvos vs funcionários atuais</h4>
     <table class="diag-t"><tr><th>ID salvo</th><th>Pessoa atual</th><th>Tarefas</th></tr>
@@ -1941,7 +1941,7 @@ function viewDiag(){
     </table></div>`;
 
   // bloco de ação de migração (só relevante quando IDs são numéricos)
-  const hasNumericIds=employees().some(e=>/^\d+$/.test(String(e._key)));
+  const hasNumericIds=employees().some(e=>/^\d+$/.test(String(e._key))&&String(e._key).length<8);
   if(hasNumericIds){
     h+=`<div class="diag" style="border-color:var(--accent);background:var(--accent-soft)">
       <h4>⚠️ IDs numéricos detectados — ação necessária</h4>
