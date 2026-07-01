@@ -1820,6 +1820,74 @@ function openPerfDetail(empId){
   `);
 }
 
+/* ===================================================================
+   MIGRAÇÃO: corrige responsáveis das tarefas após mudança de IDs no app de escala
+   Lê /escala_lazer/employee_key_migration, traduz chaves antigas → novas,
+   é idempotente (seguro rodar mais de uma vez).
+   =================================================================== */
+async function fixResponsibles(){
+  if(!state.admin)return;
+  if(!confirm("Isso vai traduzir os IDs dos responsáveis de todas as tarefas, usando o mapeamento gerado pelo botão 'Corrigir estrutura' no app de Escala.\n\nNão altera quais pessoas estão nas tarefas — só traduz o formato do identificador.\n\nConfirma?"))return;
+
+  toast("Buscando mapeamento de migração…");
+
+  // 1. buscar o mapeamento gerado pelo app de escala
+  let migrationData;
+  try{
+    const snap=await dbRef("escala_lazer/employee_key_migration").once("value");
+    migrationData=snap.val();
+  }catch(e){
+    alert("Erro ao acessar o banco: "+e.message);return;
+  }
+  if(!migrationData||!migrationData.mapping){
+    alert("Mapeamento de migração não encontrado.\n\nO botão 'Corrigir estrutura' no app de Escala ainda não foi executado — peça ao gestor para fazer isso primeiro, depois tente novamente.");
+    return;
+  }
+
+  const mapping=migrationData.mapping; // {"0":"12345678901","1":"joao_silva_a1b2c",...}
+  const oldKeys=new Set(Object.keys(mapping));
+
+  // 2. percorrer todas as tarefas e traduzir responsáveis com chave antiga
+  const updates={};
+  const report=[]; // [{taskTitle, r, oldKey, newKey}]
+
+  for(const tid in TASKS){
+    const task=TASKS[tid];
+    if(!task||task.active===false)continue;
+    const responsibles=task.responsibles||[];
+    const newResponsibles=responsibles.map((id,i)=>{
+      const s=String(id);
+      if(oldKeys.has(s)){
+        report.push({taskTitle:task.title,r:i+1,oldKey:s,newKey:mapping[s]});
+        return mapping[s];
+      }
+      return id; // já está no formato novo, mantém como está
+    });
+    // só grava se algo mudou (evita escritas desnecessárias)
+    if(JSON.stringify(responsibles.map(String))!==JSON.stringify(newResponsibles.map(String))){
+      updates[`tasks/${tid}/responsibles`]=newResponsibles;
+    }
+  }
+
+  if(!Object.keys(updates).length){
+    alert(`Nenhuma tarefa precisou ser atualizada.\n\nTodos os IDs já estão no formato novo — a migração provavelmente já foi feita antes.`);
+    return;
+  }
+
+  // 3. gravar no Firebase
+  try{
+    await dbRef(PATH.tarefas).update(updates);
+  }catch(e){
+    alert("Erro ao salvar as atualizações: "+e.message);return;
+  }
+
+  // 4. mostrar relatório
+  const changed=Object.keys(updates).length;
+  const lines=report.map(r=>`• ${esc(r.taskTitle)} — R${r.r}: ${r.oldKey} → ${r.newKey}`).join("\n");
+  alert(`✓ Migração concluída!\n\n${changed} tarefa(s) atualizada(s), ${report.length} responsável(eis) traduzido(s).\n\n${lines}\n\nRecomendamos revisar manualmente os responsáveis de cada tarefa para confirmar que estão corretos.`);
+  toast("Responsáveis migrados ✓");
+}
+
 function viewDiag(){
   const today=todayKey();
   let h=`<div class="section-title">Como o app está lendo seus dados</div>`;
@@ -1871,6 +1939,28 @@ function viewDiag(){
       return `<tr><td><code>${esc(id)}</code></td><td>${emp?'<span class="tag-ok">'+esc(empName(emp))+'</span>':'<span class="tag-no">⚠️ Não encontrado</span>'}</td><td style="font-size:11px;color:var(--muted)">${esc(ts||"—")}</td></tr>`;
     }).join("")}
     </table></div>`;
+
+  // bloco de ação de migração (só relevante quando IDs são numéricos)
+  const hasNumericIds=employees().some(e=>/^\d+$/.test(String(e._key)));
+  if(hasNumericIds){
+    h+=`<div class="diag" style="border-color:var(--accent);background:var(--accent-soft)">
+      <h4>⚠️ IDs numéricos detectados — ação necessária</h4>
+      <p class="note" style="margin-bottom:10px">Os colaboradores na escala ainda usam IDs numéricos instáveis. Para corrigir permanentemente:</p>
+      <ol class="note" style="padding-left:18px;margin-bottom:10px;line-height:1.8">
+        <li>No <b>app de Escala</b> → página Colaboradores → clique em <b>"🔧 Corrigir estrutura"</b></li>
+        <li>Aguarde a confirmação de migração concluída</li>
+        <li>Volte aqui e clique em <b>"Corrigir responsáveis"</b> abaixo</li>
+      </ol>
+      <div class="actions"><button class="btn primary" data-act="fix-responsibles">🔄 Corrigir responsáveis das tarefas</button></div>
+    </div>`;
+  }else{
+    h+=`<div class="diag" style="border-color:var(--ok)">
+      <h4>✓ IDs estáveis</h4>
+      <p class="note">Os colaboradores usam IDs textuais permanentes. Se precisar re-rodar a migração após atualizar a escala, use o botão abaixo.</p>
+      <div class="actions"><button class="btn sm ghost" data-act="fix-responsibles">🔄 Corrigir responsáveis das tarefas</button></div>
+    </div>`;
+  }
+
   return h;
 }
 
@@ -2318,6 +2408,7 @@ document.addEventListener("click",e=>{
     case"clear-perf-filters":state.perfFilter={sector:"",emp:"",weeks:state.perfFilter.weeks};render();break;
     case"set-perf-weeks":state.perfFilter.weeks=Number(a.dataset.n);render();break;
     case"reset-scores":resetWeeklyScores();break;
+    case"fix-responsibles":fixResponsibles();break;
     case"open-perf-detail":openPerfDetail(a.dataset.id);break;
     case"start":startTask(iid);break;
     case"open-complete":openCompleteModal(iid);break;
