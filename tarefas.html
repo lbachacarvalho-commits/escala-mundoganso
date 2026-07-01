@@ -1857,6 +1857,20 @@ function viewDiag(){
     h+=`<tr><td>${esc(empName(e))}</td><td>${m||"—"}</td><td>${m?'<span class="tag-ok">pode entrar</span>':'<span class="tag-no">sem CPF</span>'}</td></tr>`;
   }
   h+=`</table><p class="note">${semCpf?`<b>${semCpf}</b> colaborador(es) sem CPF não conseguem entrar — cadastre o CPF no app de escalas. `:""}Se o CPF aparecer como “sem CPF” mas existir no cadastro, ajuste <b>cpfFields</b> no bloco SCHEMA.</p></div>`;
+  // diagnóstico de IDs dos funcionários
+  h+=`<div class="diag"><h4>⚠️ IDs dos colaboradores na escala</h4>
+    <p class="note" style="margin-bottom:8px">O app salva responsáveis pelo <b>ID/chave</b> do funcionário na escala. Se o Firebase reorganizou os IDs (ex: após remover alguém), os responsáveis ficam apontando pra pessoa errada.</p>
+    <table class="diag-t"><tr><th>Colaborador</th><th>ID atual</th><th>Estabilidade</th></tr>
+    ${employees().map(e=>{const n=/^\d+$/.test(String(e._key));return `<tr><td>${esc(empName(e))}</td><td><code>${esc(e._key)}</code></td><td>${n?'<span class="tag-no">numérico ⚠️</span>':'<span class="tag-ok">texto ✓</span>'}</td></tr>`}).join("")}
+    </table></div>
+  <div class="diag"><h4>Cruzamento: responsáveis salvos vs funcionários atuais</h4>
+    <table class="diag-t"><tr><th>ID salvo</th><th>Pessoa atual</th><th>Tarefas</th></tr>
+    ${[...new Set(Object.values(TASKS).filter(t=>t&&t.active!==false).flatMap(t=>t.responsibles||[]).map(String))].sort().map(id=>{
+      const emp=employeeById(id);
+      const ts=Object.values(TASKS).filter(t=>t&&(t.responsibles||[]).map(String).includes(id)).map(t=>t.title).join(", ");
+      return `<tr><td><code>${esc(id)}</code></td><td>${emp?'<span class="tag-ok">'+esc(empName(emp))+'</span>':'<span class="tag-no">⚠️ Não encontrado</span>'}</td><td style="font-size:11px;color:var(--muted)">${esc(ts||"—")}</td></tr>`;
+    }).join("")}
+    </table></div>`;
   return h;
 }
 
