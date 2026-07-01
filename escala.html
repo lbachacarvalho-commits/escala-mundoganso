@@ -676,6 +676,46 @@ let currentUser = null;
 
 // ===================== HELPERS =====================
 function newId(p){return p+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)}
+
+// ===================== CHAVE ESTÁVEL DE FUNCIONÁRIO (Firebase) =====================
+// Problema: Firebase converte objetos com chaves inteiras sequenciais (0,1,2...) em
+// listas — remover um funcionário do meio reindexeia todo o resto, quebrando qualquer
+// app externo (ex: tarefas.html) que referencie funcionários pela chave do Firebase.
+// Solução: cada funcionário ganha uma chave textual estável (CPF, ou slug do nome como
+// fallback), gravada nele mesmo em `_fbKey`, e usada para sempre — mesmo que o CPF ou
+// nome mudem depois, a chave já atribuída NUNCA é recalculada.
+function slugify(str){
+  return (str||'').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // remove acentos
+    .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'colaborador';
+}
+function generateEmployeeFbKey(emp){
+  const cpf=(emp.cpf||'').replace(/\D/g,'');
+  if(cpf.length===11)return cpf;
+  const idSuffix=(emp.id||'').split('-').pop()||Math.random().toString(36).slice(2,7);
+  return slugify(emp.name)+'_'+idSuffix;
+}
+function employeeFbKey(emp){
+  // Se já tem chave atribuída, usa ela pra sempre (estabilidade). Só gera nova se nunca teve.
+  return emp._fbKey||generateEmployeeFbKey(emp);
+}
+function employeesToKeyedObject(arr){
+  const obj={};
+  const used=new Set();
+  (arr||[]).forEach(emp=>{
+    let key=employeeFbKey(emp);
+    while(used.has(key))key=key+'_x';
+    used.add(key);
+    obj[key]={...emp,_fbKey:key}; // grava a chave definitiva junto ao próprio registro
+  });
+  return obj;
+}
+function employeesToArray(value){
+  // Aceita tanto o formato antigo (array/lista do Firebase) quanto o novo (objeto com chaves textuais)
+  if(Array.isArray(value))return value;
+  if(!value)return [];
+  return Object.keys(value).map(k=>({...value[k],_fbKey:value[k]._fbKey||k}));
+}
 function fmtDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return`${y}-${m}-${day}`}
 function fmtBR(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')}
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r}
@@ -952,6 +992,7 @@ function migrateData(parsed, isFromFirebase){
   }
   // Remove colaboradores removidos de versões antigas do código
   if(parsed.employees){
+    parsed.employees=employeesToArray(parsed.employees); // aceita array (antigo) ou objeto (novo) vindo do Firebase
     const removed=new Set(REMOVED_EMPS);
     parsed.employees=parsed.employees.filter(e=>!removed.has(e.id));
   }
@@ -1102,10 +1143,13 @@ function saveData(){
   state.saveTimer=setTimeout(async()=>{
     _ignoreNextSync=true; // não processa o próprio echo do SSE
     try{
+      // Estabiliza a chave de cada funcionário no estado local (persiste _fbKey definitivamente)
+      state.data.employees=state.data.employees.map(emp=>({...emp,_fbKey:employeeFbKey(emp)}));
+      const payload={...state.data,employees:employeesToKeyedObject(state.data.employees)};
       const res=await fetch(FB_URL+'/data.json',{
         method:'PUT',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(state.data)
+        body:JSON.stringify(payload)
       });
       if(res.ok){
         showSave('saved');setTimeout(()=>showSave('idle'),1500);
@@ -1498,6 +1542,105 @@ const MAX_SNAPSHOTS = 50;
 let _lastAutoSnapshot = 0;
 
 // Cria um snapshot e salva no Firebase
+// ===================== MIGRAÇÃO: FUNCIONÁRIOS ARRAY → OBJETO COM CHAVE ESTÁVEL =====================
+async function migrateEmployeesToKeyedObject(){
+  if(!confirm('Isso corrige como os funcionários são salvos no Firebase: de uma lista (que reindexeia ao remover alguém) para um objeto com chave fixa por CPF.\n\nUm backup automático será criado antes de qualquer alteração.\n\nContinuar?'))return;
+
+  showSave('saving');
+  try{
+    // 1. Backup de segurança antes de tocar em qualquer coisa
+    await createSnapshot('Backup antes da migração de funcionários (lista → objeto)','manual');
+
+    // 2. Busca o estado ATUAL direto do Firebase (não confia no cache local, evita sobrescrever edições de outro dispositivo)
+    const res=await fetch(FB_URL+'/data/employees.json');
+    if(!res.ok)throw new Error('Não foi possível ler os funcionários atuais do Firebase.');
+    const raw=await res.json();
+    if(!raw){alert('Nenhum funcionário encontrado no Firebase.');showSave('idle');return}
+
+    // 3. Já está migrado? (todas as chaves não são puramente numéricas)
+    const isArrayFormat=Array.isArray(raw);
+    if(!isArrayFormat){
+      const allNonNumeric=Object.keys(raw).every(k=>!/^\d+$/.test(k));
+      if(allNonNumeric){
+        alert('✅ Os funcionários já estão no formato correto (chaves estáveis). Nada precisa ser feito.');
+        showSave('idle');
+        return;
+      }
+    }
+
+    // 4. Normaliza para array preservando a ordem original, guardando a chave ANTIGA de cada um
+    const oldKeys=isArrayFormat?raw.map((_,i)=>String(i)):Object.keys(raw);
+    const arr=employeesToArray(raw);
+
+    // 5. Gera as chaves novas e estáveis (CPF ou slug do nome)
+    const mapping={}; // chave antiga -> chave nova
+    const newObj={};
+    const used=new Set();
+    arr.forEach((emp,i)=>{
+      let key=generateEmployeeFbKey(emp);
+      while(used.has(key))key=key+'_x';
+      used.add(key);
+      newObj[key]={...emp,_fbKey:key};
+      mapping[oldKeys[i]]=key;
+    });
+
+    // 6. Grava a nova estrutura — escrita cirúrgica, só no nó de employees (não mexe em escala/setores/turnos)
+    const putRes=await fetch(FB_URL+'/data/employees.json',{
+      method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(newObj)
+    });
+    if(!putRes.ok)throw new Error('Falha ao salvar a nova estrutura no Firebase.');
+
+    // 7. Salva o mapeamento antiga→nova num nó separado, pro app de Tarefas conseguir corrigir as referências
+    await fetch('https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer/employee_key_migration.json',{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({migratedAt:Date.now(),mapping})
+    });
+
+    // 8. Atualiza o estado local com o novo array (mesmos dados, chaves definitivas)
+    state.data.employees=arr.map((emp,i)=>({...emp,_fbKey:mapping[oldKeys[i]]}));
+    localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data));
+
+    showSave('saved');setTimeout(()=>showSave('idle'),1500);
+    logAction('Estrutura de funcionários migrada',`${arr.length} colaboradores`);
+    showMigrationReport(mapping,arr);
+    render();
+  }catch(e){
+    showSave('error');
+    alert('Erro na migração: '+e.message);
+  }
+}
+function showMigrationReport(mapping,arr){
+  const empByFbKey={};arr.forEach(e=>{const k=e._fbKey||employeeFbKey(e);empByFbKey[k]=e});
+  let rows='';
+  Object.entries(mapping).forEach(([oldKey,newKey])=>{
+    const emp=empByFbKey[newKey];
+    rows+=`<tr><td style="padding:6px 10px;font-family:'DM Mono',monospace;color:var(--muted)">${oldKey}</td><td style="padding:6px 10px;text-align:center;color:var(--muted)">→</td><td style="padding:6px 10px;font-family:'DM Mono',monospace;font-weight:700">${newKey}</td><td style="padding:6px 10px">${emp?emp.name:'—'}</td></tr>`;
+  });
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✅ Estrutura corrigida</div>
+      <button class="close-btn" onclick="closeModal()">${svgIcon(ICONS.x)}</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+      ${Object.keys(mapping).length} funcionários migrados. O mapeamento abaixo (chave antiga → chave nova)
+      também foi salvo no Firebase em <code style="font-size:11px">/escala_lazer/employee_key_migration</code> —
+      o app de Tarefas pode ler esse nó automaticamente para corrigir os responsáveis já cadastrados.
+    </p>
+    <div style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--surface2);position:sticky;top:0">
+          <th style="padding:6px 10px;text-align:left">Chave antiga</th><th></th>
+          <th style="padding:6px 10px;text-align:left">Chave nova</th><th style="padding:6px 10px;text-align:left">Funcionário</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="closeModal()">Entendi</button>
+    </div>
+  `,true);
+}
+
 async function createSnapshot(label, type='manual'){
   const id = 'snap-' + Date.now();
   const snapshot = {
@@ -2301,7 +2444,10 @@ function renderEmployees(){
   div.innerHTML=`
     <div class="page-header">
       <div><div class="page-title">Colaboradores</div><div class="page-sub">${state.data.employees.filter(e=>e.active).length} ativos · ${state.data.employees.length} no total</div></div>
-      <button class="btn btn-primary" onclick="openEmpModal()">${svgIcon(ICONS.plus)} Novo colaborador</button>
+      <div style="display:flex;gap:8px">
+        ${can('canManageUsers')?`<button class="btn btn-ghost" title="Corrige a estrutura de armazenamento dos funcionários no Firebase" onclick="migrateEmployeesToKeyedObject()">🔧 Corrigir estrutura</button>`:''}
+        <button class="btn btn-primary" onclick="openEmpModal()">${svgIcon(ICONS.plus)} Novo colaborador</button>
+      </div>
     </div>
     <div class="controls" style="margin-bottom:16px">
       <div class="search-wrap"><span class="search-icon">${svgIcon(ICONS.search,15)}</span><input id="emp-search-input" class="input" style="height:36px" type="text" placeholder="Buscar por nome ou função…" value="${state.empSearch}" oninput="empSearch(this.value)"></div>
@@ -2495,6 +2641,7 @@ function saveEmp(id){
     if(dup){alert(`CPF já cadastrado para: ${dup.name}`);return}
   }
   pushUndo();
+  const existing=id?state.data.employees.find(e=>e.id===id):null;
   const emp={
     id:id||newId('emp'),
     name,
@@ -2505,6 +2652,7 @@ function saveEmp(id){
     bankHours:parseBankHoursInput(document.getElementById('emp-bh').value),
     obs:document.getElementById('emp-obs').value.trim(),
     cpf:document.getElementById('emp-cpf').value.trim(),
+    _fbKey:existing?._fbKey, // preserva a chave estável do Firebase (undefined em cadastro novo, é atribuída no próximo save)
   };
   if(id){state.data.employees=state.data.employees.map(e=>e.id===id?emp:e);logAction('Colaborador editado',name)}
   else{state.data.employees.push(emp);logAction('Colaborador adicionado',name)}
