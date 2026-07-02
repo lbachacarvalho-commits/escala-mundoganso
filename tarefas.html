@@ -2490,7 +2490,16 @@ function afterData(){
 }
 if(FB_OK){
   dbRef(PATH.escala).on("value",s=>{
-    ESCALA=s.val()||{};
+    const novo=s.val()||{};
+    const novoN=toArray(novo.employees).length;
+    const anteriorN=ESCALA?toArray(ESCALA.employees).length:0;
+    // proteção contra snapshot parcial: se chegou com menos da metade dos funcionários que já tínhamos,
+    // é muito provável que o app de escala estava no meio de uma escrita — ignora e aguarda o próximo evento
+    if(anteriorN>0&&(novoN===0||novoN<anteriorN/2)){
+      console.warn(`[escala] snapshot parcial ignorado: tinha ${anteriorN} colaboradores, chegou ${novoN} — aguardando próximo update`);
+      return;
+    }
+    ESCALA=novo;
     const n=employees().length;
     $("#lgStatus").textContent=n?("Pronto. "+n+" colaboradores na escala."):"Nenhum colaborador encontrado na escala.";
     tryRestore();afterData();
