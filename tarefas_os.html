@@ -195,6 +195,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 .resp-item .rlevel{background:#ecebfb;color:#4a45a8;font-weight:700;font-size:12px;border-radius:7px;
   padding:2px 8px;flex:0 0 auto}
 .resp-item .rname{flex:1;font-size:14px;font-weight:500}
+.resp-item .rname-edit{flex:1;font-size:14px;font-weight:500;border:none;background:transparent;padding:2px 0;color:var(--ink);font-family:inherit}
+.resp-item .rname-edit:focus{outline:none;border-bottom:1.5px solid var(--primary)}
 .resp-item .ord{display:flex;flex-direction:column;gap:2px}
 .miniicon{background:#fff;border:1px solid var(--line);border-radius:7px;width:30px;height:26px;
   display:grid;place-items:center;font-size:13px;color:var(--muted);padding:0}
@@ -334,6 +336,8 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 .ticket-row .tmeta{font-size:11px;color:var(--muted-2);margin-top:2px}
 .status.ticket-aberto{background:var(--accent-soft);color:#b24722}
 .status.ticket-fechado{background:var(--ok-soft);color:#1d7a4f}
+.status.ticket-inativo{background:var(--surface-2);color:var(--muted)}
+.badge-dot,.tab-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:5px;vertical-align:middle}
 .chat{display:flex;flex-direction:column;gap:10px;margin:6px 0 14px;max-height:340px;overflow-y:auto;padding-right:2px}
 .bubble{max-width:82%;padding:9px 12px;border-radius:13px;font-size:13.5px;line-height:1.4}
 .bubble.me{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
@@ -412,10 +416,10 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
     <div class="tabs" id="tabs">
       <button class="tab active" data-view="mine" id="tabMine">Minhas tarefas</button>
       <button class="tab hidden" data-view="resp" id="tabResp">Minhas responsabilidades</button>
-      <button class="tab hidden" data-view="suggestions" id="tabSuggestions">Minhas sugestões</button>
+      <button class="tab hidden" data-view="suggestions" id="tabSuggestions">Minhas discussões<span class="tab-dot hidden" id="dotMine"></span></button>
       <button class="tab hidden" data-view="admin" id="tabAdmin">Tarefas</button>
       <button class="tab hidden" data-view="os" id="tabOS">O.S.</button>
-      <button class="tab hidden" data-view="tickets" id="tabTickets">Sugestões</button>
+      <button class="tab hidden" data-view="tickets" id="tabTickets">Discussões<span class="tab-dot hidden" id="dotAdmin"></span></button>
       <button class="tab hidden" data-view="performance" id="tabPerformance">Desempenho da equipe</button>
       <button class="tab hidden" data-view="diag" id="tabDiag">Informações</button>
     </div>
@@ -487,6 +491,9 @@ const GESTOR_PIN = "";
 /* Nome do setor (cadastro do colaborador) que libera abrir/ver Ordens de Serviço, além do gestor. */
 const LIDERANCA_SETOR = "Lideranças";
 const OS_PRIORITIES = {urgente:"Urgente",normal:"Normal",programada:"Programada"};
+/* discussão de tarefa/O.S. sem mensagem nova há esse tanto de dias vira "inativa" automaticamente (some do filtro padrão) */
+const DISCUSSION_INACTIVE_DAYS = 7;
+const DISCUSSION_INACTIVE_MS = DISCUSSION_INACTIVE_DAYS*24*60*60*1000;
 
 const LOOKBACK_DAYS = 30;       // quantos dias para trás materializar/cobrar atrasos
 const WEEKDAYS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
@@ -502,7 +509,8 @@ let TICKETS = {};               // /escala_tarefas/tickets (sugestões/dúvidas 
 let WEEKLY_SCORES = {};         // /escala_tarefas/weeklyScores/{empCpf}/{mondayKey} (notas semanais fechadas)
 let SCORE_RESET_AT = null;      // /escala_tarefas/scoreResetAt — instâncias anteriores a esta data não contam na nota
 let SERVICE_ORDERS = {};        // /escala_tarefas/serviceOrders/{osid} (O.S. — pontuais, sem recorrência)
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:"",weeks:4}, osFilter:{status:"",priority:"",sector:""} };
+let DISCUSSIONS = {};           // /escala_tarefas/discussions/{task_<id>|os_<id>} (chat único por tarefa/O.S.)
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:"",weeks:4}, osFilter:{status:"",priority:"",sector:""}, discFilter:"active" };
 let materializing = false;
 
 /* ===================================================================
@@ -1002,145 +1010,280 @@ function postpone(iid,toDate){
 }
 
 /* ===================================================================
-   7b) SUGESTÕES / TICKETS (conversa funcionário ↔ gestor sobre a tarefa)
+   7b) DISCUSSÕES (chat único por tarefa/O.S., substitui o antigo sistema de tickets por autor)
    =================================================================== */
-function myTickets(){
+function threadKey(type,id){return type+"_"+id}
+function getThread(type,id){return DISCUSSIONS[threadKey(type,id)]||null}
+function threadParentInfo(type,id){
+  if(type==="task"){
+    const t=TASKS[id];
+    return {title:t?t.title:"(tarefa removida)",sectorId:t?t.sectorId:null,exists:!!t,icon:"📋"};
+  }
+  const o=SERVICE_ORDERS[id];
+  return {title:o?o.title:"(O.S. removida)",sectorId:o?o.sectorId:null,exists:!!o,icon:"🔧"};
+}
+/* quem pode ler/escrever numa discussão: gestor sempre; numa tarefa, quem está na fila R1/R2/R3 dela
+   ou já participou antes (não perde acesso se a fila mudar no meio da conversa); numa O.S., a mesma
+   regra do chat que já existia (Lideranças + fila + quem abriu) */
+function canChatThread(type,id){
+  if(state.admin)return true;
+  if(!state.emp)return false;
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  if(type==="os"){
+    const os=SERVICE_ORDERS[id];if(!os)return false;
+    if(isLideranca(state.emp))return true;
+    if((os.responsibles||[]).some(x=>myIds.includes(String(x))))return true;
+    if(os.openedBy===state.user.username)return true;
+    return false;
+  }
+  const task=TASKS[id];
+  if(task&&(task.responsibles||[]).some(x=>myIds.includes(String(x))))return true;
+  const th=getThread("task",id);
+  if(th&&(th.messages||[]).some(m=>String(m.by)===String(state.user.username)))return true;
+  return false;
+}
+/* inativa automaticamente sem mensagem nova há DISCUSSION_INACTIVE_DAYS, ou manualmente pelo gestor;
+   qualquer mensagem nova (de quem for) tira do modo inativo */
+function threadIsInactive(thread){
+  if(!thread)return false;
+  const msgs=thread.messages||[];
+  if(!msgs.length)return false;
+  if(thread.inactive===true)return true;
+  return (Date.now()-msgs[msgs.length-1].at)>DISCUSSION_INACTIVE_MS;
+}
+function threadHasUnread(type,id){
+  const th=getThread(type,id);if(!th)return false;
+  const msgs=th.messages||[];if(!msgs.length)return false;
+  const last=msgs[msgs.length-1];
+  if(String(last.by)===String(state.user.username))return false;
+  const readAt=(th.readBy&&th.readBy[state.user.username])||0;
+  return last.at>readAt;
+}
+function markThreadRead(type,id){
+  const key=threadKey(type,id);const th=DISCUSSIONS[key];if(!th)return;
+  const msgs=th.messages||[];if(!msgs.length)return;
+  const lastAt=msgs[msgs.length-1].at;
+  const already=(th.readBy&&th.readBy[state.user.username])||0;
+  if(already>=lastAt)return;
+  dbRef(`${PATH.tarefas}/discussions/${key}/readBy/${state.user.username}`).set(lastAt);
+}
+/* todas as threads que o usuário logado pode ver — usado pro filtro de "Minhas discussões" e pro sininho */
+function myVisibleThreadKeys(){
+  if(state.admin)return Object.keys(DISCUSSIONS);
   if(!state.emp)return [];
-  const myCpf=onlyDigits(pick(state.emp,SCHEMA.cpfFields));
-  return Object.entries(TICKETS).filter(([,t])=>t&&onlyDigits(t.openedBy)===myCpf)
-    .map(([id,t])=>({id,...t}));
+  const keys=[];
+  for(const tid in TASKS){
+    const t=TASKS[tid];if(!t||t.active===false)continue;
+    if(canChatThread("task",tid))keys.push(threadKey("task",tid));
+  }
+  for(const osid in SERVICE_ORDERS){
+    if(canChatThread("os",osid))keys.push(threadKey("os",osid));
+  }
+  return [...new Set(keys)];
 }
-function openTicket(taskId,text){
+function anyUnreadDiscussions(){
+  for(const key of myVisibleThreadKeys()){
+    const th=DISCUSSIONS[key];if(!th)continue;
+    const msgs=th.messages||[];if(!msgs.length)continue;
+    const last=msgs[msgs.length-1];
+    if(String(last.by)===String(state.user.username))continue;
+    const readAt=(th.readBy&&th.readBy[state.user.username])||0;
+    if(last.at>readAt)return true;
+  }
+  return false;
+}
+function addDiscussionMessage(type,id,text){
   if(!text||!text.trim())return;
-  const id=genId("tk");
-  const payload={taskId,openedBy:state.user.username,status:"aberto",createdAt:Date.now(),
-    messages:[{by:state.user.username,text:text.trim(),at:Date.now()}]};
-  dbRef(`${PATH.tarefas}/tickets/${id}`).set(payload).then(()=>{closeModal();toast("Sugestão enviada ao gestor")});
-}
-function addTicketMessage(tid,text){
-  const t=TICKETS[tid];if(!t||t.status!=="aberto"||!text||!text.trim())return;
-  const isAuthor=state.emp&&onlyDigits(t.openedBy)===onlyDigits(pick(state.emp,SCHEMA.cpfFields));
-  if(!state.admin&&!isAuthor)return; // só o autor do ticket ou o gestor podem responder
-  const messages=Array.isArray(t.messages)?t.messages.slice():[];
+  if(!canChatThread(type,id))return;
+  const key=threadKey(type,id);
+  const th=DISCUSSIONS[key];
+  const messages=th&&Array.isArray(th.messages)?th.messages.slice():[];
   messages.push({by:state.user.username,text:text.trim(),at:Date.now()});
-  dbRef(`${PATH.tarefas}/tickets/${tid}`).update({messages}).then(()=>{
-    const inp=$("#ticketReply");if(inp)inp.value="";
-    refreshOpenTicketModal(tid);
+  const updates={messages,inactive:false};
+  if(!th){updates.parentType=type;updates.parentId=id;updates.status="aberto";updates.createdAt=Date.now()}
+  dbRef(`${PATH.tarefas}/discussions/${key}`).update(updates).then(()=>{
+    const inp=$("#discReply");if(inp)inp.value="";
+    markThreadRead(type,id);
+    refreshOpenDiscussion(type,id);
   });
 }
-function closeTicket(tid){
+function markThreadInactive(type,id){
   if(!state.admin)return;
-  if(!confirm("Encerrar esta sugestão? O colaborador não poderá mais responder nesta conversa."))return;
-  dbRef(`${PATH.tarefas}/tickets/${tid}`).update({status:"fechado",closedAt:Date.now(),closedBy:state.user.username})
-    .then(()=>refreshOpenTicketModal(tid));
+  dbRef(`${PATH.tarefas}/discussions/${threadKey(type,id)}`).update({inactive:true}).then(()=>refreshOpenDiscussion(type,id));
 }
-let openTicketId=null;
-function refreshOpenTicketModal(tid){
-  if(openTicketId===tid)openTicketConversation(tid); // re-render se a conversa desse ticket estiver aberta
+function markThreadActiveManual(type,id){
+  if(!state.admin)return;
+  dbRef(`${PATH.tarefas}/discussions/${threadKey(type,id)}`).update({inactive:false}).then(()=>refreshOpenDiscussion(type,id));
 }
-
-/* ---- Modal: abrir nova sugestão a partir de uma tarefa ---- */
-function openNewTicketModal(taskId){
-  const task=TASKS[taskId];if(!task)return;
-  openSheet("Falar com o gestor",`
-    <p class="note" style="margin-bottom:12px">Sobre a tarefa <b>${esc(task.title)}</b>. Conte o que está achando — sugestão, dúvida ou problema.</p>
-    <div class="field"><textarea id="ticketText" placeholder="Ex.: Acho que falta um item no checklist para testar a temperatura da água."></textarea></div>
-    <div class="sheet-actions">
-      <button class="btn ghost" data-act="close">Cancelar</button>
-      <button class="btn primary" data-act="confirm-new-ticket" data-tid="${esc(taskId)}">Enviar ao gestor</button>
-    </div>
-  `);
+/* fecha a discussão quando o "dono" dela termina de vez — só se aplica à O.S. (concluída/cancelada é
+   permanente); tarefa recorrente NÃO fecha ao concluir o dia, porque a mesma conversa vale pra vida toda
+   da tarefa, não só pra uma ocorrência */
+function closeDiscussionOnParentEnd(type,id){
+  const key=threadKey(type,id);const th=DISCUSSIONS[key];if(!th)return; // nunca houve conversa, nada a fechar
+  dbRef(`${PATH.tarefas}/discussions/${key}`).update({status:"fechado",closedAt:Date.now(),closedBy:state.user.username});
 }
-
-/* ---- Modal: conversa de um ticket (visível para o autor e para o gestor) ---- */
-function openTicketConversation(tid){
-  const t=TICKETS[tid];if(!t)return;
-  const isAuthor=state.emp&&onlyDigits(t.openedBy)===onlyDigits(pick(state.emp,SCHEMA.cpfFields));
-  if(!state.admin&&!isAuthor)return; // só o autor ou o gestor podem ver a conversa
-  openTicketId=tid;
-  const task=TASKS[t.taskId];
-  const myUsername=state.user.username;
-  const bubbles=(t.messages||[]).map(m=>{
-    const isMe=String(m.by)===String(myUsername);
-    const who=m.by==="gestor"||/gestor/i.test(m.by)?"Gestor":(empName(employeeByCpf(m.by))||"Colaborador");
-    return `<div class="bubble ${isMe?"me":"other"}"><span class="bwho">${esc(isMe?"Você":who)}</span>${esc(m.text)}
-      <span class="bwhen">${new Date(m.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>`;
-  }).join("");
-  const isOpen=t.status==="aberto";
-  const canReply=isOpen; // autor e gestor podem responder enquanto aberto
-  const newTicketBtn=isAuthor?`<button class="btn ghost" data-act="open-new-ticket" data-tid="${esc(t.taskId)}">＋ Nova sugestão</button>`:"";
-  let footer;
-  if(canReply){
-    footer=`<div class="field"><textarea id="ticketReply" placeholder="Escrever uma resposta…" style="min-height:54px"></textarea></div>
-      <div class="sheet-actions">
-        <button class="btn ghost" data-act="close">Fechar</button>
-        ${newTicketBtn}
-        ${state.admin?`<button class="btn ghost" data-act="edit-task-from-ticket" data-tid="${esc(t.taskId)}">Editar tarefa</button>`:""}
-        ${state.admin?`<button class="btn danger" data-act="close-ticket" data-id="${tid}">Encerrar</button>`:""}
-        <button class="btn primary" data-act="send-ticket-reply" data-id="${tid}">Responder</button>
-      </div>`;
-  }else{
-    footer=`<p class="note" style="text-align:center">Conversa encerrada${t.closedBy?" por "+esc(t.closedBy==="gestor"||/gestor/i.test(t.closedBy)?"Gestor":t.closedBy):""}.</p>
-      <div class="sheet-actions">
-        ${newTicketBtn}
-        ${state.admin?`<button class="btn ghost" data-act="edit-task-from-ticket" data-tid="${esc(t.taskId)}">Editar tarefa</button>`:""}
-        <button class="btn primary" data-act="close" style="${state.admin?"":"flex:none;width:100%"}">Fechar</button>
-      </div>`;
-  }
-  openSheet(task?task.title:"Sugestão",`
-    <div class="meta" style="margin-bottom:10px"><span class="status ticket-${t.status}">${isOpen?"Aberto":"Fechado"}</span></div>
-    <div class="chat">${bubbles}</div>
-    ${footer}
-  `);
+function reopenDiscussionThread(type,id){
+  if(!state.admin)return;
+  dbRef(`${PATH.tarefas}/discussions/${threadKey(type,id)}`).update({status:"aberto",closedAt:null,closedBy:null}).then(()=>refreshOpenDiscussion(type,id));
+}
+let openDiscussion=null; // {type,id} da discussão aberta no momento, pra saber se precisa re-renderizar
+function refreshOpenDiscussion(type,id){
+  if(openDiscussion&&openDiscussion.type===type&&String(openDiscussion.id)===String(id))openDiscussionThread(type,id);
 }
 function employeeByCpf(cpf){
   const digits=onlyDigits(cpf);if(!digits)return null;
   return employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===cpf11(digits)})||null;
 }
+/* migração one-shot (idempotente, pode rodar de novo sem duplicar): junta os tickets antigos (1 por autor)
+   numa thread só por tarefa, e traz o chat de O.S. que já existia embutido pra cá também */
+function migrateTicketsToDiscussions(){
+  if(!state.admin)return;
+  if(!confirm("Migrar conversas antigas para o novo formato de Discussões? Pode rodar de novo sem duplicar."))return;
+  const updates={};let migratedTasks=0,migratedOS=0;
+  const byTask={};
+  for(const tid in TICKETS){
+    const t=TICKETS[tid];if(!t||!t.taskId)continue;
+    (byTask[t.taskId]=byTask[t.taskId]||[]).push(...(t.messages||[]));
+  }
+  for(const taskId in byTask){
+    const key="task_"+taskId;if(DISCUSSIONS[key])continue;
+    const msgs=byTask[taskId].slice().sort((a,b)=>a.at-b.at);
+    if(!msgs.length)continue;
+    updates[`discussions/${key}`]={parentType:"task",parentId:taskId,status:"aberto",createdAt:msgs[0].at,messages:msgs};
+    migratedTasks++;
+  }
+  for(const osid in SERVICE_ORDERS){
+    const os=SERVICE_ORDERS[osid];if(!os||!os.messages||!os.messages.length)continue;
+    const key="os_"+osid;if(DISCUSSIONS[key])continue;
+    const closed=os.status==="concluida"||os.status==="cancelada";
+    updates[`discussions/${key}`]={parentType:"os",parentId:osid,status:closed?"fechado":"aberto",createdAt:os.messages[0].at,messages:os.messages};
+    migratedOS++;
+  }
+  if(!migratedTasks&&!migratedOS){toast("Nada para migrar — já está tudo no novo formato.");return}
+  dbRef(PATH.tarefas).update(updates).then(()=>toast(`Migradas ${migratedTasks} conversa(s) de tarefa e ${migratedOS} de O.S.`));
+}
+
+/* ---- Modal: conversa única de uma tarefa ou O.S. ---- */
+function openDiscussionThread(type,id){
+  if(!canChatThread(type,id)){toast("Você não tem acesso a esta conversa.");return}
+  openDiscussion={type,id};
+  markThreadRead(type,id);
+  const info=threadParentInfo(type,id);
+  const th=getThread(type,id);
+  const msgs=th?(th.messages||[]):[];
+  const bubbles=msgs.map(m=>{
+    const isMe=String(m.by)===String(state.user.username);
+    const who=m.by==="gestor"||/gestor/i.test(m.by)?"Gestor":(empName(employeeByCpf(m.by))||"Colaborador");
+    return `<div class="bubble ${isMe?"me":"other"}"><span class="bwho">${esc(isMe?"Você":who)}</span>${esc(m.text)}
+      <span class="bwhen">${new Date(m.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>`;
+  }).join("");
+  const isClosed=th&&th.status==="fechado";
+  const inactive=threadIsInactive(th);
+  const canReply=canChatThread(type,id)&&!isClosed;
+  const statusCls=isClosed?"ticket-fechado":(inactive?"ticket-inativo":"ticket-aberto");
+  const statusLbl=isClosed?"Fechada":(inactive?"Inativa":"Ativa");
+  let adminExtra="";
+  if(state.admin){
+    if(isClosed){
+      adminExtra+=`<button class="btn ghost" data-act="reopen-discussion" data-type="${type}" data-id="${esc(id)}">Reabrir</button>`;
+    }else{
+      adminExtra+=(th&&th.inactive===true)
+        ?`<button class="btn ghost" data-act="reactivate-discussion" data-type="${type}" data-id="${esc(id)}">Reativar</button>`
+        :`<button class="btn ghost" data-act="deactivate-discussion" data-type="${type}" data-id="${esc(id)}">Marcar inativa</button>`;
+    }
+    if(type==="task")adminExtra+=`<button class="btn ghost" data-act="edit-task-from-discussion" data-id="${esc(id)}">Editar tarefa</button>`;
+  }
+  let footer;
+  if(canReply){
+    footer=`<div class="field"><textarea id="discReply" placeholder="Escrever uma mensagem…" style="min-height:54px"></textarea></div>
+      <div class="sheet-actions">
+        <button class="btn ghost" data-act="close">Fechar</button>
+        ${adminExtra}
+        <button class="btn primary" data-act="send-discussion-reply" data-type="${type}" data-id="${esc(id)}">Enviar</button>
+      </div>`;
+  }else{
+    const closedNote=isClosed?("Esta conversa foi encerrada"+(th&&th.closedBy?" por "+esc(th.closedBy==="gestor"||/gestor/i.test(th.closedBy)?"Gestor":th.closedBy):"")+"."):"Você não pode responder nesta conversa.";
+    footer=`<p class="note" style="text-align:center">${closedNote}</p>
+      <div class="sheet-actions">
+        ${adminExtra}
+        <button class="btn primary" data-act="close" style="${adminExtra?"":"flex:none;width:100%"}">Fechar</button>
+      </div>`;
+  }
+  openSheet(`${info.icon} ${info.title}`,`
+    <div class="meta" style="margin-bottom:10px"><span class="status ${statusCls}">${statusLbl}</span>${info.sectorId?`<span class="chip sector">${esc(sectorName(info.sectorId))}</span>`:""}</div>
+    <div class="chat">${bubbles||'<p class="note">Nenhuma mensagem ainda. Escreva a primeira abaixo.</p>'}</div>
+    ${footer}
+  `);
+}
 
 /* ---- Views ---- */
-function viewMySuggestions(){
+function discussionRow(key,th){
+  const [type,...rest]=key.split("_");const id=rest.join("_");
+  const info=threadParentInfo(type,id);
+  const last=(th.messages||[]).slice(-1)[0];
+  const unread=state.emp||state.admin?threadHasUnread(type,id):false;
+  const inact=threadIsInactive(th);
+  const statusCls=th.status==="fechado"?"ticket-fechado":(inact?"ticket-inativo":"ticket-aberto");
+  const statusLbl=th.status==="fechado"?"Fechada":(inact?"Inativa":"Ativa");
+  return `<button type="button" class="ticket-row" data-act="open-discussion" data-type="${type}" data-id="${esc(id)}">
+    <div class="tmain">
+      <span class="ttitle">${info.icon} ${esc(info.title)}${unread?' <span class="badge-dot"></span>':""}</span>
+      <span class="tpreview">${esc(last?last.text:"")}</span>
+      <span class="tmeta">${(th.messages||[]).length} mensagem(ns) · ${last?fmtDate(dateKey(new Date(last.at))):""}</span>
+    </div>
+    <span class="status ${statusCls}">${statusLbl}</span>
+  </button>`;
+}
+function discFilterBar(){
+  const F=state.discFilter||"active";
+  return `<div class="filters" style="margin-bottom:10px">
+    <select data-filter-disc="1">
+      <option value="active" ${F==="active"?"selected":""}>Ativas</option>
+      <option value="inactive" ${F==="inactive"?"selected":""}>Inativas</option>
+      <option value="all" ${F==="all"?"selected":""}>Todas</option>
+    </select>
+  </div>`;
+}
+function viewMyDiscussions(){
   if(!state.emp)return `<div class="empty"><b>Disponível só para colaboradores.</b></div>`;
-  const mine=myTickets().sort((a,b)=>b.createdAt-a.createdAt);
-  if(!mine.length)return `<div class="empty"><b>Você ainda não enviou nenhuma sugestão.</b>Para enviar uma, toque no ícone de balão de fala num card de tarefa, em "Minhas tarefas".</div>`;
-  let h=`<div class="section-title" style="margin-top:4px">Minhas sugestões <span class="count-pill">${mine.length}</span></div>`;
-  for(const t of mine){
-    const task=TASKS[t.taskId];
-    const last=(t.messages||[])[t.messages.length-1];
-    h+=`<button type="button" class="ticket-row" data-act="open-ticket" data-id="${t.id}">
-      <div class="tmain">
-        <span class="ttitle">${esc(task?task.title:"(tarefa removida)")}</span>
-        <span class="tpreview">${esc(last?last.text:"")}</span>
-        <span class="tmeta">${t.messages.length} mensagem(ns) · ${fmtDate(dateKey(new Date(t.createdAt)))}</span>
-      </div>
-      <span class="status ticket-${t.status}">${t.status==="aberto"?"Aberto":"Fechado"}</span>
-    </button>`;
-  }
+  const keys=myVisibleThreadKeys();
+  const items=keys.map(k=>DISCUSSIONS[k]?{key:k,th:DISCUSSIONS[k]}:null).filter(Boolean);
+  const F=state.discFilter||"active";
+  const filtered=items.filter(({th})=>{
+    const inact=threadIsInactive(th);
+    if(F==="active")return !inact&&th.status!=="fechado";
+    if(F==="inactive")return inact||th.status==="fechado";
+    return true;
+  }).sort((a,b)=>{
+    const la=(a.th.messages||[]).slice(-1)[0],lb=(b.th.messages||[]).slice(-1)[0];
+    return (lb?lb.at:0)-(la?la.at:0);
+  });
+  let h=discFilterBar();
+  if(!items.length)return h+`<div class="empty"><b>Você ainda não tem nenhuma discussão.</b>Toque em "💬 Discussão" numa tarefa ou O.S. em "Minhas tarefas" pra começar uma.</div>`;
+  if(!filtered.length)return h+`<div class="empty"><b>Nenhuma discussão ${F==="active"?"ativa":"inativa"} no momento.</b></div>`;
+  h+=`<div class="section-title" style="margin-top:0">Minhas discussões <span class="count-pill">${filtered.length}</span></div>`;
+  for(const {key,th} of filtered)h+=discussionRow(key,th);
   return h;
 }
-function viewTickets(){
-  const all=Object.entries(TICKETS).map(([id,t])=>({id,...t})).sort((a,b)=>{
-    if((a.status==="aberto")!==(b.status==="aberto"))return a.status==="aberto"?-1:1;
-    return b.createdAt-a.createdAt;
+function viewDiscussionsAdmin(){
+  const items=Object.entries(DISCUSSIONS).map(([key,th])=>({key,th}));
+  const F=state.discFilter||"active";
+  const activeCount=items.filter(({th})=>!threadIsInactive(th)&&th.status!=="fechado").length;
+  let h=`<div class="diag"><div class="kv"><span>Ativas:</span> <b>${activeCount}</b><span>Total:</span> <b>${items.length}</b></div></div>`;
+  h+=discFilterBar();
+  if(!items.length){h+=`<div class="empty"><b>Nenhuma discussão ainda.</b>Quando alguém comentar uma tarefa ou O.S., aparece aqui.</div>`;return h}
+  const filtered=items.filter(({th})=>{
+    const inact=threadIsInactive(th);
+    if(F==="active")return !inact&&th.status!=="fechado";
+    if(F==="inactive")return inact||th.status==="fechado";
+    return true;
+  }).sort((a,b)=>{
+    const la=(a.th.messages||[]).slice(-1)[0],lb=(b.th.messages||[]).slice(-1)[0];
+    return (lb?lb.at:0)-(la?la.at:0);
   });
-  const openCount=all.filter(t=>t.status==="aberto").length;
-  let h=`<div class="diag"><div class="kv"><span>Em aberto:</span> <b style="color:${openCount?'var(--accent)':'inherit'}">${openCount}</b>
-    <span>Total:</span> <b>${all.length}</b></div></div>`;
-  if(!all.length){h+=`<div class="empty"><b>Nenhuma sugestão recebida ainda.</b>Quando um colaborador comentar uma tarefa, aparece aqui.</div>`;return h}
-  h+=`<div class="section-title">Sugestões</div>`;
-  for(const t of all){
-    const task=TASKS[t.taskId];
-    const emp=employeeByCpf(t.openedBy);
-    const last=(t.messages||[])[t.messages.length-1];
-    h+=`<button type="button" class="ticket-row" data-act="open-ticket" data-id="${t.id}">
-      <div class="tmain">
-        <span class="ttitle">${esc(task?task.title:"(tarefa removida)")} — ${esc(emp?empName(emp):"Colaborador")}</span>
-        <span class="tpreview">${esc(last?last.text:"")}</span>
-        <span class="tmeta">${t.messages.length} mensagem(ns) · ${fmtDate(dateKey(new Date(t.createdAt)))}</span>
-      </div>
-      <span class="status ticket-${t.status}">${t.status==="aberto"?"Aberto":"Fechado"}</span>
-    </button>`;
-  }
+  if(!filtered.length){h+=`<div class="empty"><b>Nenhuma discussão ${F==="active"?"ativa":"inativa"} no momento.</b></div>`;return h}
+  h+=`<div class="section-title">Discussões</div>`;
+  for(const {key,th} of filtered)h+=discussionRow(key,th);
   return h;
 }
 
@@ -1154,23 +1297,22 @@ function isLideranca(emp){
   return v!=null && norm(v)===norm(LIDERANCA_SETOR);
 }
 function canOpenOS(){return state.admin||isLideranca(state.emp)}
-/* quem participa da conversa de uma O.S.: gestor, Lideranças, toda a fila R1/R2/R3 e quem abriu */
-function canChatOS(os){
-  if(!os)return false;
-  if(state.admin)return true;
-  if(!state.emp)return false;
-  if(isLideranca(state.emp))return true;
-  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
-  if((os.responsibles||[]).some(id=>myIds.includes(String(id))))return true;
-  if(os.openedBy===state.user.username)return true;
-  return false;
-}
 /* responsável elegível de hoje (primeiro da fila presente na escala), igual à lógica das tarefas mas sem horário fixo */
 function osComputeAssignee(os){
   const today=todayKey();
   for(const id of (os.responsibles||[])){
     const emp=employeeById(id);if(!emp)continue;
     if(eligibility(emp,today,null).ok)return id;
+  }
+  return null;
+}
+/* responsável ATUAL de fato: se já foi transferida manualmente (autoAssigned:false) ou está em andamento, respeita
+   quem está travado; só recalcula pela fila do dia se ainda está aberta e nunca foi transferida */
+function osCurrentAssignee(os){
+  if(os.status==="em_andamento")return os.assignedTo;
+  if(os.status==="aberta"){
+    if(os.autoAssigned===false&&os.assignedTo)return os.assignedTo;
+    return osComputeAssignee(os);
   }
   return null;
 }
@@ -1181,7 +1323,7 @@ function canActOS(os){
   const me=state.emp;if(!me)return false;
   const myIds=[me._key,me.id].filter(v=>v!=null).map(String);
   if(os.status==="em_andamento")return myIds.includes(String(os.assignedTo));
-  if(os.status==="aberta")return myIds.includes(String(osComputeAssignee(os)));
+  if(os.status==="aberta")return myIds.includes(String(osCurrentAssignee(os)));
   return false;
 }
 function osChecklistComplete(os){
@@ -1205,7 +1347,7 @@ function myOSQueue(){
     if(os.status!=="aberta"&&os.status!=="em_andamento")continue;
     if(!(os.responsibles||[]).some(id=>myIds.includes(String(id))))continue;
     if(os.status==="em_andamento"&&!myIds.includes(String(os.assignedTo)))continue;
-    if(os.status==="aberta"&&!myIds.includes(String(osComputeAssignee(os))))continue;
+    if(os.status==="aberta"&&!myIds.includes(String(osCurrentAssignee(os))))continue;
     out.push({osid,os});
   }
   const prioRank={urgente:0,normal:1,programada:2};
@@ -1218,12 +1360,20 @@ function myOSQueue(){
 }
 function startOS(osid){
   const os=SERVICE_ORDERS[osid];if(!os||os.status!=="aberta"||!canActOS(os))return;
-  const assignee=state.admin?osComputeAssignee(os):(state.emp._key!=null?state.emp._key:state.emp.id);
+  const assignee=state.admin?osCurrentAssignee(os):(state.emp._key!=null?state.emp._key:state.emp.id);
   if(assignee==null){toast("Sem responsável elegível hoje.");return}
   dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({
     status:"em_andamento",assignedTo:String(assignee),startedAt:Date.now(),startedBy:state.user.username,
     history:pushOSHistory(os,{type:"iniciada"})
   }).then(()=>{toast("O.S. iniciada");refreshOpenOSModal(osid);});
+}
+function transferOS(osid,toEmpId){
+  const os=SERVICE_ORDERS[osid];if(!os||!canActOS(os))return;
+  dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({
+    assignedTo:String(toEmpId),autoAssigned:false,
+    history:pushOSHistory(os,{type:"transferida",to:String(toEmpId)})
+  });
+  closeModal();toast("Transferida para "+empName(employeeById(toEmpId)));
 }
 function completeOS(osid,note){
   const os=SERVICE_ORDERS[osid];if(!os||os.status!=="em_andamento"||!canActOS(os))return;
@@ -1233,6 +1383,7 @@ function completeOS(osid,note){
     completionNote:(note&&note.trim())?note.trim():null,
     history:pushOSHistory(os,{type:"concluida",note:note||null})
   });
+  closeDiscussionOnParentEnd("os",osid);
   toast("O.S. concluída ✓");closeModal();
 }
 function cancelOS(osid,reason){
@@ -1243,6 +1394,7 @@ function cancelOS(osid,reason){
     cancelReason:(reason&&reason.trim())?reason.trim():null,
     history:pushOSHistory(os,{type:"cancelada",note:reason||null})
   });
+  closeDiscussionOnParentEnd("os",osid);
   toast("O.S. cancelada");closeModal();
 }
 function toggleOSCheck(osid,itemId){
@@ -1256,15 +1408,6 @@ function toggleOSCheck(osid,itemId){
 }
 let openOSId=null;
 function refreshOpenOSModal(osid){if(openOSId===osid)openOSDetail(osid)}
-function addOSMessage(osid,text){
-  const os=SERVICE_ORDERS[osid];if(!os||!text||!text.trim()||!canChatOS(os))return;
-  const messages=Array.isArray(os.messages)?os.messages.slice():[];
-  messages.push({by:state.user.username,text:text.trim(),at:Date.now()});
-  dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({messages}).then(()=>{
-    const inp=$("#osReply");if(inp)inp.value="";
-    refreshOpenOSModal(osid);
-  });
-}
 /* cria (gestor ou Liderança) ou edita (só gestor) uma O.S. — na edição só os campos estruturais mudam,
    status/fila-de-eventos/mensagens ficam intactos */
 function saveOS(data,id){
@@ -1379,7 +1522,7 @@ function tryRestore(){
 }
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:"",weeks:4},osFilter:{status:"",priority:"",sector:""}};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:"",weeks:4},osFilter:{status:"",priority:"",sector:""},discFilter:"active"};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
@@ -1402,12 +1545,20 @@ function render(){
   if(!ESCALA){m.innerHTML='<div class="loading"><div class="spinner"></div>Carregando escala…</div>';return}
   if(state.view==="mine")m.innerHTML=viewMine();
   else if(state.view==="resp")m.innerHTML=viewResp();
-  else if(state.view==="suggestions")m.innerHTML=viewMySuggestions();
+  else if(state.view==="suggestions")m.innerHTML=viewMyDiscussions();
   else if(state.view==="admin")m.innerHTML=viewAdmin();
-  else if(state.view==="tickets")m.innerHTML=viewTickets();
+  else if(state.view==="tickets")m.innerHTML=viewDiscussionsAdmin();
   else if(state.view==="performance")m.innerHTML=viewPerformance();
   else if(state.view==="os")m.innerHTML=viewOS();
   else if(state.view==="diag")m.innerHTML=viewDiag();
+  updateDiscussionBadges();
+}
+function updateDiscussionBadges(){
+  if(!state.ready||(!state.emp&&!state.admin))return;
+  const has=anyUnreadDiscussions();
+  const d1=$("#dotMine"),d2=$("#dotAdmin");
+  if(d1)d1.classList.toggle("hidden",!has);
+  if(d2)d2.classList.toggle("hidden",!has);
 }
 
 function statusBadge(s){const map={pendente:"Pendente",em_andamento:"Em andamento",concluida:"Concluída",adiada:"Adiada",nao_realizada:"Não realizada"};return `<span class="status ${s}">${map[s]||s}</span>`}
@@ -1450,15 +1601,12 @@ function taskCardMine({iid,ins,task},opts={}){
     }
     actions+="</div>";
   }
-  const myOpenForTask=opts.coresp?[]:myTickets().filter(t=>t.taskId===ins.taskId&&t.status==="aberto").sort((a,b)=>b.createdAt-a.createdAt);
-  const suggestBtn=opts.coresp?"":(myOpenForTask.length
-    ?`<button type="button" class="btn-suggest has-open" data-act="open-ticket" data-id="${esc(myOpenForTask[0].id)}">
-        💬 ${myOpenForTask.length} em aberto</button>`
-    :`<button type="button" class="btn-suggest" data-act="open-new-ticket" data-tid="${esc(ins.taskId)}">
-        💬 Falar com o gestor</button>`);
+  const unreadDisc=opts.coresp?false:threadHasUnread("task",ins.taskId);
+  const discussBtn=opts.coresp?"":`<button type="button" class="btn-suggest${unreadDisc?" has-open":""}" data-act="open-discussion" data-type="task" data-id="${esc(ins.taskId)}">
+        💬 Discussão${unreadDisc?" •":""}</button>`;
   return `<article class="${cls.join(" ")}" data-act="open-detail" data-iid="${iid}" style="cursor:pointer"><div class="card-body">
     <div class="card-head"><h3>${esc(task.title)}</h3>
-      <div class="card-head-right" data-stop="1">${statusBadge(ins.status)}${suggestBtn}</div>
+      <div class="card-head-right" data-stop="1">${statusBadge(ins.status)}${discussBtn}</div>
     </div>
     <div class="meta">${meta}</div>
     <div data-stop="1">${actions}</div>
@@ -1495,10 +1643,14 @@ function osCardMine(os,osid){
   let actions='<div class="actions">';
   if(os.status==="aberta")actions+=`<button class="btn primary sm" data-act="start-os" data-osid="${osid}">Iniciar</button>`;
   if(os.status==="em_andamento")actions+=`<button class="btn ok sm" data-act="open-os-complete" data-osid="${osid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+  if((os.responsibles||[]).length>1)actions+=`<button class="btn ghost sm" data-act="transfer-os" data-osid="${osid}">Transferir</button>`;
   actions+="</div>";
+  const unreadDisc=threadHasUnread("os",osid);
+  const discussBtn=`<button type="button" class="btn-suggest${unreadDisc?" has-open":""}" data-act="open-discussion" data-type="os" data-id="${esc(osid)}">
+        💬 Discussão${unreadDisc?" •":""}</button>`;
   return `<article class="${cls.join(" ")}" data-act="open-os-detail" data-osid="${osid}" style="cursor:pointer"><div class="card-body">
     <div class="card-head"><h3>${esc(os.title)}</h3>
-      <div class="card-head-right" data-stop="1">${osStatusBadge(os.status)}</div>
+      <div class="card-head-right" data-stop="1">${osStatusBadge(os.status)}${discussBtn}</div>
     </div>
     <div class="meta">${meta}</div>
     <div data-stop="1">${actions}</div>
@@ -1583,88 +1735,142 @@ function computePartners(myTasks){
   }
   return Object.values(partners).sort((a,b)=>b.together-a.together);
 }
+/* todas as O.S. ativas (aberta/em_andamento) em que estou na fila — separadas entre responsável atual e co-responsável,
+   usado em "Minhas responsabilidades" */
+function myOSWithLevel(){
+  if(!state.emp)return {mine:[],coresp:[]};
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  const mine=[],coresp=[];
+  for(const osid in SERVICE_ORDERS){
+    const os=SERVICE_ORDERS[osid];if(!os)continue;
+    if(os.status!=="aberta"&&os.status!=="em_andamento")continue;
+    const idx=(os.responsibles||[]).findIndex(id=>myIds.includes(String(id)));
+    if(idx<0)continue;
+    const current=osCurrentAssignee(os);
+    const entry={osid,os,_level:idx+1};
+    if(myIds.includes(String(current)))mine.push(entry);else coresp.push(entry);
+  }
+  const byPrio=(a,b)=>{
+    const pr={urgente:0,normal:1,programada:2};
+    const pa=pr[a.os.priority]??1,pb=pr[b.os.priority]??1;
+    if(pa!==pb)return pa-pb;
+    return (a.os.createdAt||0)-(b.os.createdAt||0);
+  };
+  mine.sort(byPrio);coresp.sort(byPrio);
+  return {mine,coresp};
+}
+function osRespRow(osid,os,level){
+  const today=todayKey();
+  const isLate=!!os.deadline&&os.status!=="concluida"&&os.status!=="cancelada"&&os.deadline<today;
+  return `<div class="resp-task-row" data-act="open-os-detail" data-osid="${osid}" style="cursor:pointer">
+    <div class="rlevelbig">R${level}</div>
+    <div class="rmain"><span class="rtitle">${esc(os.title)}</span>
+      <div class="rmeta"><span class="chip sector">${esc(sectorName(os.sectorId))}</span>
+        ${osPriorityChip(os.priority)}${osStatusBadge(os.status)}
+        ${os.deadline?`<span class="chip${isLate?" late":""}">📅 ${fmtDate(os.deadline)}</span>`:""}</div>
+    </div></div>`;
+}
 function viewResp(){
   if(!state.emp)return `<div class="empty"><b>Disponível só para colaboradores.</b>Faça login com seu CPF para ver suas responsabilidades.</div>`;
   const myCpfNorm=empCpfKey(state.emp);
   const scoreHtml=myCpfNorm?scoreCardHtml(myCpfNorm):"";
   const all=myActiveTasksWithLevel();
-  if(!all.length)return scoreHtml+`<div class="empty"><b>Você ainda não está na fila de nenhuma tarefa.</b>Quando o gestor te adicionar como responsável, ela aparece aqui.</div>`;
+  const {mine:osMine,coresp:osCoresp}=myOSWithLevel();
+  if(!all.length&&!osMine.length&&!osCoresp.length){
+    return scoreHtml+`<div class="empty"><b>Você ainda não está na fila de nenhuma tarefa ou O.S.</b>Quando o gestor te adicionar como responsável, aparece aqui.</div>`;
+  }
+  let h=scoreHtml;
 
-  // ---- resumo por nível (sobre TODAS as suas tarefas, ignora filtro) ----
-  const byLevelCount={};all.forEach(t=>byLevelCount[t._level]=(byLevelCount[t._level]||0)+1);
-  const levels=Object.keys(byLevelCount).map(Number).sort((a,b)=>a-b);
-  const lvlClass=l=>l===1?"r1":l===2?"r2":"r3";
-  let h=scoreHtml+`<div class="section-title" style="margin-top:4px">Visão geral</div><div class="stat-grid">`;
-  h+=`<div class="stat-box"><div class="num">${all.length}</div><div class="lbl">Tarefas no total</div></div>`;
-  for(const l of levels)h+=`<div class="stat-box ${lvlClass(l)}"><div class="num">${byLevelCount[l]}</div><div class="lbl">Você é R${l}</div></div>`;
-  h+="</div>";
+  if(all.length){
+    // ---- resumo por nível (sobre TODAS as suas tarefas, ignora filtro) ----
+    const byLevelCount={};all.forEach(t=>byLevelCount[t._level]=(byLevelCount[t._level]||0)+1);
+    const levels=Object.keys(byLevelCount).map(Number).sort((a,b)=>a-b);
+    const lvlClass=l=>l===1?"r1":l===2?"r2":"r3";
+    h+=`<div class="section-title" style="margin-top:4px">Visão geral</div><div class="stat-grid">`;
+    h+=`<div class="stat-box"><div class="num">${all.length}</div><div class="lbl">Tarefas no total</div></div>`;
+    for(const l of levels)h+=`<div class="stat-box ${lvlClass(l)}"><div class="num">${byLevelCount[l]}</div><div class="lbl">Você é R${l}</div></div>`;
+    h+="</div>";
 
-  // ---- distribuição por setor: % arredondado a inteiros e sempre soma 100 ----
-  const secCounts={};all.forEach(t=>{const k=String(t.sectorId||"");secCounts[k]=(secCounts[k]||0)+1});
-  const secEntries=Object.entries(secCounts).sort((a,b)=>b[1]-a[1]);
-  const rawPct=secEntries.map(([id,n])=>n/all.length*100);
-  const pctInt=rawPct.map(Math.floor);
-  let remainder=100-pctInt.reduce((s,v)=>s+v,0);
-  // distribui o resto do arredondamento pelos maiores restos fracionários, pra somar exatamente 100
-  const order=rawPct.map((v,i)=>({i,frac:v-pctInt[i]})).sort((a,b)=>b.frac-a.frac);
-  for(let k=0;k<remainder;k++)pctInt[order[k%order.length].i]++;
-  const secRows=secEntries.map(([id,n],i)=>({id,n,pct:pctInt[i]}));
+    // ---- distribuição por setor: % arredondado a inteiros e sempre soma 100 ----
+    const secCounts={};all.forEach(t=>{const k=String(t.sectorId||"");secCounts[k]=(secCounts[k]||0)+1});
+    const secEntries=Object.entries(secCounts).sort((a,b)=>b[1]-a[1]);
+    const rawPct=secEntries.map(([id,n])=>n/all.length*100);
+    const pctInt=rawPct.map(Math.floor);
+    let remainder=100-pctInt.reduce((s,v)=>s+v,0);
+    // distribui o resto do arredondamento pelos maiores restos fracionários, pra somar exatamente 100
+    const order=rawPct.map((v,i)=>({i,frac:v-pctInt[i]})).sort((a,b)=>b.frac-a.frac);
+    for(let k=0;k<remainder;k++)pctInt[order[k%order.length].i]++;
+    const secRows=secEntries.map(([id,n],i)=>({id,n,pct:pctInt[i]}));
 
-  h+=`<div class="section-title">Sua distribuição por setor</div>`;
-  if(secRows.length===1){
-    h+=`<p class="note" style="margin:-2px 2px 10px">Todas as suas ${all.length} tarefa(s) são do setor <b>${esc(sectorName(secRows[0].id))}</b>.</p>`;
-  }else{
-    for(const r of secRows){
-      h+=`<div class="bar-row"><span class="blabel">${esc(sectorName(r.id))}</span>
-        <span class="bar-track"><span class="bar-fill" style="width:${r.pct}%"></span></span>
-        <span class="bar-pct">${r.pct}% (${r.n})</span></div>`;
+    h+=`<div class="section-title">Sua distribuição por setor</div>`;
+    if(secRows.length===1){
+      h+=`<p class="note" style="margin:-2px 2px 10px">Todas as suas ${all.length} tarefa(s) são do setor <b>${esc(sectorName(secRows[0].id))}</b>.</p>`;
+    }else{
+      for(const r of secRows){
+        h+=`<div class="bar-row"><span class="blabel">${esc(sectorName(r.id))}</span>
+          <span class="bar-track"><span class="bar-fill" style="width:${r.pct}%"></span></span>
+          <span class="bar-pct">${r.pct}% (${r.n})</span></div>`;
+      }
+    }
+
+    // ---- parceiros (sobre todas) — clicável para ver tarefas em comum ----
+    const partners=computePartners(all);
+    if(partners.length){
+      h+=`<div class="section-title">Sua rede de parceiros</div>
+        <div class="partner-list">`;
+      for(const p of partners){
+        const emp=employeeById(p.empId);const nm=empName(emp)||"—";
+        h+=`<button type="button" class="partner-line" data-act="show-partner" data-emp="${esc(p.empId)}">
+          <span class="partner-line-name">${esc(nm)}</span><span class="partner-line-count">${p.together}</span></button>`;
+      }
+      h+=`</div>`;
+    }
+
+    // ---- filtros ----
+    const F=state.respFilter;
+    const usedSectors=[...new Set(all.map(t=>String(t.sectorId||"")))];
+    const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(id=>`<option value="${esc(id)}" ${F.sector===id?"selected":""}>${esc(sectorName(id))}</option>`).join("");
+    const lvlOpts=`<option value="">Todos os níveis</option>`+levels.map(l=>`<option value="${l}" ${String(F.level)===String(l)?"selected":""}>R${l}</option>`).join("");
+    const hasFilter=F.sector||F.level;
+    h+=`<div class="section-title">Suas tarefas</div>`;
+    h+=`<div class="filters">
+      <select data-filter2="sector">${secOpts}</select>
+      <select data-filter2="level">${lvlOpts}</select>
+      ${hasFilter?`<button class="btn sm ghost" data-act="clear-resp-filters">Limpar</button>`:""}
+    </div>`;
+
+    const filtered=all.filter(t=>{
+      if(F.sector&&String(t.sectorId||"")!==F.sector)return false;
+      if(F.level&&String(t._level)!==String(F.level))return false;
+      return true;
+    }).sort((a,b)=>a._level-b._level||a.title.localeCompare(b.title,"pt-BR"));
+
+    if(!filtered.length){
+      h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;
+    }else{
+      for(const t of filtered){
+        const natureLabels={executar:"A executar",demanda:"Sob demanda",continua:"Preocupação contínua"};
+        h+=`<div class="resp-task-row">
+          <div class="rlevelbig">R${t._level}</div>
+          <div class="rmain"><span class="rtitle">${esc(t.title)}</span>
+            <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>
+              <span class="chip">${esc(natureLabels[t.nature||"executar"])}</span>
+              <span class="chip">${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}</span>${t.startTime?`<span class="chip time">🕐 ${esc(t.startTime)}</span>`:""}</div>
+          </div></div>`;
+      }
     }
   }
 
-  // ---- parceiros (sobre todas) — clicável para ver tarefas em comum ----
-  const partners=computePartners(all);
-  if(partners.length){
-    h+=`<div class="section-title">Sua rede de parceiros</div>
-      <div class="partner-list">`;
-    for(const p of partners){
-      const emp=employeeById(p.empId);const nm=empName(emp)||"—";
-      h+=`<button type="button" class="partner-line" data-act="show-partner" data-emp="${esc(p.empId)}">
-        <span class="partner-line-name">${esc(nm)}</span><span class="partner-line-count">${p.together}</span></button>`;
-    }
-    h+=`</div>`;
+  // ---- Ordens de serviço: responsável e co-responsável, em blocos separados ----
+  if(osMine.length){
+    h+=`<div class="section-title">Ordens de serviço — você é responsável <span class="count-pill">${osMine.length}</span></div>`;
+    h+=osMine.map(e=>osRespRow(e.osid,e.os,e._level)).join("");
+  }
+  if(osCoresp.length){
+    h+=`<div class="section-title">Ordens de serviço — você é co-responsável <span class="count-pill">${osCoresp.length}</span></div>`;
+    h+=osCoresp.map(e=>osRespRow(e.osid,e.os,e._level)).join("");
   }
 
-  // ---- filtros ----
-  const F=state.respFilter;
-  const usedSectors=[...new Set(all.map(t=>String(t.sectorId||"")))];
-  const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(id=>`<option value="${esc(id)}" ${F.sector===id?"selected":""}>${esc(sectorName(id))}</option>`).join("");
-  const lvlOpts=`<option value="">Todos os níveis</option>`+levels.map(l=>`<option value="${l}" ${String(F.level)===String(l)?"selected":""}>R${l}</option>`).join("");
-  const hasFilter=F.sector||F.level;
-  h+=`<div class="section-title">Suas tarefas</div>`;
-  h+=`<div class="filters">
-    <select data-filter2="sector">${secOpts}</select>
-    <select data-filter2="level">${lvlOpts}</select>
-    ${hasFilter?`<button class="btn sm ghost" data-act="clear-resp-filters">Limpar</button>`:""}
-  </div>`;
-
-  const filtered=all.filter(t=>{
-    if(F.sector&&String(t.sectorId||"")!==F.sector)return false;
-    if(F.level&&String(t._level)!==String(F.level))return false;
-    return true;
-  }).sort((a,b)=>a._level-b._level||a.title.localeCompare(b.title,"pt-BR"));
-
-  if(!filtered.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
-
-  for(const t of filtered){
-    const natureLabels={executar:"A executar",demanda:"Sob demanda",continua:"Preocupação contínua"};
-    h+=`<div class="resp-task-row">
-      <div class="rlevelbig">R${t._level}</div>
-      <div class="rmain"><span class="rtitle">${esc(t.title)}</span>
-        <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>
-          <span class="chip">${esc(natureLabels[t.nature||"executar"])}</span>
-          <span class="chip">${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}</span>${t.startTime?`<span class="chip time">🕐 ${esc(t.startTime)}</span>`:""}</div>
-      </div></div>`;
-  }
   return h;
 }
 
@@ -1715,7 +1921,7 @@ function viewOS(){
   for(const [osid,o] of list){
     const isLate=!!o.deadline&&o.status!=="concluida"&&o.status!=="cancelada"&&o.deadline<today;
     const respLabel=(o.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
-    const assigneeNow=o.status==="em_andamento"?o.assignedTo:(o.status==="aberta"?osComputeAssignee(o):null);
+    const assigneeNow=o.status==="em_andamento"?o.assignedTo:(o.status==="aberta"?osCurrentAssignee(o):null);
     h+=`<div class="tcard" data-act="open-os-detail" data-osid="${osid}" style="cursor:pointer"><div class="tcard-head"><div>
       <h3>${esc(o.title)}</h3>
       <div class="small">${esc(sectorName(o.sectorId))}${o.requester?" · "+esc(o.requester):""}</div>
@@ -1793,10 +1999,10 @@ function viewAdmin(){
     <button class="btn sm" data-act="open-report">📋 Relatório do dia</button>
   </div></div>`;
 
-  const openTicketsCount=Object.values(TICKETS).filter(t=>t&&t.status==="aberto").length;
-  if(openTicketsCount){
-    h+=`<button type="button" class="btn-suggest has-open" style="width:100%;justify-content:center;padding:10px;margin-bottom:14px;font-size:13.5px" data-act="goto-tickets">
-      💬 ${openTicketsCount} sugestão(ões) em aberto — toque para ver</button>`;
+  const activeDiscCount=Object.values(DISCUSSIONS).filter(th=>th&&!threadIsInactive(th)&&th.status!=="fechado").length;
+  if(activeDiscCount){
+    h+=`<button type="button" class="btn-suggest has-open" style="width:100%;justify-content:center;padding:10px;margin-bottom:14px;font-size:13.5px" data-act="goto-discussions">
+      💬 ${activeDiscCount} discussão(ões) ativa(s) — toque para ver</button>`;
   }
 
   h+=`<div class="filters">
@@ -2206,13 +2412,19 @@ function viewDiag(){
     </div>`;
   }
 
+  const oldTicketsCount=Object.keys(TICKETS).length;
+  h+=`<div class="diag"><h4>💬 Discussões (tarefas + O.S.)</h4>
+    <p class="note" style="margin-bottom:10px">${oldTicketsCount?`Há <b>${oldTicketsCount}</b> conversa(s) no formato antigo (uma por colaborador). A migração junta tudo numa thread só por tarefa/O.S. — pode rodar quantas vezes quiser, não duplica.`:"Nenhuma conversa no formato antigo pendente de migração."}</p>
+    <div class="actions"><button class="btn sm ghost" data-act="migrate-discussions">🔄 Migrar conversas para Discussões</button></div>
+  </div>`;
+
   return h;
 }
 
 /* ===================================================================
    11) MODAIS
    =================================================================== */
-function closeModal(){$("#modalRoot").innerHTML="";transferState=null;formState=null;openTicketId=null;osFormState=null;openOSId=null;}
+function closeModal(){$("#modalRoot").innerHTML="";transferState=null;formState=null;osFormState=null;openOSId=null;osTransferState=null;openDiscussion=null;}
 function openSheet(title,bodyHtml){
   $("#modalRoot").innerHTML=`<div class="overlay" data-overlay><div class="sheet">
     <div class="sheet-head"><h2>${esc(title)}</h2><button class="x" data-act="close">✕</button></div>
@@ -2254,7 +2466,7 @@ function renderTaskForm(){
 
   const checklistHtml=f.checklist.length?f.checklist.map((item,i)=>`
     <div class="resp-item">
-      <span class="rname">${esc(item.text)}</span>
+      <input class="rname-edit" data-checkedit="task" data-i="${i}" value="${esc(item.text)}">
       <button class="miniicon rm" data-act="check-rm" data-i="${i}">✕</button>
     </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
 
@@ -2376,7 +2588,7 @@ function renderOSForm(){
     </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
   const checklistHtml=f.checklist.length?f.checklist.map((item,i)=>`
     <div class="resp-item">
-      <span class="rname">${esc(item.text)}</span>
+      <input class="rname-edit" data-checkedit="os" data-i="${i}" value="${esc(item.text)}">
       <button class="miniicon rm" data-act="os-check-rm" data-i="${i}">✕</button>
     </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
   openSheet(f.id?"Editar O.S.":"Nova ordem de serviço",`
@@ -2443,27 +2655,19 @@ function openOSDetail(osid){
     }).join("")}</div>
     ${!checklistOk?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
   `:"";
-  const bubbles=(os.messages||[]).map(m=>{
-    const isMe=String(m.by)===String(state.user.username);
-    const who=m.by==="gestor"||/gestor/i.test(m.by)?"Gestor":(empName(employeeByCpf(m.by))||"Colaborador");
-    return `<div class="bubble ${isMe?"me":"other"}"><span class="bwho">${esc(isMe?"Você":who)}</span>${esc(m.text)}
-      <span class="bwhen">${new Date(m.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>`;
-  }).join("");
   const canAct=canActOS(os);
-  const canChat=canChatOS(os);
+  const canChat=canChatThread("os",osid);
+  const unreadDisc=canChat?threadHasUnread("os",osid):false;
   let actionBtns="";
   if(os.status==="aberta"&&canAct)actionBtns+=`<button class="btn primary" data-act="start-os" data-osid="${osid}">Iniciar</button>`;
   if(os.status==="em_andamento"&&canAct)actionBtns+=`<button class="btn ok" data-act="open-os-complete" data-osid="${osid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+  if((os.status==="aberta"||os.status==="em_andamento")&&canAct&&(os.responsibles||[]).length>1)actionBtns+=`<button class="btn ghost" data-act="transfer-os" data-osid="${osid}">Transferir</button>`;
   if(state.admin&&(os.status==="aberta"||os.status==="em_andamento")){
     actionBtns+=`<button class="btn ghost" data-act="edit-os" data-osid="${osid}">Editar</button>`;
     actionBtns+=`<button class="btn danger" data-act="open-os-cancel" data-osid="${osid}">Cancelar</button>`;
   }
-  const footer=canChat?`<div class="field"><textarea id="osReply" placeholder="Escrever uma mensagem…" style="min-height:54px"></textarea></div>
-    <div class="sheet-actions">
-      <button class="btn ghost" data-act="close">Fechar</button>
-      ${actionBtns}
-      <button class="btn primary" data-act="send-os-reply" data-osid="${osid}">Enviar</button>
-    </div>`:`<div class="sheet-actions">
+  if(canChat)actionBtns+=`<button class="btn ghost" data-act="open-discussion" data-type="os" data-id="${esc(osid)}">💬 Discussão${unreadDisc?" •":""}</button>`;
+  const footer=`<div class="sheet-actions">
       <button class="btn ghost" data-act="close">Fechar</button>
       ${actionBtns}
     </div>`;
@@ -2481,8 +2685,6 @@ function openOSDetail(osid){
     ${checklistHtml}
     <div class="section-title" style="margin-top:14px">Fila de responsáveis</div>
     <div class="meta">${resp}</div>
-    <div class="section-title">Conversa</div>
-    <div class="chat">${bubbles||'<p class="note">Nenhuma mensagem ainda.</p>'}</div>
     ${footer}
   `);
 }
@@ -2561,6 +2763,7 @@ function openTaskDetail(iid){
     ${histHtml}
     <div class="sheet-actions">
       <button class="btn ghost" data-act="close">Fechar</button>
+      ${canChatThread("task",ins.taskId)?`<button class="btn ghost" data-act="open-discussion" data-type="task" data-id="${esc(ins.taskId)}">💬 Discussão${threadHasUnread("task",ins.taskId)?" •":""}</button>`:""}
       ${actionBtns}
     </div>
   `);
@@ -2749,6 +2952,38 @@ function renderTransfer(){
   `);
 }
 
+let osTransferState=null;
+function openOSTransfer(osid){
+  const os=SERVICE_ORDERS[osid];if(!os)return;
+  osTransferState={osid,sel:null};
+  renderOSTransfer();
+}
+function renderOSTransfer(){
+  const ts=osTransferState;const os=SERVICE_ORDERS[ts.osid];if(!os)return;
+  const current=osCurrentAssignee(os);
+  const others=(os.responsibles||[]).filter(id=>String(id)!==String(current));
+  const rows=others.map(id=>{
+    const emp=employeeById(id);if(!emp)return"";
+    const e=eligibility(emp,todayKey(),null);
+    const idx=(os.responsibles||[]).findIndex(x=>String(x)===String(id));
+    const sel=ts.sel&&String(ts.sel)===String(id);
+    return `<button type="button" class="opt ${sel?"sel":""} ${e.ok?"":"disabled"}" ${e.ok?`data-act="sel-os-r" data-to="${esc(id)}"`:""}>
+      <span class="rlevel">R${idx+1}</span>
+      <span class="opt-main"><span class="opt-name">${esc(empName(emp))}</span>
+        <small style="color:${e.ok?'var(--ok)':'var(--accent)'}">${e.ok?"elegível hoje":"indisponível ("+e.reason+")"}</small></span>
+      <span class="opt-check">${sel?"●":""}</span>
+    </button>`;
+  }).join("");
+  openSheet("Transferir O.S.",`
+    <p class="note" style="margin-bottom:14px"><b>${esc(os.title)}</b> — escolha para quem passar.</p>
+    <div class="opt-list">${rows||'<p class="note">Não há outros responsáveis na fila desta O.S.</p>'}</div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn primary" data-act="confirm-os-transfer" ${ts.sel?"":"disabled"}>Confirmar</button>
+    </div>
+  `);
+}
+
 /* ===================================================================
    12) EVENTOS
    =================================================================== */
@@ -2771,10 +3006,34 @@ $("#lgUser").addEventListener("input",e=>{
 $("#logoutBtn").addEventListener("click",logout);
 $("#tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;state.view=t.dataset.view;setActiveTab();render()});
 document.addEventListener("input",e=>{
-  if(!formState)return;
-  if(["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
+  if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
     syncFormInputs();
     const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
+  }
+  const ce=e.target.closest("[data-checkedit]");
+  if(ce){
+    const i=+ce.dataset.i;
+    if(ce.dataset.checkedit==="task"&&formState&&formState.checklist[i])formState.checklist[i].text=ce.value;
+    if(ce.dataset.checkedit==="os"&&osFormState&&osFormState.checklist[i])osFormState.checklist[i].text=ce.value;
+  }
+});
+document.addEventListener("paste",e=>{
+  if(e.target.id!=="fAddCheck"&&e.target.id!=="osAddCheck")return;
+  const text=(e.clipboardData||window.clipboardData).getData("text");
+  if(!text||!text.includes("\n"))return; // colagem de uma linha só: deixa o comportamento padrão
+  e.preventDefault();
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length)return;
+  if(e.target.id==="fAddCheck"&&formState){
+    syncFormInputs();
+    lines.forEach(t=>formState.checklist.push({id:genId("chk"),text:t}));
+    renderTaskForm();
+    setTimeout(()=>{const el=$("#fAddCheck");if(el)el.focus()},0);
+  }else if(e.target.id==="osAddCheck"&&osFormState){
+    syncOSFormInputs();
+    lines.forEach(t=>osFormState.checklist.push({id:genId("chk"),text:t}));
+    renderOSForm();
+    setTimeout(()=>{const el=$("#osAddCheck");if(el)el.focus()},0);
   }
 });
 document.addEventListener("keydown",e=>{
@@ -2782,13 +3041,13 @@ document.addEventListener("keydown",e=>{
     e.preventDefault();
     syncFormInputs();
     const text=e.target.value.trim();
-    if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm()}
+    if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm();setTimeout(()=>{const el=$("#fAddCheck");if(el)el.focus()},0)}
   }
   if(e.key==="Enter"&&e.target.id==="osAddCheck"){
     e.preventDefault();
     syncOSFormInputs();
     const text=e.target.value.trim();
-    if(text){osFormState.checklist.push({id:genId("chk"),text});renderOSForm()}
+    if(text){osFormState.checklist.push({id:genId("chk"),text});renderOSForm();setTimeout(()=>{const el=$("#osAddCheck");if(el)el.focus()},0)}
   }
 });
 
@@ -2832,7 +3091,9 @@ document.addEventListener("click",e=>{
     case"open-os-cancel":openOSCancelModal(osid);break;
     case"confirm-os-cancel":{const reason=$("#osCancelReason")?$("#osCancelReason").value:"";cancelOS(osid,reason);break}
     case"toggle-os-check":toggleOSCheck(osid,a.dataset.item);break;
-    case"send-os-reply":{const txt=$("#osReply")?$("#osReply").value:"";addOSMessage(osid,txt);break}
+    case"transfer-os":openOSTransfer(osid);break;
+    case"sel-os-r":osTransferState.sel=a.dataset.to;renderOSTransfer();break;
+    case"confirm-os-transfer":{const ts=osTransferState;if(!ts||!ts.sel)break;transferOS(ts.osid,ts.sel);break}
     case"os-resp-add":{const sel=$("#osAddResp");if(sel&&sel.value){syncOSFormInputs();osFormState.responsibles.push(sel.value);renderOSForm()}break}
     case"os-resp-rm":{syncOSFormInputs();osFormState.responsibles.splice(+a.dataset.i,1);renderOSForm();break}
     case"os-resp-up":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderOSForm();break}
@@ -2880,13 +3141,14 @@ document.addEventListener("click",e=>{
     case"show-partner":openPartnerTasks(a.dataset.emp);break;
     case"show-coresp":openCorespModal();break;
     case"open-report":openDailyReport();break;
-    case"goto-tickets":state.view="tickets";setActiveTab();render();break;
-    case"open-new-ticket":openNewTicketModal(a.dataset.tid);break;
-    case"confirm-new-ticket":{const txt=$("#ticketText")?$("#ticketText").value:"";openTicket(a.dataset.tid,txt);break}
-    case"open-ticket":openTicketConversation(a.dataset.id);break;
-    case"send-ticket-reply":{const txt=$("#ticketReply")?$("#ticketReply").value:"";addTicketMessage(a.dataset.id,txt);break}
-    case"close-ticket":closeTicket(a.dataset.id);break;
-    case"edit-task-from-ticket":closeModal();openTaskForm(a.dataset.tid);break;
+    case"goto-discussions":state.view="tickets";setActiveTab();render();break;
+    case"open-discussion":openDiscussionThread(a.dataset.type,a.dataset.id);break;
+    case"send-discussion-reply":{const txt=$("#discReply")?$("#discReply").value:"";addDiscussionMessage(a.dataset.type,a.dataset.id,txt);break}
+    case"deactivate-discussion":markThreadInactive(a.dataset.type,a.dataset.id);break;
+    case"reactivate-discussion":markThreadActiveManual(a.dataset.type,a.dataset.id);break;
+    case"reopen-discussion":reopenDiscussionThread(a.dataset.type,a.dataset.id);break;
+    case"edit-task-from-discussion":closeModal();openTaskForm(a.dataset.id);break;
+    case"migrate-discussions":migrateTicketsToDiscussions();break;
     case"transfer":openTransfer(iid);break;
     case"sel-r":transferState.sel={type:"r",empId:a.dataset.to};renderTransfer();break;
     case"sel-day":transferState.sel={type:"day"};renderTransfer();setTimeout(()=>{const el=$("#postDate");if(el)el.focus()},0);break;
@@ -2927,6 +3189,8 @@ document.addEventListener("change",e=>{
   if(f3){state.perfFilter[f3.dataset.filter3]=f3.value;render();return}
   const fos=e.target.closest("[data-filter-os]");
   if(fos){state.osFilter[fos.dataset.filterOs]=fos.value;render();return}
+  const fdisc=e.target.closest("[data-filter-disc]");
+  if(fdisc){state.discFilter=fdisc.value;render();return}
   if(e.target.id==="postDate"&&transferState){transferState.date=e.target.value}
   if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
     syncFormInputs();
@@ -2958,7 +3222,7 @@ if(FB_OK){
   },err=>{
     $("#lgStatus").textContent="Erro ao ler a escala: "+err.code+". Verifique as regras do banco.";
   });
-  dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};TICKETS=v.tickets||{};WEEKLY_SCORES=v.weeklyScores||{};SCORE_RESET_AT=v.scoreResetAt||null;SERVICE_ORDERS=v.serviceOrders||{};afterData()});
+  dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};TICKETS=v.tickets||{};WEEKLY_SCORES=v.weeklyScores||{};SCORE_RESET_AT=v.scoreResetAt||null;SERVICE_ORDERS=v.serviceOrders||{};DISCUSSIONS=v.discussions||{};afterData()});
 
   /* usuários: opcional agora (login é por CPF). Mantido só para o Diagnóstico. */
   dbRef(PATH.users).once("value").then(s=>{USERS=s.val()||{}}).catch(()=>{USERS={}});
