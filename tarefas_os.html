@@ -1922,10 +1922,11 @@ function viewOS(){
     const isLate=!!o.deadline&&o.status!=="concluida"&&o.status!=="cancelada"&&o.deadline<today;
     const respLabel=(o.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
     const assigneeNow=o.status==="em_andamento"?o.assignedTo:(o.status==="aberta"?osCurrentAssignee(o):null);
+    const discChip=`<span class="chip" data-act="open-discussion" data-type="os" data-id="${esc(osid)}" style="cursor:pointer">💬${threadHasUnread("os",osid)?' <span class="badge-dot"></span>':""}</span>`;
     h+=`<div class="tcard" data-act="open-os-detail" data-osid="${osid}" style="cursor:pointer"><div class="tcard-head"><div>
       <h3>${esc(o.title)}</h3>
       <div class="small">${esc(sectorName(o.sectorId))}${o.requester?" · "+esc(o.requester):""}</div>
-      <div class="meta" style="margin-top:6px">${osStatusBadge(o.status)}${osPriorityChip(o.priority)}${o.deadline?`<span class="chip${isLate?" late":""}">📅 ${fmtDate(o.deadline)}</span>`:""}</div>
+      <div class="meta" style="margin-top:6px">${osStatusBadge(o.status)}${osPriorityChip(o.priority)}${o.deadline?`<span class="chip${isLate?" late":""}">📅 ${fmtDate(o.deadline)}</span>`:""}${discChip}</div>
     </div></div>
     <div class="small" style="margin-top:8px">Fila: ${respLabel}${assigneeNow?` · Responsável agora: <b>${esc(empName(employeeById(assigneeNow)))}</b>`:""}</div>
     </div>`;
@@ -2056,10 +2057,11 @@ function viewAdmin(){
       if(oldest)lateInfo=`<span class="chip late">${daysBetween(oldest,today)} dia(s) em atraso</span>`;
     }
 
+    const discChip=`<span class="chip" data-act="open-discussion" data-type="task" data-id="${esc(tid)}" style="cursor:pointer">💬${threadHasUnread("task",tid)?' <span class="badge-dot"></span>':""}</span>`;
     h+=`<div class="tcard"><div class="tcard-head"><div>
       <h3>${esc(t.title)}</h3>
       <div class="small">${esc(sectorName(t.sectorId))} · ${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
-      <div class="meta" style="margin-top:6px"><span class="chip">${esc(natureLabels[nature])}</span>${lateInfo}</div>
+      <div class="meta" style="margin-top:6px"><span class="chip">${esc(natureLabels[nature])}</span>${lateInfo}${discChip}</div>
     </div></div>
     ${todayRow}
     <div class="small" style="margin-top:8px">Fila: ${resp}</div>
@@ -2433,6 +2435,42 @@ function openSheet(title,bodyHtml){
 
 /* ---- Form de tarefa (criar/editar) ---- */
 let formState=null;
+/* Corpo do checklist (lista + campo de adicionar + nota), compartilhado entre tarefa e O.S.
+   Renderizado à parte pra poder atualizar só esse pedaço do formulário — refazer a folha inteira
+   a cada item adicionado gera piscada e perde a posição do scroll. */
+function checklistBodyHtml(items,kind){
+  const rmAct=kind==="task"?"check-rm":"os-check-rm";
+  const addAct=kind==="task"?"check-add":"os-check-add";
+  const addId=kind==="task"?"fAddCheck":"osAddCheck";
+  const placeholder=kind==="task"?"Ex.: Testar som do ambiente":"Ex.: Testar registro após o reparo";
+  const doneNote=kind==="task"
+    ?"Todos os itens precisam estar marcados para a tarefa poder ser concluída."
+    :"Todos os itens precisam estar marcados para poder concluir.";
+  const emptyNote=kind==="task"
+    ?"Sem itens, a tarefa pode ser concluída livremente."
+    :"Sem itens, pode ser concluída livremente.";
+  const itemsHtml=items.length?items.map((item,i)=>`
+    <div class="resp-item">
+      <input class="rname-edit" data-checkedit="${kind}" data-i="${i}" value="${esc(item.text)}">
+      <button class="miniicon rm" data-act="${rmAct}" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
+  return `<div class="resp-list">${itemsHtml}</div>
+    <div class="add-resp">
+      <input id="${addId}" placeholder="${placeholder}" style="flex:1">
+      <button class="btn sm" data-act="${addAct}">Adicionar</button>
+    </div>
+    <p class="note">${items.length?doneNote:emptyNote}</p>`;
+}
+function refreshTaskChecklist(){
+  const body=$("#fChecklistBody");if(!body||!formState)return;
+  body.innerHTML=checklistBodyHtml(formState.checklist,"task");
+  const el=$("#fAddCheck");if(el)el.focus();
+}
+function refreshOSChecklist(){
+  const body=$("#osChecklistBody");if(!body||!osFormState)return;
+  body.innerHTML=checklistBodyHtml(osFormState.checklist,"os");
+  const el=$("#osAddCheck");if(el)el.focus();
+}
 function openTaskForm(tid){
   const t=tid?TASKS[tid]:null;
   formState={
@@ -2463,12 +2501,6 @@ function renderTaskForm(){
       </div>
       <button class="miniicon rm" data-act="resp-rm" data-i="${i}">✕</button>
     </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
-
-  const checklistHtml=f.checklist.length?f.checklist.map((item,i)=>`
-    <div class="resp-item">
-      <input class="rname-edit" data-checkedit="task" data-i="${i}" value="${esc(item.text)}">
-      <button class="miniicon rm" data-act="check-rm" data-i="${i}">✕</button>
-    </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
 
   const rtype=f.recurrence.type||"daily";
   const interval=f.recurrence.interval||1;
@@ -2504,12 +2536,7 @@ function renderTaskForm(){
       <p class="note">A tarefa do dia vai para o R1; se ele estiver ausente ou fora do horário do turno, cai para o próximo R elegível.</p>
     </div>
     <div class="field"><label>Checklist (opcional)</label>
-      <div class="resp-list">${checklistHtml}</div>
-      <div class="add-resp">
-        <input id="fAddCheck" placeholder="Ex.: Testar som do ambiente" style="flex:1">
-        <button class="btn sm" data-act="check-add">Adicionar</button>
-      </div>
-      <p class="note">${f.checklist.length?"Todos os itens precisam estar marcados para a tarefa poder ser concluída.":"Sem itens, a tarefa pode ser concluída livremente."}</p>
+      <div id="fChecklistBody">${checklistBodyHtml(f.checklist,"task")}</div>
     </div>
     <div class="field"><label>Repetir</label>
       <div class="seg" data-seg="recurrence">
@@ -2586,11 +2613,6 @@ function renderOSForm(){
       </div>
       <button class="miniicon rm" data-act="os-resp-rm" data-i="${i}">✕</button>
     </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
-  const checklistHtml=f.checklist.length?f.checklist.map((item,i)=>`
-    <div class="resp-item">
-      <input class="rname-edit" data-checkedit="os" data-i="${i}" value="${esc(item.text)}">
-      <button class="miniicon rm" data-act="os-check-rm" data-i="${i}">✕</button>
-    </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
   openSheet(f.id?"Editar O.S.":"Nova ordem de serviço",`
     <div class="field"><label>Título</label><input id="osTitle" value="${esc(f.title)}" placeholder="Ex.: Reparar vazamento no chuveiro do quarto 204"></div>
     <div class="field"><label>Descrição</label><textarea id="osDesc" placeholder="Detalhes (opcional)">${esc(f.description)}</textarea></div>
@@ -2613,12 +2635,7 @@ function renderOSForm(){
       <p class="note">Enquanto a O.S. não é iniciada, recalcula todo dia quem está elegível, começando pelo R1. Ao apertar Iniciar, trava com quem iniciou.</p>
     </div>
     <div class="field"><label>Checklist (opcional)</label>
-      <div class="resp-list">${checklistHtml}</div>
-      <div class="add-resp">
-        <input id="osAddCheck" placeholder="Ex.: Testar registro após o reparo" style="flex:1">
-        <button class="btn sm" data-act="os-check-add">Adicionar</button>
-      </div>
-      <p class="note">${f.checklist.length?"Todos os itens precisam estar marcados para poder concluir.":"Sem itens, pode ser concluída livremente."}</p>
+      <div id="osChecklistBody">${checklistBodyHtml(f.checklist,"os")}</div>
     </div>
     <div class="sheet-actions">
       <button class="btn ghost" data-act="close">Cancelar</button>
@@ -3025,29 +3042,23 @@ document.addEventListener("paste",e=>{
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if(!lines.length)return;
   if(e.target.id==="fAddCheck"&&formState){
-    syncFormInputs();
     lines.forEach(t=>formState.checklist.push({id:genId("chk"),text:t}));
-    renderTaskForm();
-    setTimeout(()=>{const el=$("#fAddCheck");if(el)el.focus()},0);
+    refreshTaskChecklist();
   }else if(e.target.id==="osAddCheck"&&osFormState){
-    syncOSFormInputs();
     lines.forEach(t=>osFormState.checklist.push({id:genId("chk"),text:t}));
-    renderOSForm();
-    setTimeout(()=>{const el=$("#osAddCheck");if(el)el.focus()},0);
+    refreshOSChecklist();
   }
 });
 document.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&e.target.id==="fAddCheck"){
     e.preventDefault();
-    syncFormInputs();
     const text=e.target.value.trim();
-    if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm();setTimeout(()=>{const el=$("#fAddCheck");if(el)el.focus()},0)}
+    if(text){formState.checklist.push({id:genId("chk"),text});refreshTaskChecklist()}
   }
   if(e.key==="Enter"&&e.target.id==="osAddCheck"){
     e.preventDefault();
-    syncOSFormInputs();
     const text=e.target.value.trim();
-    if(text){osFormState.checklist.push({id:genId("chk"),text});renderOSForm();setTimeout(()=>{const el=$("#osAddCheck");if(el)el.focus()},0)}
+    if(text){osFormState.checklist.push({id:genId("chk"),text});refreshOSChecklist()}
   }
 });
 
@@ -3099,12 +3110,11 @@ document.addEventListener("click",e=>{
     case"os-resp-up":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderOSForm();break}
     case"os-resp-down":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderOSForm();break}
     case"os-check-add":{
-      syncOSFormInputs();
       const inp=$("#osAddCheck");const text=inp?inp.value.trim():"";
-      if(text){osFormState.checklist.push({id:genId("chk"),text});renderOSForm()}
+      if(text){osFormState.checklist.push({id:genId("chk"),text});refreshOSChecklist()}
       break;
     }
-    case"os-check-rm":{syncOSFormInputs();osFormState.checklist.splice(+a.dataset.i,1);renderOSForm();break}
+    case"os-check-rm":{osFormState.checklist.splice(+a.dataset.i,1);refreshOSChecklist();break}
     case"save-os":{
       syncOSFormInputs();const f=osFormState;
       if(!f.title.trim()){toast("Informe o título.");return}
@@ -3164,12 +3174,11 @@ document.addEventListener("click",e=>{
     case"resp-up":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderTaskForm();break}
     case"resp-down":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderTaskForm();break}
     case"check-add":{
-      syncFormInputs();
       const inp=$("#fAddCheck");const text=inp?inp.value.trim():"";
-      if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm()}
+      if(text){formState.checklist.push({id:genId("chk"),text});refreshTaskChecklist()}
       break;
     }
-    case"check-rm":{syncFormInputs();formState.checklist.splice(+a.dataset.i,1);renderTaskForm();break}
+    case"check-rm":{formState.checklist.splice(+a.dataset.i,1);refreshTaskChecklist();break}
     case"save-task":{
       syncFormInputs();const f=formState;
       if(!f.title.trim()){toast("Informe o título.");return}
