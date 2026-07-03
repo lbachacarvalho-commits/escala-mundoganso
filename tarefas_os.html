@@ -1,0 +1,2976 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tarefas - Ganso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Firebase (compat) -->
+<script>window.__fbFail=false;</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" onerror="window.__fbFail=true"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js" onerror="window.__fbFail=true"></script>
+
+<style>
+:root{
+  --bg:#eef3f2; --surface:#ffffff; --surface-2:#f6f9f8; --line:#dde6e4;
+  --ink:#142624; --muted:#647a77; --muted-2:#90a3a0;
+  --primary:#0e6e6e; --primary-deep:#0a4f4f; --primary-soft:#dbeceb;
+  --accent:#e8744f; --accent-soft:#fbe6dd;
+  --ok:#2f9e6b; --ok-soft:#dcf0e6;
+  --warn:#d98a1f;
+  --continua:#6a5acd; --continua-soft:#ecebfb; --continua-deep:#4a3fa0;
+  --demanda:#c98a12; --demanda-soft:#fbf0d8; --demanda-deep:#8a5d0c;
+  --radius:14px; --radius-sm:10px;
+  --shadow:0 1px 2px rgba(16,40,38,.06),0 6px 20px -8px rgba(16,40,38,.18);
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.45}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:16px}
+.hidden{display:none !important}
+
+/* ---------- Layout ---------- */
+.app{max-width:760px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column}
+header.bar{position:sticky;top:0;z-index:20;background:var(--primary-deep);color:#eafcfb;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 0;box-shadow:var(--shadow)}
+.bar-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:10px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:18px}
+.brand .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#34c0b6,#0e6e6e);
+  display:grid;place-items:center;font-size:13px}
+.who{font-size:12.5px;color:#bfe6e3;text-align:right;line-height:1.25}
+.who b{color:#eafcfb;font-weight:600}
+.iconbtn{background:rgba(255,255,255,.12);border:0;color:#eafcfb;border-radius:9px;padding:7px 10px;font-size:13px;font-weight:600}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:0 16px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto;background:transparent;border:0;color:#a9dad6;padding:11px 14px;font-weight:600;font-size:14px;
+  white-space:nowrap;border-bottom:3px solid transparent;border-radius:8px 8px 0 0}
+.tab.active{color:#fff;border-bottom-color:var(--accent)}
+main{flex:1;padding:18px 16px 110px;min-width:0}
+
+/* ---------- Generic ---------- */
+.section-title{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  margin:22px 2px 10px;display:flex;align-items:center;gap:8px}
+.section-title:first-child{margin-top:4px}
+.count-pill{background:var(--surface);border:1px solid var(--line);color:var(--muted);border-radius:999px;
+  font-size:11px;padding:1px 8px;font-weight:700;letter-spacing:0}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius);padding:22px 18px;
+  text-align:center;color:var(--muted);font-size:14px}
+.empty b{color:var(--ink);display:block;margin-bottom:3px;font-size:15px}
+
+/* ---------- Cabeçalhos de bloco do dia (Minhas tarefas) ---------- */
+.day-block-head{display:flex;align-items:center;gap:12px;margin:26px 2px 12px;padding:0}
+.day-block-head:first-of-type{margin-top:4px}
+.day-block-icon{flex:0 0 auto;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:18px}
+.day-block-text{flex:1;min-width:0}
+.day-block-title{font-size:15.5px;font-weight:800;letter-spacing:-.01em;color:var(--ink);line-height:1.2}
+.day-block-sub{font-size:12px;color:var(--muted);margin-top:1px}
+.day-block-head.t-continua .day-block-icon{background:var(--continua-soft);color:var(--continua-deep)}
+.day-block-head.t-demanda .day-block-icon{background:var(--demanda-soft);color:var(--demanda-deep)}
+.day-block-head.t-executar .day-block-icon{background:var(--primary-soft);color:var(--primary-deep)}
+.day-block-head.t-late .day-block-icon{background:var(--accent-soft);color:#b24722}
+.day-block-head.t-done .day-block-icon{background:var(--ok-soft);color:#1d7a4f}
+
+/* ---------- Task card ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  margin-bottom:12px;overflow:hidden;position:relative}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--muted-2)}
+.card.late::before{background:var(--accent)}
+
+/* Preocupação contínua: visual "ambiente", convida a manter em mente, não a agir */
+.card.v-continua{background:linear-gradient(135deg,var(--continua-soft) 0%,var(--surface) 55%);
+  border-color:#d9d5f3;box-shadow:none}
+.card.v-continua::before{background:var(--continua);width:4px}
+
+/* Sob demanda: mesma linguagem visual (cor + fade), com a cor própria da natureza */
+.card.v-demanda{background:linear-gradient(135deg,var(--demanda-soft) 0%,var(--surface) 55%);
+  border-color:#ecdbb0;box-shadow:none}
+.card.v-demanda::before{background:var(--demanda);width:4px}
+
+.card-body{padding:14px 16px 14px 18px}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.card-head-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.btn-suggest{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:8px;
+  padding:4px 9px;font-size:11.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.btn-suggest:hover{border-color:var(--primary);color:var(--primary-deep)}
+.btn-suggest.has-open{border-color:var(--accent);color:#b24722;background:var(--accent-soft)}
+.card h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.01em}
+.card .desc{color:var(--muted);font-size:13.5px;margin:5px 0 0}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.chip{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--surface-2);
+  border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.chip.sector{background:var(--primary-soft);border-color:transparent;color:var(--primary-deep)}
+.chip.r{background:#ecebfb;border-color:transparent;color:#4a45a8}
+.chip.time{background:#eef6ff;border-color:transparent;color:#2b6cb0}
+.chip.late{background:var(--accent-soft);border-color:transparent;color:#b24722}
+.chip.transferred{background:#fff4e6;border-color:transparent;color:#a8651a}
+.status{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.status.pendente{background:var(--surface-2);color:var(--muted)}
+.status.aberta{background:var(--surface-2);color:var(--muted)}
+.status.em_andamento{background:#e7f0ff;color:#2b6cb0}
+.status.concluida{background:var(--ok-soft);color:#1d7a4f}
+.status.adiada{background:#f0ecff;color:#6a5acd}
+.status.nao_realizada{background:#f3e3e0;color:#8a3b2a}
+.status.cancelada{background:#f3e3e0;color:#8a3b2a}
+.assignee{font-size:13px;color:var(--muted);margin-top:9px}
+.assignee b{color:var(--ink);font-weight:600}
+
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;
+  padding:9px 14px;font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;gap:6px;transition:.12s}
+.btn:hover{border-color:var(--muted-2)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:var(--primary-deep)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.ok:hover{filter:brightness(.95)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:7px 11px;font-size:12.5px}
+.btn.full{width:100%;justify-content:center}
+.btn.danger{color:#b8311a;border-color:#f0c8c0}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- Login ---------- */
+.login-wrap{min-height:100dvh;display:grid;place-items:center;padding:24px;
+  background:radial-gradient(120% 80% at 50% 0%,#0e6e6e 0%,#0a4f4f 55%,#073c3c 100%)}
+.login{width:100%;max-width:380px;background:var(--surface);border-radius:20px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);
+  padding:30px 26px}
+.login .logo{width:54px;height:54px;border-radius:15px;background:linear-gradient(135deg,#34c0b6,#0e6e6e);
+  display:grid;place-items:center;font-size:26px;margin-bottom:16px}
+.login h1{margin:0;font-size:22px;letter-spacing:-.02em}
+.login p.sub{margin:4px 0 22px;color:var(--muted);font-size:14px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;padding:12px 13px;border:1px solid var(--line);
+  border-radius:11px;background:var(--surface-2);outline:none;transition:.12s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);background:#fff;
+  box-shadow:0 0 0 3px var(--primary-soft)}
+.field textarea{min-height:74px;resize:vertical}
+.login .btn.primary{width:100%;justify-content:center;padding:13px;font-size:15px;margin-top:6px}
+.error-msg{background:var(--accent-soft);color:#a8341f;border-radius:10px;padding:10px 12px;font-size:13px;
+  font-weight:500;margin-bottom:14px}
+.linkbtn{display:block;width:100%;text-align:center;background:none;border:0;color:var(--primary);
+  font-size:13px;font-weight:600;margin-top:12px;padding:4px;text-decoration:underline}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--surface-2);
+  border:1px solid var(--line);border-radius:6px;padding:2px 6px;word-break:break-all}
+
+/* ---------- Modal ---------- */
+.overlay{position:fixed;inset:0;background:rgba(10,30,28,.55);backdrop-filter:blur(2px);z-index:60;
+  display:grid;place-items:center;padding:16px}
+.sheet{background:var(--surface);width:100%;max-width:560px;max-height:90dvh;overflow:auto;
+  border-radius:18px;padding:22px 22px 20px;box-shadow:0 24px 70px -20px rgba(0,0,0,.55);
+  animation:popIn .18s ease}
+@keyframes popIn{from{transform:translateY(10px) scale(.985);opacity:0}to{transform:none;opacity:1}}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.sheet-head h2{margin:0;font-size:19px;letter-spacing:-.01em}
+.x{background:var(--surface-2);border:0;width:34px;height:34px;border-radius:9px;font-size:18px;color:var(--muted)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* opções selecionáveis (transferir) */
+.opt-list{display:flex;flex-direction:column;gap:8px}
+.opt{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface-2);
+  border:1.5px solid var(--line);border-radius:12px;padding:11px 13px;transition:.12s;font:inherit;color:inherit;cursor:pointer}
+.opt:hover:not(.disabled){border-color:var(--muted-2)}
+.opt.sel{border-color:var(--primary);background:var(--primary-soft)}
+.opt.disabled{opacity:.55;cursor:not-allowed}
+.opt .rlevel{background:#ecebfb;color:#4a45a8;font-weight:700;font-size:12px;border-radius:7px;padding:2px 8px;flex:0 0 auto}
+.opt-main{flex:1;display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.opt-name{font-weight:600;font-size:14.5px}
+.opt-check{color:var(--primary);font-size:18px;width:18px;text-align:center;flex:0 0 auto}
+.sheet-actions{display:flex;gap:10px;margin-top:22px;position:sticky;bottom:-20px;background:var(--surface);
+  padding-top:8px}
+.sheet-actions .btn{flex:1;justify-content:center;padding:12px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;
+  padding:10px;font-weight:600;font-size:13px;color:var(--muted)}
+.seg button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
+/* responsibles picker */
+.resp-list{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+.resp-item{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:10px;padding:8px 8px 8px 11px}
+.resp-item .rlevel{background:#ecebfb;color:#4a45a8;font-weight:700;font-size:12px;border-radius:7px;
+  padding:2px 8px;flex:0 0 auto}
+.resp-item .rname{flex:1;font-size:14px;font-weight:500}
+.resp-item .ord{display:flex;flex-direction:column;gap:2px}
+.miniicon{background:#fff;border:1px solid var(--line);border-radius:7px;width:30px;height:26px;
+  display:grid;place-items:center;font-size:13px;color:var(--muted);padding:0}
+.miniicon.rm{color:#b8311a}
+.add-resp{display:flex;gap:8px;margin-top:8px}
+.add-resp select{flex:1}
+.note{font-size:12px;color:var(--muted);margin-top:7px}
+
+/* admin task list */
+.tcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:13px 15px;margin-bottom:10px}
+.tcard-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.tcard h3{margin:0;font-size:15.5px;font-weight:700}
+.tcard .small{font-size:12.5px;color:var(--muted);margin-top:3px}
+.tcard .actions{margin-top:10px}
+.fab{position:fixed;right:max(16px,calc(50% - 380px + 16px));bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  background:var(--primary);color:#fff;border:0;border-radius:16px;padding:14px 18px;font-weight:700;font-size:15px;
+  box-shadow:0 10px 24px -6px rgba(14,110,110,.6);z-index:30;display:flex;align-items:center;gap:8px}
+
+/* diagnostics */
+.diag{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;overflow-x:auto}
+.diag h4{margin:0 0 8px;font-size:14px}
+table.diag-t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.diag-t th,table.diag-t td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.tag-ok{color:#1d7a4f;font-weight:700}
+.tag-no{color:#b24722;font-weight:700}
+.kv{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px}
+.kv span{color:var(--muted)} .kv b{color:var(--ink)}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:2px 2px 6px}
+.filters select{flex:1;min-width:150px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface);font-size:13px;color:var(--ink);box-shadow:var(--shadow)}
+.filters .btn{flex:0 0 auto}
+.today-row{display:flex;align-items:center;gap:10px;background:var(--primary-soft);border-radius:11px;padding:9px 11px;margin-top:11px}
+.today-row.none{background:var(--accent-soft)}
+.today-row.muted{background:var(--surface-2);padding:8px 11px}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:grid;place-items:center;
+  font-weight:700;font-size:15px;flex:0 0 auto}
+.avatar.none{background:var(--accent)}
+.today-info{flex:1;display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.today-label{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--primary-deep);opacity:.85}
+.today-row.none .today-label{color:#b24722}
+.today-name{font-size:15px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ---------- Painel "Minhas responsabilidades" ---------- */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:14px}
+.stat-box{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);
+  padding:14px 14px 12px;text-align:center}
+.stat-box .num{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--primary-deep);line-height:1.1}
+.stat-box .lbl{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:3px}
+.stat-box.r1 .num{color:var(--primary-deep)}
+.stat-box.r2 .num{color:#6a5acd}
+.stat-box.r3 .num{color:var(--accent)}
+
+/* ---------- Card de nota semanal (colaborador) ---------- */
+.score-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:20px 18px;margin-bottom:18px;text-align:center}
+.score-num{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.score-num.good{color:var(--ok)}
+.score-num.mid{color:var(--demanda-deep)}
+.score-num.bad{color:#c0392b}
+.score-num.none{color:var(--muted-2);font-size:28px}
+.score-label{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px}
+.score-period{font-size:11.5px;color:var(--muted-2);margin-top:2px}
+.score-trend{display:inline-flex;align-items:center;gap:4px;margin-top:10px;font-size:12.5px;font-weight:700;
+  padding:3px 10px;border-radius:999px}
+.score-trend.up{background:var(--ok-soft);color:#1d7a4f}
+.score-trend.down{background:#fbe1dc;color:#a8341f}
+.score-trend.flat{background:var(--surface-2);color:var(--muted)}
+.score-history{display:flex;gap:6px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.score-history .wk{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:38px}
+.score-history .wk .bar{width:18px;height:36px;background:var(--surface-2);border-radius:4px;position:relative;overflow:hidden}
+.score-history .wk .bar .fill{position:absolute;bottom:0;left:0;right:0;border-radius:4px}
+.score-history .wk .pct{font-size:10px;color:var(--muted);font-weight:700}
+
+/* ---------- Desempenho da equipe (gestor) ---------- */
+.perf-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:11px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+.perf-row .pname{flex:1;min-width:0;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.perf-row .psub{font-size:11.5px;color:var(--muted);margin-top:1px}
+.perf-pct{flex:0 0 auto;font-size:14.5px;font-weight:800;min-width:44px;text-align:right}
+.perf-pct.good{color:var(--ok)}.perf-pct.mid{color:var(--demanda-deep)}.perf-pct.bad{color:#c0392b}.perf-pct.none{color:var(--muted-2);font-size:13px}
+.alert-card{display:flex;align-items:flex-start;gap:10px;border-radius:12px;padding:11px 13px;margin-bottom:8px;font-size:13px}
+.alert-card.down{background:#fbe1dc;color:#7a2818}
+.alert-card.up{background:var(--ok-soft);color:#175c3f}
+.alert-card b{display:block;font-size:13.5px;margin-bottom:1px}
+
+/* Caixa de ranking: uma única caixa com rolagem interna, linhas finas (não cards empilhados) */
+.rank-box{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+.rank-box-head{display:flex;align-items:baseline;justify-content:space-between;padding:13px 15px 9px}
+.rank-box-head h4{margin:0;font-size:14px;font-weight:800}
+.rank-box-head span{font-size:11px;color:var(--muted)}
+.rank-scroll{max-height:268px;overflow-y:auto;border-top:1px solid var(--line)}
+.rank-line{display:flex;align-items:center;gap:10px;padding:9px 15px;border-bottom:1px solid var(--line);
+  width:100%;text-align:left;background:none;cursor:pointer}
+.rank-line:last-child{border-bottom:0}
+.rank-line:hover{background:var(--surface-2)}
+.rank-pos{flex:0 0 auto;width:20px;text-align:center;font-weight:800;font-size:12.5px;color:var(--muted-2)}
+.rank-pos.top{color:var(--demanda-deep)}
+.rank-main{flex:1;min-width:0}
+.rank-name{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.rank-sub{font-size:11px;color:var(--muted)}
+.period-bar{display:flex;gap:6px;flex-wrap:wrap;margin:2px 2px 12px}
+.period-bar button{flex:0 0 auto;background:var(--surface);border:1px solid var(--line);border-radius:999px;
+  padding:6px 13px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.period-bar button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.bar-row .blabel{flex:0 0 108px;font-size:13px;color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-track{flex:1;height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden}
+.bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),#34c0b6)}
+.bar-pct{flex:0 0 42px;text-align:right;font-size:12.5px;font-weight:700;color:var(--muted)}
+
+.partner-list{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:4px}
+.partner-line{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:6px 8px 6px 12px;cursor:pointer;font-size:13px;max-width:100%}
+.partner-line:hover{border-color:var(--primary)}
+.partner-line-name{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+.partner-line-count{background:var(--primary-soft);color:var(--primary-deep);border-radius:999px;
+  font-size:11.5px;font-weight:700;padding:1px 8px;flex:0 0 auto}
+
+.resp-task-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:11px 13px;margin-bottom:8px;box-shadow:var(--shadow)}
+.resp-task-row .rlevelbig{flex:0 0 auto;width:32px;height:32px;border-radius:9px;background:#ecebfb;color:#4a45a8;
+  font-weight:800;font-size:13px;display:grid;place-items:center}
+.resp-task-row .rmain{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.resp-task-row .rtitle{font-size:14.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resp-task-row .rmeta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+
+/* ---------- Sugestões / tickets ---------- */
+.ticket-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow);width:100%;text-align:left;cursor:pointer}
+.ticket-row .tmain{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3;gap:3px}
+.ticket-row .ttitle{font-size:14.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ticket-row .tpreview{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ticket-row .tmeta{font-size:11px;color:var(--muted-2);margin-top:2px}
+.status.ticket-aberto{background:var(--accent-soft);color:#b24722}
+.status.ticket-fechado{background:var(--ok-soft);color:#1d7a4f}
+.chat{display:flex;flex-direction:column;gap:10px;margin:6px 0 14px;max-height:340px;overflow-y:auto;padding-right:2px}
+.bubble{max-width:82%;padding:9px 12px;border-radius:13px;font-size:13.5px;line-height:1.4}
+.bubble.me{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+.bubble.other{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line);border-bottom-left-radius:4px}
+.bubble .bwho{font-size:10.5px;font-weight:700;opacity:.75;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em}
+.bubble .bwhen{font-size:10px;opacity:.6;display:block;margin-top:4px}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);
+  color:#fff;padding:11px 18px;border-radius:12px;font-size:14px;font-weight:500;z-index:90;opacity:0;
+  transition:.25s;box-shadow:var(--shadow);max-width:90vw}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.loading{padding:60px 20px;text-align:center;color:var(--muted)}
+.spinner{width:30px;height:30px;border:3px solid var(--primary-soft);border-top-color:var(--primary);
+  border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+
+/* ---------- Ajustes para telas estreitas ---------- */
+@media (max-width:480px){
+  main{padding:16px 12px 110px}
+  header.bar{padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 0}
+  .brand{font-size:16px}
+  .who{font-size:11.5px}
+  .row2{grid-template-columns:1fr;gap:10px} /* empilha setor/horário, intervalo/dia etc */
+  .add-resp{flex-direction:column}
+  .add-resp select,.add-resp button{width:100%}
+  .card-body{padding:12px 13px 12px 16px}
+  .card h3{font-size:15px}
+  .sheet{padding:18px 16px 18px;border-radius:16px;max-width:none;width:calc(100% - 8px)}
+  .sheet-actions{flex-direction:column-reverse;gap:8px}
+  .sheet-actions .btn{width:100%}
+  .actions{gap:6px}
+  .btn.sm{padding:8px 12px;font-size:13px}
+  .filters select{min-width:0;flex:1 1 calc(50% - 4px)}
+  .fab{right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);padding:13px 16px;font-size:14px}
+  .stat-grid{grid-template-columns:repeat(2,1fr)}
+  .resp-task-row,.tcard{padding:11px 12px}
+  .partner-line-name{max-width:120px}
+  table.diag-t{font-size:11.5px}
+  table.diag-t th,table.diag-t td{padding:5px 6px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginScreen" class="login-wrap">
+  <div class="login">
+    <div class="logo">🧹</div>
+    <h1>Tarefas - Ganso</h1>
+    <p class="sub">Entre com seu CPF.</p>
+    <div id="loginError" class="error-msg hidden"></div>
+    <div class="field">
+      <label for="lgUser">CPF</label>
+      <input id="lgUser" inputmode="numeric" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="000.000.000-00">
+    </div>
+    <div class="field hidden" id="pinField">
+      <label for="lgPass">Senha do gestor</label>
+      <input id="lgPass" type="password" autocomplete="off" placeholder="••••••">
+    </div>
+    <button class="btn primary" id="lgBtn">Entrar</button>
+    <p class="note" id="lgStatus" style="text-align:center;margin-top:14px">Conectando ao banco…</p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appScreen" class="app hidden">
+  <header class="bar">
+    <div class="bar-top">
+      <div class="brand"><span class="dot">🧹</span> Tarefas</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="who" id="whoBox"></div>
+        <button class="iconbtn" id="logoutBtn">Sair</button>
+      </div>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-view="mine" id="tabMine">Minhas tarefas</button>
+      <button class="tab hidden" data-view="resp" id="tabResp">Minhas responsabilidades</button>
+      <button class="tab hidden" data-view="suggestions" id="tabSuggestions">Minhas sugestões</button>
+      <button class="tab hidden" data-view="admin" id="tabAdmin">Tarefas</button>
+      <button class="tab hidden" data-view="os" id="tabOS">O.S.</button>
+      <button class="tab hidden" data-view="tickets" id="tabTickets">Sugestões</button>
+      <button class="tab hidden" data-view="performance" id="tabPerformance">Desempenho da equipe</button>
+      <button class="tab hidden" data-view="diag" id="tabDiag">Informações</button>
+    </div>
+  </header>
+  <main id="main"><div class="loading"><div class="spinner"></div>Carregando…</div></main>
+</div>
+
+<button id="fab" class="fab hidden" data-act="new-task">＋ Nova tarefa</button>
+<div id="modalRoot"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+"use strict";
+
+/* ===================================================================
+   1) CONFIG DO FIREBASE
+   Use a MESMA config do seu escala.html. Para o Realtime Database o
+   campo essencial é databaseURL; os outros podem ficar como estão.
+   =================================================================== */
+const firebaseConfig = {
+  apiKey: "",                                   // cole a do escala.html se houver
+  authDomain: "escala-fb8b7.firebaseapp.com",
+  databaseURL: "https://escala-fb8b7-default-rtdb.firebaseio.com",
+  projectId: "escala-fb8b7"
+};
+const FB_OK = (typeof firebase !== "undefined") && !window.__fbFail;
+let db = null;
+const dbRef = p => db.ref(p);
+if (FB_OK) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+}
+
+/* Caminhos */
+const PATH = {
+  escala: "escala_lazer/data",   // somente leitura
+  users:  "escala_users",        // login
+  tarefas:"escala_tarefas"       // leitura+escrita (novo)
+};
+
+/* ===================================================================
+   2) ADAPTADOR DE SCHEMA  ← AJUSTE AQUI se algum campo tiver outro nome
+   Tudo que depende do formato exato da sua escala vive neste bloco.
+   =================================================================== */
+const SCHEMA = {
+  // possíveis nomes de campos dentro de um shiftType / célula de escala
+  startTimeFields: ["startTime","start","inicio","horaInicio","entrada","horarioInicio"],
+  endTimeFields:   ["endTime","end","fim","horaFim","saida","horarioFim"],
+  nameFields:      ["name","nome","label","abbr","sigla","title"],
+  // referência ao tipo de turno dentro de uma célula de escala (quando é objeto)
+  shiftRefFields:  ["shiftTypeId","shiftType","shiftId","type","tipo","turno","shift"],
+  // nomes de empregado
+  employeeNameFields: ["name","nome","label","fullName"],
+  // nomes que representam AUSÊNCIA (folga/férias/falta/afastado etc.)
+  absenceNames: ["folga","feria","ferias","falta","afastad","atestado","licenc","ausente","off","f","dispensa"],
+  // flags booleanas que marcam ausência numa célula/shiftType
+  absenceFlagFields: ["isAbsence","absence","folga","ausencia","off"],
+  // campo de CPF no cadastro de funcionário (login do colaborador)
+  cpfFields: ["cpf","CPF","documento","doc","cpfFuncionario","cpf_funcionario"],
+  // campo de setor/departamento no cadastro do funcionário (usado p/ liberar quem pode abrir O.S.)
+  employeeSectorFields: ["setor","sector","setorId","sectorId","departamento"]
+};
+
+/* Login do gestor: digite esta palavra no campo de CPF para entrar como gestor.
+   GESTOR_PIN vazio = sem senha (entra direto). Defina um PIN aqui para exigir senha. */
+const GESTOR_KEYWORD = "gestor";
+const GESTOR_PIN = "";
+
+/* Nome do setor (cadastro do colaborador) que libera abrir/ver Ordens de Serviço, além do gestor. */
+const LIDERANCA_SETOR = "Lideranças";
+const OS_PRIORITIES = {urgente:"Urgente",normal:"Normal",programada:"Programada"};
+
+const LOOKBACK_DAYS = 30;       // quantos dias para trás materializar/cobrar atrasos
+const WEEKDAYS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+
+/* ===================================================================
+   3) ESTADO
+   =================================================================== */
+let ESCALA = null;              // /escala_lazer/data
+let USERS  = null;              // /escala_users (carregado no login)
+let TASKS  = {};                // /escala_tarefas/tasks
+let INSTANCES = {};             // /escala_tarefas/instances
+let TICKETS = {};               // /escala_tarefas/tickets (sugestões/dúvidas sobre a tarefa)
+let WEEKLY_SCORES = {};         // /escala_tarefas/weeklyScores/{empCpf}/{mondayKey} (notas semanais fechadas)
+let SCORE_RESET_AT = null;      // /escala_tarefas/scoreResetAt — instâncias anteriores a esta data não contam na nota
+let SERVICE_ORDERS = {};        // /escala_tarefas/serviceOrders/{osid} (O.S. — pontuais, sem recorrência)
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:"",weeks:4}, osFilter:{status:"",priority:"",sector:""} };
+let materializing = false;
+
+/* ===================================================================
+   4) UTILIDADES
+   =================================================================== */
+function $(s,r=document){return r.querySelector(s)}
+function el(tag,attrs={},html){const e=document.createElement(tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(html!=null)e.innerHTML=html;return e}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function norm(s){return String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
+function genId(p){return p+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+let toastT;
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200)}
+
+/* datas em chave YYYY-MM-DD (local) */
+function dateKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),a=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${a}`}
+function todayKey(){return dateKey(new Date())}
+function parseKey(k){const[y,m,d]=String(k).split("-").map(Number);return new Date(y,m-1,d)}
+function addDays(k,n){const d=parseKey(k);d.setDate(d.getDate()+n);return dateKey(d)}
+function weekdayOf(k){return parseKey(k).getDay()}
+/* segunda-feira da semana (seg→dom) que contém dKey; usada como identificador único da semana */
+function mondayOf(dKey){const wd=weekdayOf(dKey);const diff=wd===0?-6:1-wd;return addDays(dKey,diff)}
+function sundayOf(dKey){return addDays(mondayOf(dKey),6)}
+function weekLabel(mondayKey){const d=parseKey(mondayKey);const end=parseKey(sundayOf(mondayKey));
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} – ${String(end.getDate()).padStart(2,"0")}/${String(end.getMonth()+1).padStart(2,"0")}`}
+function maxKey(a,b){return a>=b?a:b}
+function fmtDate(k){const d=parseKey(k);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"short"})}
+
+/* horários "HH:MM" → minutos */
+function timeToMin(t){if(t==null||t==="")return null;const m=String(t).match(/(\d{1,2}):(\d{2})/);return m?(+m[1])*60+(+m[2]):null}
+function withinShift(taskT,startT,endT){
+  const tt=timeToMin(taskT),s=timeToMin(startT),e=timeToMin(endT);
+  if(s==null||e==null)return false;          // sem faixa de turno → não dá pra validar
+  if(tt==null)return true;                    // tarefa sem horário → condição não se aplica
+  if(e>=s)return tt>=s&&tt<=e;                 // turno normal
+  return tt>=s||tt<=e;                         // turno que vira a meia-noite
+}
+
+/* SHA-256 hex (Web Crypto) */
+/* normaliza map OU array do Firebase → array de objetos com id/_key */
+function toArray(coll){
+  if(!coll)return [];
+  if(Array.isArray(coll))return coll.map((v,i)=>v&&typeof v==="object"?{id:v.id!=null?v.id:String(i),_key:String(i),...v}:{id:String(i),_key:String(i),value:v}).filter(x=>x.value!==undefined||x.id!=null);
+  return Object.entries(coll).map(([k,v])=>v&&typeof v==="object"?{id:v.id!=null?v.id:k,_key:k,...v}:{id:k,_key:k,value:v});
+}
+function pick(o,fields){if(!o||typeof o!=="object")return null;for(const f of fields)if(o[f]!=null&&o[f]!=="")return o[f];return null}
+
+/* ===================================================================
+   5) ACESSO À ESCALA  (presença / elegibilidade)
+   =================================================================== */
+function employees(){return toArray(ESCALA&&ESCALA.employees)}
+function sectors(){return toArray(ESCALA&&ESCALA.sectors)}
+function shiftTypes(){return toArray(ESCALA&&ESCALA.shiftTypes)}
+
+function empName(emp){return emp?(pick(emp,SCHEMA.employeeNameFields)||emp._key||emp.id):"—"}
+function employeeById(id){if(id==null)return null;const s=String(id);return employees().find(e=>String(e.id)===s||String(e._key)===s)||null}
+function sectorName(id){const s=sectors().find(x=>String(x.id)===String(id)||String(x._key)===String(id));return s?(pick(s,SCHEMA.nameFields)||s._key):(id||"—")}
+
+function findShiftType(ref){
+  if(ref==null)return null;const r=norm(ref);const arr=shiftTypes();
+  return arr.find(s=>norm(s.id)===r||norm(s._key)===r)
+      || arr.find(s=>{const n=pick(s,SCHEMA.nameFields);return n&&norm(n)===r})||null;
+}
+function isAbsenceName(label){if(!label)return false;const n=norm(label);return SCHEMA.absenceNames.some(a=>n===a||n.startsWith(a))}
+
+/* célula bruta da escala para um empregado num dia (tenta as duas orientações) */
+function scheduleCell(emp,dKey){
+  const sch=ESCALA&&ESCALA.schedule;if(!sch||!emp)return undefined;
+  const ids=[emp._key,emp.id].filter(v=>v!=null).map(String);
+  for(const id of ids){
+    if(sch[id]&&Object.prototype.hasOwnProperty.call(sch[id],dKey))return sch[id][dKey];
+  }
+  if(sch[dKey]){
+    for(const id of ids)if(Object.prototype.hasOwnProperty.call(sch[dKey],id))return sch[dKey][id];
+  }
+  return undefined;
+}
+
+/* presença + faixa de horário de um empregado num dia */
+function presenceFor(emp,dKey){
+  const cell=scheduleCell(emp,dKey);
+  if(cell==null||cell===""||cell===false)return {present:false,label:null,start:null,end:null};
+  let start=null,end=null,label=null,absence=false;
+  if(typeof cell==="object"){
+    label=pick(cell,SCHEMA.nameFields);
+    start=pick(cell,SCHEMA.startTimeFields);
+    end  =pick(cell,SCHEMA.endTimeFields);
+    if(SCHEMA.absenceFlagFields.some(f=>cell[f]===true))absence=true;
+    const ref=pick(cell,SCHEMA.shiftRefFields);
+    if((start==null||end==null)&&ref!=null){
+      const st=findShiftType(ref);
+      if(st){start=start||pick(st,SCHEMA.startTimeFields);end=end||pick(st,SCHEMA.endTimeFields);label=label||pick(st,SCHEMA.nameFields)}
+      if(!st&&isAbsenceName(ref))absence=true;
+      label=label||ref;
+    }
+  }else{
+    const st=findShiftType(cell);
+    if(st){start=pick(st,SCHEMA.startTimeFields);end=pick(st,SCHEMA.endTimeFields);label=pick(st,SCHEMA.nameFields)||String(cell)}
+    else{label=String(cell)}
+  }
+  if(isAbsenceName(label))absence=true;
+  const hasTimes=timeToMin(start)!=null&&timeToMin(end)!=null;
+  return {present:!absence&&hasTimes,label,start,end,absence};
+}
+
+/* elegibilidade de um empregado para uma tarefa num dia */
+function eligibility(emp,dKey,taskStart){
+  const p=presenceFor(emp,dKey);
+  if(!p.present)return {ok:false,reason:p.absence?"ausente":"sem turno",p};
+  if(taskStart&&!withinShift(taskStart,p.start,p.end))return {ok:false,reason:"fora do turno",p};
+  return {ok:true,reason:"ok",p};
+}
+
+/* fila: primeiro R presente/elegível */
+function computeAssignee(task,dKey){
+  for(const id of (task.responsibles||[])){
+    const emp=employeeById(id);if(!emp)continue;
+    if(eligibility(emp,dKey,task.startTime).ok)return id;
+  }
+  return null;
+}
+
+/* dias inteiros entre duas datas-chave */
+function daysBetween(a,b){return Math.round((parseKey(b)-parseKey(a))/86400000)}
+
+/* a tarefa ocorre nesse dia?
+   Suporta: daily (a cada N dias), weekly (a cada N semanas, num dia da semana),
+   monthly (a cada N meses, num dia fixo do mês). `interval` ausente = 1 (comportamento
+   original, 100% compatível com tarefas criadas antes desta versão). */
+function occursOn(task,dKey){
+  if(task.active===false)return false;
+  const base=task.createdDate||dKey;
+  if(dKey<base)return false;
+  const rec=task.recurrence||{type:"daily"};
+  const interval=Math.max(1,Number(rec.interval)||1);
+  if(rec.type==="weekly"){
+    if(weekdayOf(dKey)!==Number(rec.weekday))return false;
+    if(interval===1)return true;
+    return Math.floor(daysBetween(base,dKey)/7)%interval===0;
+  }
+  if(rec.type==="monthly"){
+    const dayOfMonth=Number(rec.day)||parseKey(base).getDate();
+    const d=parseKey(dKey);
+    if(d.getDate()!==dayOfMonth)return false;
+    if(interval===1)return true;
+    const b=parseKey(base);
+    const monthsDiff=(d.getFullYear()-b.getFullYear())*12+(d.getMonth()-b.getMonth());
+    return monthsDiff>=0&&monthsDiff%interval===0;
+  }
+  // daily (padrão)
+  if(interval===1)return true;
+  return daysBetween(base,dKey)%interval===0;
+}
+
+/* ===================================================================
+   6) MATERIALIZAÇÃO  (cria instâncias do dia / cobra atrasos)
+   =================================================================== */
+function materialize(){
+  if(materializing||!ESCALA||!state.user)return;
+  materializing=true;
+  const today=todayKey();
+  const floor=addDays(today,-LOOKBACK_DAYS);
+  const updates={};
+  for(const tid in TASKS){
+    const task=TASKS[tid];if(!task||task.active===false)continue;
+    const nature=task.nature||"executar";
+    let d=maxKey(floor,task.createdDate||floor);
+    while(d<=today){
+      if(occursOn(task,d)){
+        const iid=`${tid}__${d}`;
+        if(!INSTANCES[iid]){
+          // sob demanda / preocupação contínua: a instância do dia anterior que ficou pendente
+          // ou em andamento não "atrasa" — expira como não realizada antes da nova nascer.
+          if(nature==="demanda"||nature==="continua"){
+            const prevD=addDays(d,-1);
+            const prevIid=`${tid}__${prevD}`;
+            const prevIns=INSTANCES[prevIid];
+            if(prevIns&&(prevIns.status==="pendente"||prevIns.status==="em_andamento")){
+              updates[`instances/${prevIid}/status`]="nao_realizada";
+              updates[`instances/${prevIid}/autoExpired`]=true;
+              const hist=Array.isArray(prevIns.history)?prevIns.history.slice():[];
+              hist.push({type:"nao_realizada",by:"sistema",at:Date.now(),note:"Expirou automaticamente (virou o dia)"});
+              updates[`instances/${prevIid}/history`]=hist;
+              prevIns.status="nao_realizada"; // reflete localmente p/ não reprocessar no mesmo ciclo
+              invalidateTerminalIndex();
+            }
+          }
+          updates[`instances/${iid}`]={taskId:tid,date:d,occurrenceDate:d,
+            assignedTo:computeAssignee(task,d),autoAssigned:true,status:"pendente",createdAt:Date.now()};
+        }
+      }
+      d=addDays(d,1);
+    }
+  }
+  // recalcula a fila SÓ das instâncias automáticas de hoje ainda pendentes
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins)continue;
+    if(ins.date===today&&ins.autoAssigned&&ins.status==="pendente"){
+      const task=TASKS[ins.taskId];if(!task)continue;
+      const should=computeAssignee(task,today);
+      if((should||null)!==(ins.assignedTo||null))updates[`instances/${iid}/assignedTo`]=should;
+    }
+  }
+  closeCompletedWeeks(updates);
+  if(Object.keys(updates).length){
+    dbRef(PATH.tarefas).update(updates).catch(e=>console.warn("materialize",e)).finally(()=>{materializing=false});
+  }else{materializing=false}
+}
+
+/* ===================================================================
+   6b) DESEMPENHO: índice de conclusão semanal por colaborador
+   Regra: conta instâncias TERMINAIS (concluída / não realizada) com
+   responsável definido (assignedTo preenchido). Pendentes/em andamento
+   ainda não "fecharam" o dia; sem responsável não conta contra ninguém.
+   ===================================================================== */
+function empCpfKey(emp){return cpf11(onlyDigits(pick(emp,SCHEMA.cpfFields))||"")}
+
+/* {completed, notDone, pct|null} de um colaborador num intervalo [from,to] inclusive */
+/* Índice {cpfNorm: {dateKey: {completed, notDone}}} construído uma única vez por render,
+   evitando varrer todas as instâncias a cada chamada de scoreForRange (eram dezenas de
+   varreduras completas por tela — a causa da lentidão ao abrir Desempenho da equipe). */
+let _terminalIndexCache=null;
+let _terminalIndexInstancesRef=null;
+function terminalIndex(){
+  if(_terminalIndexCache&&_terminalIndexInstancesRef===INSTANCES)return _terminalIndexCache;
+  const idx={};
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||!ins.assignedTo)continue;
+    if(ins.status!=="concluida"&&ins.status!=="nao_realizada")continue;
+    const emp=employeeById(ins.assignedTo);if(!emp)continue;
+    const cpfNorm=empCpfKey(emp);if(!cpfNorm)continue;
+    const byDate=idx[cpfNorm]=idx[cpfNorm]||{};
+    const slot=byDate[ins.date]=byDate[ins.date]||{completed:0,notDone:0};
+    if(ins.status==="concluida")slot.completed++;else slot.notDone++;
+  }
+  _terminalIndexCache=idx;
+  _terminalIndexInstancesRef=INSTANCES;
+  return idx;
+}
+function invalidateTerminalIndex(){_terminalIndexCache=null}
+function scoreForRange(empCpfNorm,from,to){
+  const effectiveFrom=SCORE_RESET_AT&&SCORE_RESET_AT>from?SCORE_RESET_AT:from;
+  const byDate=terminalIndex()[empCpfNorm];
+  let completed=0,notDone=0;
+  if(byDate){
+    for(const d in byDate){
+      if(d<effectiveFrom||d>to)continue;
+      completed+=byDate[d].completed;notDone+=byDate[d].notDone;
+    }
+  }
+  const total=completed+notDone;
+  return {completed,notDone,total,pct:total?Math.round(completed/total*100):null};
+}
+/* nota da semana corrente (parcial, seg→hoje), recalculada ao vivo — não é o registro fechado */
+function currentWeekScore(empCpfNorm,today){
+  today=today||todayKey();
+  return scoreForRange(empCpfNorm,mondayOf(today),today);
+}
+/* nota FECHADA da semana imediatamente anterior (seg→dom completos), para comparação de tendência.
+   Usa o registro salvo em WEEKLY_SCORES quando existe; senão calcula direto pelo intervalo completo
+   (mesmo resultado, só não depende da materialização já ter rodado e salvo o registro). */
+function previousClosedWeekScore(empCpfNorm,today){
+  today=today||todayKey();
+  const prevMonday=addDays(mondayOf(today),-7);
+  const saved=WEEKLY_SCORES[empCpfNorm]&&WEEKLY_SCORES[empCpfNorm][prevMonday];
+  if(saved)return {completed:saved.completed,notDone:saved.notDone,total:saved.completed+saved.notDone,pct:saved.pct};
+  return scoreForRange(empCpfNorm,prevMonday,sundayOf(prevMonday));
+}
+/* fecha semanas inteiras (seg→dom) já totalmente passadas que ainda não têm registro salvo,
+   para cada colaborador com CPF cadastrado. Roda dentro da materialização. */
+function closeCompletedWeeks(updates){
+  const today=todayKey();
+  const curMonday=mondayOf(today);
+  const allEmps=employees().filter(e=>empCpfKey(e));
+  const weeksBack=Math.ceil(LOOKBACK_DAYS/7);
+  for(const emp of allEmps){
+    const cpfNorm=empCpfKey(emp);
+    const saved=WEEKLY_SCORES[cpfNorm]||{};
+    // sempre múltiplos exatos de 7 dias a partir da segunda-feira atual, garantindo cair em segundas-feiras reais
+    for(let i=weeksBack;i>=1;i--){
+      const d=addDays(curMonday,-7*i);
+      if(!saved[d]){
+        const sunday=sundayOf(d);
+        const r=scoreForRange(cpfNorm,d,sunday);
+        if(r.total>0){ // só registra semana em que houve ao menos 1 instância terminal
+          updates[`weeklyScores/${cpfNorm}/${d}`]={pct:r.pct,completed:r.completed,notDone:r.notDone,closedAt:Date.now()};
+        }
+      }
+    }
+  }
+}
+function resetWeeklyScores(){
+  if(!state.admin)return;
+  if(!confirm("Isso vai apagar TODO o histórico de notas semanais salvas (de todos os colaboradores). As tarefas e o histórico de execução não são afetados. A partir de agora, a nota passa a contar apenas tarefas concluídas/não realizadas a partir de amanhã. Confirma?"))return;
+  dbRef(PATH.tarefas).update({weeklyScores:null,scoreResetAt:addDays(todayKey(),1)}).then(()=>toast("Notas semanais zeradas"));
+}
+function scoreClass(pct){if(pct==null)return"none";if(pct>=80)return"good";if(pct>=50)return"mid";return"bad"}
+/* últimas N semanas FECHADAS (histórico salvo) de um colaborador, mais antiga→mais recente */
+function closedWeeksHistory(empCpfNorm,n){
+  const saved=WEEKLY_SCORES[empCpfNorm]||{};
+  return Object.keys(saved).sort().slice(-n).map(monday=>({monday,...saved[monday]}));
+}
+/* nota de UMA semana específica (por mondayKey) de um colaborador: usa o registro fechado quando
+   existe; se for a semana atual (ainda não fechada), calcula ao vivo (parcial). */
+function weekScorePct(empCpfNorm,mondayKey,today){
+  today=today||todayKey();
+  if(mondayKey===mondayOf(today))return currentWeekScore(empCpfNorm,today).pct;
+  const saved=WEEKLY_SCORES[empCpfNorm]&&WEEKLY_SCORES[empCpfNorm][mondayKey];
+  if(saved)return saved.pct;
+  return scoreForRange(empCpfNorm,mondayKey,sundayOf(mondayKey)).pct;
+}
+/* as últimas N segundas-feiras (mondayKeys), da mais antiga para a mais recente, incluindo a atual */
+function lastNMondays(today,n){
+  const curMonday=mondayOf(today||todayKey());
+  const out=[];
+  for(let i=n-1;i>=0;i--)out.push(addDays(curMonday,-7*i));
+  return out;
+}
+/* média simples ignorando nulls (semanas sem dados); null se nenhuma tiver dado */
+function avgIgnoringNulls(arr){
+  const valid=arr.filter(v=>v!=null);
+  return valid.length?Math.round(valid.reduce((s,v)=>s+v,0)/valid.length):null;
+}
+/* série de pontos (1 por semana) para o gráfico: cpfNorms é a lista de colaboradores a agregar
+   (1 pessoa = linha individual; várias = média do grupo por semana) */
+function buildSeries(cpfNorms,weeks,today){
+  return weeks.map(monday=>{
+    const vals=cpfNorms.map(cpf=>weekScorePct(cpf,monday,today));
+    return {monday,pct:avgIgnoringNulls(vals),partial:monday===mondayOf(today||todayKey())};
+  });
+}
+/* card de nota semanal para a tela do próprio colaborador */
+function scoreCardHtml(empCpfNorm){
+  const today=todayKey();
+  const cur=currentWeekScore(empCpfNorm,today);
+  const prev=previousClosedWeekScore(empCpfNorm,today);
+  const cls=scoreClass(cur.pct);
+  const numHtml=cur.pct==null?`<div class="score-num none">—</div>`:`<div class="score-num ${cls}">${cur.pct}%</div>`;
+  let trend="";
+  if(cur.pct!=null&&prev.pct!=null){
+    const diff=cur.pct-prev.pct;
+    if(diff>=5)trend=`<div class="score-trend up">▲ ${diff} em relação à nota final da semana passada</div>`;
+    else if(diff<=-5)trend=`<div class="score-trend down">▼ ${Math.abs(diff)} em relação à nota final da semana passada</div>`;
+    else trend=`<div class="score-trend flat">≈ estável em relação à semana passada</div>`;
+  }
+  const hist=closedWeeksHistory(empCpfNorm,6);
+  let histHtml="";
+  if(hist.length){
+    histHtml=`<div class="score-history">`+hist.map(w=>{
+      const c=scoreClass(w.pct);
+      const color=c==="good"?"var(--ok)":c==="mid"?"var(--demanda)":"#c0392b";
+      return `<div class="wk"><div class="bar"><div class="fill" style="height:${w.pct}%;background:${color}"></div></div>
+        <span class="pct">${w.pct}%</span></div>`;
+    }).join("")+`</div><p class="note" style="margin-top:8px">Últimas semanas fechadas (a mais recente à direita)</p>`;
+  }
+  return `<div class="score-card">
+    ${numHtml}
+    <div class="score-label">Sua nota desta semana</div>
+    <div class="score-period">${weekLabel(mondayOf(today))} · fecha domingo à noite · ${cur.total?`${cur.completed} de ${cur.total} tarefas`:"ainda sem tarefas fechadas esta semana"}</div>
+    ${trend}
+    ${histHtml}
+  </div>`;
+}
+
+/* instâncias do empregado logado, agrupadas por natureza da tarefa */
+function myInstances(){
+  if(!state.emp)return {today:{executar:[],demanda:[],continua:[]},late:[],coresp:[],done:[]};
+  const me=state.emp;
+  const today=todayKey();const myIds=[me._key,me.id].filter(v=>v!=null).map(String);
+  const mine=id=>myIds.includes(String(id));
+  const todayG={executar:[],demanda:[],continua:[]},lateArr=[],coresp=[],doneArr=[];
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins)continue;const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
+    if(mine(ins.assignedTo)){
+      if(ins.status==="adiada"||ins.status==="nao_realizada")continue; // terminais, saem das listas ativas
+      if(ins.status==="concluida"){if(ins.date===today)doneArr.push({iid,ins,task});continue}
+      const nature=task.nature||"executar";
+      if(ins.date===today)(todayG[nature]||todayG.executar).push({iid,ins,task});
+      else if(ins.date<today)lateArr.push({iid,ins,task}); // atraso só acumula de fato p/ "executar" (demanda/continua já expiram na materialização)
+    }
+  }
+  // co-responsável: tarefas de hoje onde estou na lista mas não sou o responsável ativo
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||ins.date!==today)continue;const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
+    const idx=(task.responsibles||[]).findIndex(mine);
+    if(idx>=0&&!mine(ins.assignedTo)&&ins.status!=="adiada")coresp.push({iid,ins,task,rlevel:idx+1});
+  }
+  const ord=(a,b)=>(timeToMin(a.task.startTime)??1e9)-(timeToMin(b.task.startTime)??1e9);
+  todayG.executar.sort(ord);todayG.demanda.sort(ord);todayG.continua.sort(ord);
+  lateArr.sort((a,b)=>a.ins.date<b.ins.date?-1:1);
+  doneArr.sort((a,b)=>(b.ins.completedAt||0)-(a.ins.completedAt||0));
+  return {today:todayG,late:lateArr,coresp,done:doneArr};
+}
+
+/* ===================================================================
+   7) AÇÕES sobre instâncias
+   =================================================================== */
+function canAct(ins){
+  if(state.admin)return true;
+  const me=state.emp;if(!me)return false;
+  return [me._key,me.id].map(String).includes(String(ins.assignedTo));
+}
+function pushHistory(iid,entry){
+  const ins=INSTANCES[iid];const hist=Array.isArray(ins.history)?ins.history.slice():[];
+  hist.push({...entry,by:state.user.username,at:Date.now()});
+  return hist;
+}
+/* a tarefa tem checklist e está toda marcada nesta instância? */
+function checklistComplete(task,ins){
+  const items=task&&task.checklist;
+  if(!items||!items.length)return true;
+  const st=(ins&&ins.checklistState)||{};
+  return items.every(it=>st[it.id]===true);
+}
+function startTask(iid){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({status:"em_andamento",startedAt:Date.now(),history:pushHistory(iid,{type:"iniciada"})});
+  toast("Tarefa iniciada");
+}
+/* Se a instância alterada pertence a uma semana já FECHADA (registro salvo em weeklyScores),
+   recalcula esse registro na hora — sem isso, conclusões/reaberturas tardias de uma semana
+   antiga não atualizariam a nota que já tinha sido arquivada. */
+function patchClosedWeekIfNeeded(insDate,empId,updates){
+  const emp=employeeById(empId);if(!emp)return;
+  const cpfNorm=empCpfKey(emp);if(!cpfNorm)return;
+  const monday=mondayOf(insDate);
+  if(monday===mondayOf(todayKey()))return; // semana atual não é "fechada", recalcula sozinha ao vivo
+  const saved=WEEKLY_SCORES[cpfNorm]&&WEEKLY_SCORES[cpfNorm][monday];
+  if(!saved)return; // nunca foi fechada (ainda fora do histórico) — nada a corrigir
+  const r=scoreForRange(cpfNorm,monday,sundayOf(monday));
+  updates[`weeklyScores/${cpfNorm}/${monday}`]=r.total>0
+    ?{pct:r.pct,completed:r.completed,notDone:r.notDone,closedAt:Date.now()}
+    :null; // se não restou nenhuma instância terminal (raro), remove o registro em vez de salvar lixo
+}
+function completeTask(iid,note){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  const task=TASKS[ins.taskId];
+  if(!checklistComplete(task,ins)){toast("Marque todos os itens do checklist antes de concluir.");return}
+  const updates={};
+  updates[`instances/${iid}/status`]="concluida";
+  updates[`instances/${iid}/completedAt`]=Date.now();
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"concluida",note:note||null});
+  if(note&&note.trim())updates[`instances/${iid}/completionNote`]=note.trim();
+  ins.status="concluida"; // reflete localmente ANTES de recalcular semana fechada, senão o cálculo usaria o status antigo
+  invalidateTerminalIndex();
+  patchClosedWeekIfNeeded(ins.date,ins.assignedTo,updates);
+  dbRef(PATH.tarefas).update(updates);
+  toast("Tarefa concluída ✓");
+}
+function markNotDone(iid,note){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  const updates={};
+  updates[`instances/${iid}/status`]="nao_realizada";
+  updates[`instances/${iid}/completedAt`]=null;
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"nao_realizada",note:note||null});
+  if(note&&note.trim())updates[`instances/${iid}/completionNote`]=note.trim();
+  ins.status="nao_realizada";
+  invalidateTerminalIndex();
+  patchClosedWeekIfNeeded(ins.date,ins.assignedTo,updates);
+  dbRef(PATH.tarefas).update(updates);
+  toast("Marcada como não realizada");
+}
+function reopenTask(iid){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  if(!confirm("Reabrir esta tarefa? Ela volta para pendente."))return;
+  const updates={};
+  updates[`instances/${iid}/status`]="pendente";
+  updates[`instances/${iid}/completedAt`]=null;
+  updates[`instances/${iid}/completionNote`]=null;
+  updates[`instances/${iid}/autoExpired`]=null;
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"reaberta"});
+  ins.status="pendente";
+  invalidateTerminalIndex();
+  patchClosedWeekIfNeeded(ins.date,ins.assignedTo,updates);
+  dbRef(PATH.tarefas).update(updates);
+  toast("Tarefa reaberta");
+}
+
+function transferToR(iid,toEmpId){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({assignedTo:String(toEmpId),autoAssigned:false,
+    history:pushHistory(iid,{type:"transferida",to:String(toEmpId)})});
+  closeModal();toast("Transferida para "+empName(employeeById(toEmpId)));
+}
+function postpone(iid,toDate){
+  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  const task=TASKS[ins.taskId];const newIid=`${ins.taskId}__${toDate}`;
+  const updates={};
+  updates[`instances/${iid}/status`]="adiada";
+  updates[`instances/${iid}/history`]=pushHistory(iid,{type:"adiada",to:toDate});
+  if(!INSTANCES[newIid]){
+    updates[`instances/${newIid}`]={taskId:ins.taskId,date:toDate,occurrenceDate:ins.occurrenceDate,
+      assignedTo:computeAssignee(task,toDate),autoAssigned:true,status:"pendente",createdAt:Date.now(),
+      history:[{type:"recebida-adiamento",from:ins.date,by:state.user.username,at:Date.now()}]};
+  }
+  dbRef(PATH.tarefas).update(updates);
+  closeModal();toast("Adiada para "+fmtDate(toDate));
+}
+
+/* ===================================================================
+   7b) SUGESTÕES / TICKETS (conversa funcionário ↔ gestor sobre a tarefa)
+   =================================================================== */
+function myTickets(){
+  if(!state.emp)return [];
+  const myCpf=onlyDigits(pick(state.emp,SCHEMA.cpfFields));
+  return Object.entries(TICKETS).filter(([,t])=>t&&onlyDigits(t.openedBy)===myCpf)
+    .map(([id,t])=>({id,...t}));
+}
+function openTicket(taskId,text){
+  if(!text||!text.trim())return;
+  const id=genId("tk");
+  const payload={taskId,openedBy:state.user.username,status:"aberto",createdAt:Date.now(),
+    messages:[{by:state.user.username,text:text.trim(),at:Date.now()}]};
+  dbRef(`${PATH.tarefas}/tickets/${id}`).set(payload).then(()=>{closeModal();toast("Sugestão enviada ao gestor")});
+}
+function addTicketMessage(tid,text){
+  const t=TICKETS[tid];if(!t||t.status!=="aberto"||!text||!text.trim())return;
+  const isAuthor=state.emp&&onlyDigits(t.openedBy)===onlyDigits(pick(state.emp,SCHEMA.cpfFields));
+  if(!state.admin&&!isAuthor)return; // só o autor do ticket ou o gestor podem responder
+  const messages=Array.isArray(t.messages)?t.messages.slice():[];
+  messages.push({by:state.user.username,text:text.trim(),at:Date.now()});
+  dbRef(`${PATH.tarefas}/tickets/${tid}`).update({messages}).then(()=>{
+    const inp=$("#ticketReply");if(inp)inp.value="";
+    refreshOpenTicketModal(tid);
+  });
+}
+function closeTicket(tid){
+  if(!state.admin)return;
+  if(!confirm("Encerrar esta sugestão? O colaborador não poderá mais responder nesta conversa."))return;
+  dbRef(`${PATH.tarefas}/tickets/${tid}`).update({status:"fechado",closedAt:Date.now(),closedBy:state.user.username})
+    .then(()=>refreshOpenTicketModal(tid));
+}
+let openTicketId=null;
+function refreshOpenTicketModal(tid){
+  if(openTicketId===tid)openTicketConversation(tid); // re-render se a conversa desse ticket estiver aberta
+}
+
+/* ---- Modal: abrir nova sugestão a partir de uma tarefa ---- */
+function openNewTicketModal(taskId){
+  const task=TASKS[taskId];if(!task)return;
+  openSheet("Falar com o gestor",`
+    <p class="note" style="margin-bottom:12px">Sobre a tarefa <b>${esc(task.title)}</b>. Conte o que está achando — sugestão, dúvida ou problema.</p>
+    <div class="field"><textarea id="ticketText" placeholder="Ex.: Acho que falta um item no checklist para testar a temperatura da água."></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn primary" data-act="confirm-new-ticket" data-tid="${esc(taskId)}">Enviar ao gestor</button>
+    </div>
+  `);
+}
+
+/* ---- Modal: conversa de um ticket (visível para o autor e para o gestor) ---- */
+function openTicketConversation(tid){
+  const t=TICKETS[tid];if(!t)return;
+  const isAuthor=state.emp&&onlyDigits(t.openedBy)===onlyDigits(pick(state.emp,SCHEMA.cpfFields));
+  if(!state.admin&&!isAuthor)return; // só o autor ou o gestor podem ver a conversa
+  openTicketId=tid;
+  const task=TASKS[t.taskId];
+  const myUsername=state.user.username;
+  const bubbles=(t.messages||[]).map(m=>{
+    const isMe=String(m.by)===String(myUsername);
+    const who=m.by==="gestor"||/gestor/i.test(m.by)?"Gestor":(empName(employeeByCpf(m.by))||"Colaborador");
+    return `<div class="bubble ${isMe?"me":"other"}"><span class="bwho">${esc(isMe?"Você":who)}</span>${esc(m.text)}
+      <span class="bwhen">${new Date(m.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>`;
+  }).join("");
+  const isOpen=t.status==="aberto";
+  const canReply=isOpen; // autor e gestor podem responder enquanto aberto
+  const newTicketBtn=isAuthor?`<button class="btn ghost" data-act="open-new-ticket" data-tid="${esc(t.taskId)}">＋ Nova sugestão</button>`:"";
+  let footer;
+  if(canReply){
+    footer=`<div class="field"><textarea id="ticketReply" placeholder="Escrever uma resposta…" style="min-height:54px"></textarea></div>
+      <div class="sheet-actions">
+        <button class="btn ghost" data-act="close">Fechar</button>
+        ${newTicketBtn}
+        ${state.admin?`<button class="btn ghost" data-act="edit-task-from-ticket" data-tid="${esc(t.taskId)}">Editar tarefa</button>`:""}
+        ${state.admin?`<button class="btn danger" data-act="close-ticket" data-id="${tid}">Encerrar</button>`:""}
+        <button class="btn primary" data-act="send-ticket-reply" data-id="${tid}">Responder</button>
+      </div>`;
+  }else{
+    footer=`<p class="note" style="text-align:center">Conversa encerrada${t.closedBy?" por "+esc(t.closedBy==="gestor"||/gestor/i.test(t.closedBy)?"Gestor":t.closedBy):""}.</p>
+      <div class="sheet-actions">
+        ${newTicketBtn}
+        ${state.admin?`<button class="btn ghost" data-act="edit-task-from-ticket" data-tid="${esc(t.taskId)}">Editar tarefa</button>`:""}
+        <button class="btn primary" data-act="close" style="${state.admin?"":"flex:none;width:100%"}">Fechar</button>
+      </div>`;
+  }
+  openSheet(task?task.title:"Sugestão",`
+    <div class="meta" style="margin-bottom:10px"><span class="status ticket-${t.status}">${isOpen?"Aberto":"Fechado"}</span></div>
+    <div class="chat">${bubbles}</div>
+    ${footer}
+  `);
+}
+function employeeByCpf(cpf){
+  const digits=onlyDigits(cpf);if(!digits)return null;
+  return employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===cpf11(digits)})||null;
+}
+
+/* ---- Views ---- */
+function viewMySuggestions(){
+  if(!state.emp)return `<div class="empty"><b>Disponível só para colaboradores.</b></div>`;
+  const mine=myTickets().sort((a,b)=>b.createdAt-a.createdAt);
+  if(!mine.length)return `<div class="empty"><b>Você ainda não enviou nenhuma sugestão.</b>Para enviar uma, toque no ícone de balão de fala num card de tarefa, em "Minhas tarefas".</div>`;
+  let h=`<div class="section-title" style="margin-top:4px">Minhas sugestões <span class="count-pill">${mine.length}</span></div>`;
+  for(const t of mine){
+    const task=TASKS[t.taskId];
+    const last=(t.messages||[])[t.messages.length-1];
+    h+=`<button type="button" class="ticket-row" data-act="open-ticket" data-id="${t.id}">
+      <div class="tmain">
+        <span class="ttitle">${esc(task?task.title:"(tarefa removida)")}</span>
+        <span class="tpreview">${esc(last?last.text:"")}</span>
+        <span class="tmeta">${t.messages.length} mensagem(ns) · ${fmtDate(dateKey(new Date(t.createdAt)))}</span>
+      </div>
+      <span class="status ticket-${t.status}">${t.status==="aberto"?"Aberto":"Fechado"}</span>
+    </button>`;
+  }
+  return h;
+}
+function viewTickets(){
+  const all=Object.entries(TICKETS).map(([id,t])=>({id,...t})).sort((a,b)=>{
+    if((a.status==="aberto")!==(b.status==="aberto"))return a.status==="aberto"?-1:1;
+    return b.createdAt-a.createdAt;
+  });
+  const openCount=all.filter(t=>t.status==="aberto").length;
+  let h=`<div class="diag"><div class="kv"><span>Em aberto:</span> <b style="color:${openCount?'var(--accent)':'inherit'}">${openCount}</b>
+    <span>Total:</span> <b>${all.length}</b></div></div>`;
+  if(!all.length){h+=`<div class="empty"><b>Nenhuma sugestão recebida ainda.</b>Quando um colaborador comentar uma tarefa, aparece aqui.</div>`;return h}
+  h+=`<div class="section-title">Sugestões</div>`;
+  for(const t of all){
+    const task=TASKS[t.taskId];
+    const emp=employeeByCpf(t.openedBy);
+    const last=(t.messages||[])[t.messages.length-1];
+    h+=`<button type="button" class="ticket-row" data-act="open-ticket" data-id="${t.id}">
+      <div class="tmain">
+        <span class="ttitle">${esc(task?task.title:"(tarefa removida)")} — ${esc(emp?empName(emp):"Colaborador")}</span>
+        <span class="tpreview">${esc(last?last.text:"")}</span>
+        <span class="tmeta">${t.messages.length} mensagem(ns) · ${fmtDate(dateKey(new Date(t.createdAt)))}</span>
+      </div>
+      <span class="status ticket-${t.status}">${t.status==="aberto"?"Aberto":"Fechado"}</span>
+    </button>`;
+  }
+  return h;
+}
+
+/* ===================================================================
+   7c) ORDENS DE SERVIÇO (O.S.) — pontuais, sem recorrência, com prioridade e prazo opcional
+   =================================================================== */
+/* colaborador do setor "Lideranças" (cadastro na escala) — libera abrir/ver O.S., igual ao gestor */
+function isLideranca(emp){
+  if(!emp)return false;
+  const v=pick(emp,SCHEMA.employeeSectorFields);
+  return v!=null && norm(v)===norm(LIDERANCA_SETOR);
+}
+function canOpenOS(){return state.admin||isLideranca(state.emp)}
+/* quem participa da conversa de uma O.S.: gestor, Lideranças, toda a fila R1/R2/R3 e quem abriu */
+function canChatOS(os){
+  if(!os)return false;
+  if(state.admin)return true;
+  if(!state.emp)return false;
+  if(isLideranca(state.emp))return true;
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  if((os.responsibles||[]).some(id=>myIds.includes(String(id))))return true;
+  if(os.openedBy===state.user.username)return true;
+  return false;
+}
+/* responsável elegível de hoje (primeiro da fila presente na escala), igual à lógica das tarefas mas sem horário fixo */
+function osComputeAssignee(os){
+  const today=todayKey();
+  for(const id of (os.responsibles||[])){
+    const emp=employeeById(id);if(!emp)continue;
+    if(eligibility(emp,today,null).ok)return id;
+  }
+  return null;
+}
+/* pode agir (iniciar/concluir) nesta O.S.? enquanto "aberta", só quem é o elegível de hoje; depois de iniciada, trava com quem iniciou */
+function canActOS(os){
+  if(!os)return false;
+  if(state.admin)return true;
+  const me=state.emp;if(!me)return false;
+  const myIds=[me._key,me.id].filter(v=>v!=null).map(String);
+  if(os.status==="em_andamento")return myIds.includes(String(os.assignedTo));
+  if(os.status==="aberta")return myIds.includes(String(osComputeAssignee(os)));
+  return false;
+}
+function osChecklistComplete(os){
+  const items=os&&os.checklist;
+  if(!items||!items.length)return true;
+  const st=(os&&os.checklistState)||{};
+  return items.every(it=>st[it.id]===true);
+}
+function pushOSHistory(os,entry){
+  const hist=Array.isArray(os.history)?os.history.slice():[];
+  hist.push({...entry,by:state.user.username,at:Date.now()});
+  return hist;
+}
+/* O.S. em que o colaborador logado está na fila e é, hoje, quem deve agir (elegível de hoje ou já travado nela) */
+function myOSQueue(){
+  if(!state.emp)return [];
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  const out=[];
+  for(const osid in SERVICE_ORDERS){
+    const os=SERVICE_ORDERS[osid];if(!os)continue;
+    if(os.status!=="aberta"&&os.status!=="em_andamento")continue;
+    if(!(os.responsibles||[]).some(id=>myIds.includes(String(id))))continue;
+    if(os.status==="em_andamento"&&!myIds.includes(String(os.assignedTo)))continue;
+    if(os.status==="aberta"&&!myIds.includes(String(osComputeAssignee(os))))continue;
+    out.push({osid,os});
+  }
+  const prioRank={urgente:0,normal:1,programada:2};
+  out.sort((a,b)=>{
+    const pa=prioRank[a.os.priority]??1,pb=prioRank[b.os.priority]??1;
+    if(pa!==pb)return pa-pb;
+    return (a.os.createdAt||0)-(b.os.createdAt||0);
+  });
+  return out;
+}
+function startOS(osid){
+  const os=SERVICE_ORDERS[osid];if(!os||os.status!=="aberta"||!canActOS(os))return;
+  const assignee=state.admin?osComputeAssignee(os):(state.emp._key!=null?state.emp._key:state.emp.id);
+  if(assignee==null){toast("Sem responsável elegível hoje.");return}
+  dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({
+    status:"em_andamento",assignedTo:String(assignee),startedAt:Date.now(),startedBy:state.user.username,
+    history:pushOSHistory(os,{type:"iniciada"})
+  }).then(()=>{toast("O.S. iniciada");refreshOpenOSModal(osid);});
+}
+function completeOS(osid,note){
+  const os=SERVICE_ORDERS[osid];if(!os||os.status!=="em_andamento"||!canActOS(os))return;
+  if(!osChecklistComplete(os)){toast("Marque todos os itens do checklist antes de concluir.");return}
+  dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({
+    status:"concluida",completedAt:Date.now(),completedBy:state.user.username,
+    completionNote:(note&&note.trim())?note.trim():null,
+    history:pushOSHistory(os,{type:"concluida",note:note||null})
+  });
+  toast("O.S. concluída ✓");closeModal();
+}
+function cancelOS(osid,reason){
+  const os=SERVICE_ORDERS[osid];if(!os||!state.admin)return;
+  if(os.status==="concluida"||os.status==="cancelada")return;
+  dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({
+    status:"cancelada",canceledAt:Date.now(),canceledBy:state.user.username,
+    cancelReason:(reason&&reason.trim())?reason.trim():null,
+    history:pushOSHistory(os,{type:"cancelada",note:reason||null})
+  });
+  toast("O.S. cancelada");closeModal();
+}
+function toggleOSCheck(osid,itemId){
+  const os=SERVICE_ORDERS[osid];if(!os||!canActOS(os))return;
+  if(os.status!=="aberta"&&os.status!=="em_andamento")return;
+  os.checklistState=os.checklistState||{};
+  const newVal=!(os.checklistState[itemId]===true);
+  os.checklistState[itemId]=newVal; // otimista, antes do round-trip do Firebase
+  dbRef(`${PATH.tarefas}/serviceOrders/${osid}/checklistState/${itemId}`).set(newVal);
+  openOSDetail(osid);
+}
+let openOSId=null;
+function refreshOpenOSModal(osid){if(openOSId===osid)openOSDetail(osid)}
+function addOSMessage(osid,text){
+  const os=SERVICE_ORDERS[osid];if(!os||!text||!text.trim()||!canChatOS(os))return;
+  const messages=Array.isArray(os.messages)?os.messages.slice():[];
+  messages.push({by:state.user.username,text:text.trim(),at:Date.now()});
+  dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({messages}).then(()=>{
+    const inp=$("#osReply");if(inp)inp.value="";
+    refreshOpenOSModal(osid);
+  });
+}
+/* cria (gestor ou Liderança) ou edita (só gestor) uma O.S. — na edição só os campos estruturais mudam,
+   status/fila-de-eventos/mensagens ficam intactos */
+function saveOS(data,id){
+  if(id){
+    if(!state.admin)return;
+    const updates={
+      title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
+      requester:(data.requester||"").trim(),priority:data.priority||"normal",deadline:data.deadline||null,
+      responsibles:data.responsibles||[],checklist:data.checklist||[],updatedAt:Date.now()
+    };
+    return dbRef(`${PATH.tarefas}/serviceOrders/${id}`).update(updates).then(()=>{closeModal();toast("O.S. atualizada")});
+  }
+  if(!canOpenOS())return;
+  const osid=genId("os");
+  const payload={
+    title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
+    requester:(data.requester||"").trim(),priority:data.priority||"normal",deadline:data.deadline||null,
+    responsibles:data.responsibles||[],checklist:data.checklist||[],checklistState:{},
+    status:"aberta",assignedTo:null,
+    openedBy:state.user.username,openedByName:state.user.name,createdAt:Date.now(),
+    messages:[],history:[{type:"aberta",by:state.user.username,at:Date.now()}]
+  };
+  return dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).set(payload).then(()=>{closeModal();toast("O.S. aberta")});
+}
+
+/* ===================================================================
+   8) ADMIN: criar / editar / excluir tarefa
+   =================================================================== */
+function saveTask(data,id){
+  const tid=id||genId("t");
+  const payload={
+    title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
+    nature:data.nature||"executar",
+    startTime:data.startTime||null,responsibles:data.responsibles,
+    recurrence:data.recurrence,checklist:data.checklist||[],active:true,
+    createdDate:data.createdDate||todayKey(),createdBy:data.createdBy||state.user.username,updatedAt:Date.now()
+  };
+  return dbRef(`${PATH.tarefas}/tasks/${tid}`).set(payload).then(()=>{closeModal();toast(id?"Tarefa atualizada":"Tarefa criada")});
+}
+function deleteTask(tid){
+  if(!confirm("Excluir esta tarefa? As ocorrências futuras deixam de aparecer."))return;
+  // marca inativa (preserva histórico). Para apagar de vez, troque por .remove()
+  dbRef(`${PATH.tarefas}/tasks/${tid}`).update({active:false,updatedAt:Date.now()}).then(()=>toast("Tarefa removida"));
+}
+function recalcQueue(){
+  materializing=false;materialize();toast("Fila recalculada");
+}
+
+/* ===================================================================
+   9) AUTENTICAÇÃO
+   =================================================================== */
+function onlyDigits(s){return String(s==null?"":s).replace(/\D/g,"")}
+function cpf11(s){return onlyDigits(s).padStart(11,"0")}
+function doLogin(){
+  const errBox=$("#loginError");errBox.classList.add("hidden");
+  const show=m=>{errBox.innerHTML=m;errBox.classList.remove("hidden")};
+  if(!FB_OK){show("O Firebase não carregou. Publique o arquivo no <b>GitHub Pages</b> (ou rode por um servidor local) para conectar ao banco.");return}
+  const raw=$("#lgUser").value.trim();
+  if(!raw){show("Digite seu CPF (ou <b>gestor</b>).");return}
+  // gestor
+  if(norm(raw)===norm(GESTOR_KEYWORD)){
+    if(GESTOR_PIN&&$("#lgPass").value!==GESTOR_PIN){show("Senha do gestor incorreta.");return}
+    enterAsManager();return;
+  }
+  // colaborador via CPF
+  if(!ESCALA||!ESCALA.employees){show("Ainda carregando os dados. Tente novamente em instantes.");return}
+  const digits=onlyDigits(raw);
+  if(digits.length<11){show("CPF incompleto — digite os 11 números.");return}
+  const alvo=cpf11(digits);
+  const emp=employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===alvo});
+  if(!emp){show("CPF não encontrado. Confira os números ou peça ao gestor para cadastrar seu CPF no funcionário.");return}
+  enterAsEmployee(emp);
+}
+function enterAsManager(){
+  state.user={username:"gestor",name:"Gestor",funcao:"Gestor",perms:"admin"};
+  state.admin=true;state.emp=null;state.session={type:"gestor"};
+  finishLogin();
+}
+function enterAsEmployee(emp){
+  const cpf=onlyDigits(pick(emp,SCHEMA.cpfFields));
+  state.user={username:cpf||empName(emp),name:empName(emp),funcao:pick(emp,["funcao","cargo","role","função"])||"Colaborador",perms:null};
+  state.admin=false;state.emp=emp;state.session={type:"emp",cpf};
+  finishLogin();
+}
+function finishLogin(){
+  try{localStorage.setItem("tarefas_session",JSON.stringify(state.session))}catch(e){}
+  $("#loginScreen").classList.add("hidden");
+  $("#appScreen").classList.remove("hidden");
+  $("#tabMine").classList.toggle("hidden",state.admin);
+  $("#tabAdmin").classList.toggle("hidden",!state.admin);
+  $("#tabDiag").classList.toggle("hidden",!state.admin);
+  $("#tabResp").classList.toggle("hidden",!state.emp);
+  $("#tabSuggestions").classList.toggle("hidden",!state.emp);
+  $("#tabTickets").classList.toggle("hidden",!state.admin);
+  $("#tabPerformance").classList.toggle("hidden",!state.admin);
+  $("#tabOS").classList.toggle("hidden",!canOpenOS());
+  renderWho();
+  state.view=state.admin?"admin":"mine";
+  setActiveTab();
+  state.ready=true;
+  materialize();render();
+}
+function tryRestore(){
+  if(state.ready||!FB_OK)return;
+  let s=null;try{s=JSON.parse(localStorage.getItem("tarefas_session")||"null")}catch(e){}
+  if(!s||!s.type)return;
+  if(s.type==="gestor"){enterAsManager();return}
+  if(s.type==="emp"&&ESCALA&&ESCALA.employees){
+    const emp=employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===cpf11(s.cpf)});
+    if(emp)enterAsEmployee(emp);
+  }
+}
+function logout(){
+  try{localStorage.removeItem("tarefas_session")}catch(e){}
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:"",weeks:4},osFilter:{status:"",priority:"",sector:""}};
+  $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
+  $("#loginScreen").classList.remove("hidden");
+  $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
+}
+function renderWho(){
+  const sec=state.emp?(pick(state.emp,["sectorId","setorId","sector","setor"])):null;
+  $("#whoBox").innerHTML=`<b>${esc(state.user.name)}</b><br>${esc(state.user.funcao||(state.admin?"Gestor":"Colaborador"))}`;
+}
+
+/* ===================================================================
+   10) RENDER
+   =================================================================== */
+function setActiveTab(){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.view===state.view));
+  $("#fab").classList.toggle("hidden",!(state.admin&&state.view==="admin"));
+}
+function render(){
+  if(!state.ready)return;
+  const m=$("#main");
+  if(!ESCALA){m.innerHTML='<div class="loading"><div class="spinner"></div>Carregando escala…</div>';return}
+  if(state.view==="mine")m.innerHTML=viewMine();
+  else if(state.view==="resp")m.innerHTML=viewResp();
+  else if(state.view==="suggestions")m.innerHTML=viewMySuggestions();
+  else if(state.view==="admin")m.innerHTML=viewAdmin();
+  else if(state.view==="tickets")m.innerHTML=viewTickets();
+  else if(state.view==="performance")m.innerHTML=viewPerformance();
+  else if(state.view==="os")m.innerHTML=viewOS();
+  else if(state.view==="diag")m.innerHTML=viewDiag();
+}
+
+function statusBadge(s){const map={pendente:"Pendente",em_andamento:"Em andamento",concluida:"Concluída",adiada:"Adiada",nao_realizada:"Não realizada"};return `<span class="status ${s}">${map[s]||s}</span>`}
+
+function taskCardMine({iid,ins,task},opts={}){
+  const today=todayKey();
+  const isTerminal=ins.status==="concluida"||ins.status==="nao_realizada";
+  const late=ins.date<today&&!isTerminal;
+  const daysLate=late?daysBetween(ins.date,today):0;
+  const myIdx=(task.responsibles||[]).findIndex(id=>[state.emp._key,state.emp.id].map(String).includes(String(id)));
+  const nature=task.nature||"executar";
+  const cls=["card"];if(late)cls.push("late");
+  if(!late&&!isTerminal&&opts.variant!==false){
+    if(nature==="continua")cls.push("v-continua");
+    else if(nature==="demanda")cls.push("v-demanda");
+  }
+  let meta=`<span class="chip sector">${esc(sectorName(task.sectorId))}</span>`;
+  if(task.startTime)meta+=`<span class="chip time">🕐 ${esc(task.startTime)}</span>`;
+  if(myIdx>=0)meta+=`<span class="chip r">R${myIdx+1}</span>`;
+  if(ins.autoAssigned===false)meta+=`<span class="chip transferred">Recebida</span>`;
+  if(late)meta+=`<span class="chip late">${daysLate} dia(s) em atraso</span>`;
+  const hasChecklist=task.checklist&&task.checklist.length>0;
+  const checklistOk=checklistComplete(task,ins);
+  if(hasChecklist&&!isTerminal){
+    const done=task.checklist.filter(it=>(ins.checklistState&&ins.checklistState[it.id])===true).length;
+    meta+=`<span class="chip${checklistOk?"":" late"}">☑ ${done}/${task.checklist.length}</span>`;
+  }
+  let actions="";
+  if(opts.coresp){
+    actions=`<div class="assignee">Responsável hoje: <b>${esc(empName(employeeById(ins.assignedTo)))||"—"}</b></div>`;
+  }else{
+    actions='<div class="actions">';
+    if(!isTerminal){
+      if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">Iniciar</button>`;
+      actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+      actions+=`<button class="btn ghost sm" data-act="open-notdone" data-iid="${iid}">Não realizada</button>`;
+      actions+=`<button class="btn ghost sm" data-act="transfer" data-iid="${iid}">Transferir</button>`;
+    }else{
+      actions+=`<button class="btn ghost sm" data-act="reopen" data-iid="${iid}">Reabrir</button>`;
+    }
+    actions+="</div>";
+  }
+  const myOpenForTask=opts.coresp?[]:myTickets().filter(t=>t.taskId===ins.taskId&&t.status==="aberto").sort((a,b)=>b.createdAt-a.createdAt);
+  const suggestBtn=opts.coresp?"":(myOpenForTask.length
+    ?`<button type="button" class="btn-suggest has-open" data-act="open-ticket" data-id="${esc(myOpenForTask[0].id)}">
+        💬 ${myOpenForTask.length} em aberto</button>`
+    :`<button type="button" class="btn-suggest" data-act="open-new-ticket" data-tid="${esc(ins.taskId)}">
+        💬 Falar com o gestor</button>`);
+  return `<article class="${cls.join(" ")}" data-act="open-detail" data-iid="${iid}" style="cursor:pointer"><div class="card-body">
+    <div class="card-head"><h3>${esc(task.title)}</h3>
+      <div class="card-head-right" data-stop="1">${statusBadge(ins.status)}${suggestBtn}</div>
+    </div>
+    <div class="meta">${meta}</div>
+    <div data-stop="1">${actions}</div>
+  </div></article>`;
+}
+
+
+function dayBlockHead(type,icon,title,sub,count){
+  return `<div class="day-block-head t-${type}">
+    <div class="day-block-icon">${icon}</div>
+    <div class="day-block-text">
+      <div class="day-block-title">${esc(title)}${count!=null?` <span class="count-pill">${count}</span>`:""}</div>
+      ${sub?`<div class="day-block-sub">${esc(sub)}</div>`:""}
+    </div>
+  </div>`;
+}
+function osStatusBadge(s){const map={aberta:"Aberta",em_andamento:"Em andamento",concluida:"Concluída",cancelada:"Cancelada"};return `<span class="status ${s}">${map[s]||s}</span>`}
+function osPriorityChip(p){const cls=p==="urgente"?"late":p==="programada"?"time":"";return `<span class="chip ${cls}">${OS_PRIORITIES[p||"normal"]}</span>`}
+function osCardMine(os,osid){
+  const today=todayKey();
+  const isTerminal=os.status==="concluida"||os.status==="cancelada";
+  const isLate=!!os.deadline&&!isTerminal&&os.deadline<today;
+  const myIdx=(os.responsibles||[]).findIndex(id=>[state.emp._key,state.emp.id].map(String).includes(String(id)));
+  const cls=["card"];if(isLate)cls.push("late");
+  let meta=`<span class="chip sector">${esc(sectorName(os.sectorId))}</span>${osPriorityChip(os.priority)}`;
+  if(myIdx>=0)meta+=`<span class="chip r">R${myIdx+1}</span>`;
+  if(os.deadline)meta+=`<span class="chip${isLate?" late":""}">📅 ${fmtDate(os.deadline)}</span>`;
+  const hasChecklist=os.checklist&&os.checklist.length>0;
+  const checklistOk=osChecklistComplete(os);
+  if(hasChecklist&&!isTerminal){
+    const doneN=os.checklist.filter(it=>(os.checklistState&&os.checklistState[it.id])===true).length;
+    meta+=`<span class="chip${checklistOk?"":" late"}">☑ ${doneN}/${os.checklist.length}</span>`;
+  }
+  let actions='<div class="actions">';
+  if(os.status==="aberta")actions+=`<button class="btn primary sm" data-act="start-os" data-osid="${osid}">Iniciar</button>`;
+  if(os.status==="em_andamento")actions+=`<button class="btn ok sm" data-act="open-os-complete" data-osid="${osid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+  actions+="</div>";
+  return `<article class="${cls.join(" ")}" data-act="open-os-detail" data-osid="${osid}" style="cursor:pointer"><div class="card-body">
+    <div class="card-head"><h3>${esc(os.title)}</h3>
+      <div class="card-head-right" data-stop="1">${osStatusBadge(os.status)}</div>
+    </div>
+    <div class="meta">${meta}</div>
+    <div data-stop="1">${actions}</div>
+  </div></article>`;
+}
+function viewMine(){
+  if(!state.emp){
+    if(state.admin)return `<div class="empty"><b>Você está logado como gestor.</b>Use a aba <b>Tarefas</b> para criar tarefas e acompanhar quem é responsável a cada dia.</div>`;
+    return `<div class="empty"><b>Seu CPF não está vinculado a um colaborador.</b>Peça ao gestor para cadastrar seu CPF no seu funcionário da escala.</div>`;
+  }
+  const {today,late,coresp,done}=myInstances();
+  let h="";
+  if(coresp.length){
+    h+=`<button type="button" class="btn ghost full" data-act="show-coresp" style="margin-bottom:14px">👀 Você é co-responsável em ${coresp.length} tarefa(s) hoje</button>`;
+  }
+  const myOS=myOSQueue();
+  if(myOS.length){
+    h+=dayBlockHead("os","🔧","Ordens de serviço",null,myOS.length);
+    h+=myOS.map(({osid,os})=>osCardMine(os,osid)).join("");
+  }
+
+  // ordem pensada para contar o dia: primeiro o "estado de espírito", depois o que pode surgir, por fim o que executar
+  if(today.continua.length){
+    h+=dayBlockHead("continua","👁","Mantenha isso em mente hoje","Preocupações contínuas que você precisa ter hoje.",today.continua.length);
+    h+=today.continua.map(t=>taskCardMine(t)).join("");
+  }
+  if(today.demanda.length){
+    h+=dayBlockHead("demanda","📡","Fique atento — pode surgir hoje","Você está responsável por responder caso essas situações aconteçam.",today.demanda.length);
+    h+=today.demanda.map(t=>taskCardMine(t)).join("");
+  }
+  h+=dayBlockHead("executar","✅","Tarefas que você precisa executar hoje",null,today.executar.length);
+  h+=today.executar.length?today.executar.map(t=>taskCardMine(t)).join(""):
+    `<div class="empty"><b>Sem tarefas para executar hoje.</b>Aproveite — ou confira se há algo atrasado abaixo.</div>`;
+
+  if(late.length){
+    h+=dayBlockHead("late","⏰","Atrasadas",null,late.length);
+    h+=late.map(t=>taskCardMine(t)).join("");
+  }
+  if(done.length){
+    h+=dayBlockHead("done","✓","Concluídas hoje",null,done.length);
+    h+=done.map(t=>taskCardMine(t)).join("");
+  }
+  return h;
+}
+
+/* ---- Minhas responsabilidades: painel analítico (sem status do dia) ---- */
+function myActiveTasksWithLevel(){
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  const out=[];
+  for(const tid in TASKS){
+    const t=TASKS[tid];if(!t||t.active===false)continue;
+    const idx=(t.responsibles||[]).findIndex(id=>myIds.includes(String(id)));
+    if(idx<0)continue;
+    out.push({...t,_tid:tid,_level:idx+1});
+  }
+  return out;
+}
+/* setores das tarefas ativas em que um colaborador qualquer está na fila (qualquer nível) */
+function sectorsForEmployee(emp){
+  const ids=[emp._key,emp.id].filter(v=>v!=null).map(String);
+  const out=[];
+  for(const tid in TASKS){
+    const t=TASKS[tid];if(!t||t.active===false)continue;
+    if((t.responsibles||[]).some(id=>ids.includes(String(id))))out.push(t.sectorId);
+  }
+  return out;
+}
+function computePartners(myTasks){
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  const partners={};
+  for(const t of myTasks){
+    const resp=t.responsibles||[];
+    const myIdx=resp.findIndex(id=>myIds.includes(String(id)));
+    resp.forEach((id,idx)=>{
+      if(myIds.includes(String(id)))return;
+      const key=String(id);
+      partners[key]=partners[key]||{empId:id,together:0,asNext:0,asPrev:0};
+      partners[key].together++;
+      if(idx===myIdx+1)partners[key].asNext++;   // ele pega depois de você
+      if(idx===myIdx-1)partners[key].asPrev++;   // você pega depois dele
+    });
+  }
+  return Object.values(partners).sort((a,b)=>b.together-a.together);
+}
+function viewResp(){
+  if(!state.emp)return `<div class="empty"><b>Disponível só para colaboradores.</b>Faça login com seu CPF para ver suas responsabilidades.</div>`;
+  const myCpfNorm=empCpfKey(state.emp);
+  const scoreHtml=myCpfNorm?scoreCardHtml(myCpfNorm):"";
+  const all=myActiveTasksWithLevel();
+  if(!all.length)return scoreHtml+`<div class="empty"><b>Você ainda não está na fila de nenhuma tarefa.</b>Quando o gestor te adicionar como responsável, ela aparece aqui.</div>`;
+
+  // ---- resumo por nível (sobre TODAS as suas tarefas, ignora filtro) ----
+  const byLevelCount={};all.forEach(t=>byLevelCount[t._level]=(byLevelCount[t._level]||0)+1);
+  const levels=Object.keys(byLevelCount).map(Number).sort((a,b)=>a-b);
+  const lvlClass=l=>l===1?"r1":l===2?"r2":"r3";
+  let h=scoreHtml+`<div class="section-title" style="margin-top:4px">Visão geral</div><div class="stat-grid">`;
+  h+=`<div class="stat-box"><div class="num">${all.length}</div><div class="lbl">Tarefas no total</div></div>`;
+  for(const l of levels)h+=`<div class="stat-box ${lvlClass(l)}"><div class="num">${byLevelCount[l]}</div><div class="lbl">Você é R${l}</div></div>`;
+  h+="</div>";
+
+  // ---- distribuição por setor: % arredondado a inteiros e sempre soma 100 ----
+  const secCounts={};all.forEach(t=>{const k=String(t.sectorId||"");secCounts[k]=(secCounts[k]||0)+1});
+  const secEntries=Object.entries(secCounts).sort((a,b)=>b[1]-a[1]);
+  const rawPct=secEntries.map(([id,n])=>n/all.length*100);
+  const pctInt=rawPct.map(Math.floor);
+  let remainder=100-pctInt.reduce((s,v)=>s+v,0);
+  // distribui o resto do arredondamento pelos maiores restos fracionários, pra somar exatamente 100
+  const order=rawPct.map((v,i)=>({i,frac:v-pctInt[i]})).sort((a,b)=>b.frac-a.frac);
+  for(let k=0;k<remainder;k++)pctInt[order[k%order.length].i]++;
+  const secRows=secEntries.map(([id,n],i)=>({id,n,pct:pctInt[i]}));
+
+  h+=`<div class="section-title">Sua distribuição por setor</div>`;
+  if(secRows.length===1){
+    h+=`<p class="note" style="margin:-2px 2px 10px">Todas as suas ${all.length} tarefa(s) são do setor <b>${esc(sectorName(secRows[0].id))}</b>.</p>`;
+  }else{
+    for(const r of secRows){
+      h+=`<div class="bar-row"><span class="blabel">${esc(sectorName(r.id))}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${r.pct}%"></span></span>
+        <span class="bar-pct">${r.pct}% (${r.n})</span></div>`;
+    }
+  }
+
+  // ---- parceiros (sobre todas) — clicável para ver tarefas em comum ----
+  const partners=computePartners(all);
+  if(partners.length){
+    h+=`<div class="section-title">Sua rede de parceiros</div>
+      <div class="partner-list">`;
+    for(const p of partners){
+      const emp=employeeById(p.empId);const nm=empName(emp)||"—";
+      h+=`<button type="button" class="partner-line" data-act="show-partner" data-emp="${esc(p.empId)}">
+        <span class="partner-line-name">${esc(nm)}</span><span class="partner-line-count">${p.together}</span></button>`;
+    }
+    h+=`</div>`;
+  }
+
+  // ---- filtros ----
+  const F=state.respFilter;
+  const usedSectors=[...new Set(all.map(t=>String(t.sectorId||"")))];
+  const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(id=>`<option value="${esc(id)}" ${F.sector===id?"selected":""}>${esc(sectorName(id))}</option>`).join("");
+  const lvlOpts=`<option value="">Todos os níveis</option>`+levels.map(l=>`<option value="${l}" ${String(F.level)===String(l)?"selected":""}>R${l}</option>`).join("");
+  const hasFilter=F.sector||F.level;
+  h+=`<div class="section-title">Suas tarefas</div>`;
+  h+=`<div class="filters">
+    <select data-filter2="sector">${secOpts}</select>
+    <select data-filter2="level">${lvlOpts}</select>
+    ${hasFilter?`<button class="btn sm ghost" data-act="clear-resp-filters">Limpar</button>`:""}
+  </div>`;
+
+  const filtered=all.filter(t=>{
+    if(F.sector&&String(t.sectorId||"")!==F.sector)return false;
+    if(F.level&&String(t._level)!==String(F.level))return false;
+    return true;
+  }).sort((a,b)=>a._level-b._level||a.title.localeCompare(b.title,"pt-BR"));
+
+  if(!filtered.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
+
+  for(const t of filtered){
+    const natureLabels={executar:"A executar",demanda:"Sob demanda",continua:"Preocupação contínua"};
+    h+=`<div class="resp-task-row">
+      <div class="rlevelbig">R${t._level}</div>
+      <div class="rmain"><span class="rtitle">${esc(t.title)}</span>
+        <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>
+          <span class="chip">${esc(natureLabels[t.nature||"executar"])}</span>
+          <span class="chip">${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}</span>${t.startTime?`<span class="chip time">🕐 ${esc(t.startTime)}</span>`:""}</div>
+      </div></div>`;
+  }
+  return h;
+}
+
+/* ---------- Ordens de serviço (gestor + Lideranças) ---------- */
+function viewOS(){
+  if(!canOpenOS())return `<div class="empty"><b>Disponível só para o gestor e para o grupo Lideranças.</b></div>`;
+  const today=todayKey();
+  const F=state.osFilter;
+  const all=Object.entries(SERVICE_ORDERS);
+  const list=all.filter(([,o])=>{
+    if(F.status&&o.status!==F.status)return false;
+    if(F.priority&&(o.priority||"normal")!==F.priority)return false;
+    if(F.sector&&String(o.sectorId)!==String(F.sector))return false;
+    return true;
+  }).sort((a,b)=>{
+    const rank={aberta:0,em_andamento:1,concluida:2,cancelada:3};
+    const ra=rank[a[1].status]??9,rb=rank[b[1].status]??9;
+    if(ra!==rb)return ra-rb;
+    return (b[1].createdAt||0)-(a[1].createdAt||0);
+  });
+  const openN=all.filter(([,o])=>o.status==="aberta").length;
+  const progN=all.filter(([,o])=>o.status==="em_andamento").length;
+  const lateN=all.filter(([,o])=>o.deadline&&o.status!=="concluida"&&o.status!=="cancelada"&&o.deadline<today).length;
+
+  let h=`<div class="diag"><div class="kv">
+    <span>Abertas:</span> <b>${openN}</b>
+    <span>Em andamento:</span> <b>${progN}</b>
+    ${lateN?`<b style="color:var(--accent)">${lateN}</b> <span>atrasada(s)</span>`:""}
+  </div></div>`;
+  h+=`<button type="button" class="btn primary full" data-act="new-os" style="width:100%;margin-bottom:14px;justify-content:center">＋ Nova ordem de serviço</button>`;
+
+  const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const statusLabels={aberta:"Aberta",em_andamento:"Em andamento",concluida:"Concluída",cancelada:"Cancelada"};
+  const statusOpts=`<option value="">Todos os status</option>`+Object.entries(statusLabels).map(([v,l])=>`<option value="${v}" ${F.status===v?"selected":""}>${l}</option>`).join("");
+  const prioOpts=`<option value="">Todas as prioridades</option>`+Object.entries(OS_PRIORITIES).map(([v,l])=>`<option value="${v}" ${F.priority===v?"selected":""}>${l}</option>`).join("");
+  const hasFilter=F.status||F.priority||F.sector;
+  h+=`<div class="filters">
+    <select data-filter-os="status">${statusOpts}</select>
+    <select data-filter-os="priority">${prioOpts}</select>
+    <select data-filter-os="sector">${secOpts}</select>
+    ${hasFilter?`<button class="btn sm ghost" data-act="clear-os-filters">Limpar</button>`:""}
+  </div>`;
+
+  h+=`<div class="section-title">Ordens de serviço <span class="count-pill">${list.length}${list.length!==all.length?" de "+all.length:""}</span></div>`;
+  if(!all.length){h+=`<div class="empty"><b>Nenhuma O.S. registrada ainda.</b>Toque em "Nova ordem de serviço" para abrir a primeira.</div>`;return h}
+  if(!list.length){h+=`<div class="empty"><b>Nenhuma O.S. com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
+
+  for(const [osid,o] of list){
+    const isLate=!!o.deadline&&o.status!=="concluida"&&o.status!=="cancelada"&&o.deadline<today;
+    const respLabel=(o.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
+    const assigneeNow=o.status==="em_andamento"?o.assignedTo:(o.status==="aberta"?osComputeAssignee(o):null);
+    h+=`<div class="tcard" data-act="open-os-detail" data-osid="${osid}" style="cursor:pointer"><div class="tcard-head"><div>
+      <h3>${esc(o.title)}</h3>
+      <div class="small">${esc(sectorName(o.sectorId))}${o.requester?" · "+esc(o.requester):""}</div>
+      <div class="meta" style="margin-top:6px">${osStatusBadge(o.status)}${osPriorityChip(o.priority)}${o.deadline?`<span class="chip${isLate?" late":""}">📅 ${fmtDate(o.deadline)}</span>`:""}</div>
+    </div></div>
+    <div class="small" style="margin-top:8px">Fila: ${respLabel}${assigneeNow?` · Responsável agora: <b>${esc(empName(employeeById(assigneeNow)))}</b>`:""}</div>
+    </div>`;
+  }
+  return h;
+}
+function viewAdmin(){
+  const today=todayKey();
+  const F=state.adminFilter;
+  const all=Object.entries(TASKS).filter(([,t])=>t.active!==false);
+  const natureLabels={executar:"A executar",demanda:"Sob demanda",continua:"Preocupação contínua"};
+
+  // colaboradores que aparecem em alguma fila (para o filtro)
+  const usedEmp=new Set();
+  all.forEach(([,t])=>(t.responsibles||[]).forEach(id=>usedEmp.add(String(id))));
+  const empOpts=[...usedEmp].map(id=>({id,name:empName(employeeById(id))}))
+    .filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
+
+  // status "de hoje" de cada tarefa (para exibir e para filtrar)
+  const todayStatusOf=(tid,t)=>{
+    if(!occursOn(t,today))return "nao_ocorre";
+    const ins=INSTANCES[`${tid}__${today}`];
+    const assignee=ins?ins.assignedTo:computeAssignee(t,today);
+    if(!assignee)return "sem_responsavel";
+    return ins?ins.status:"pendente";
+  };
+
+  // aplica filtros
+  const list=all.filter(([tid,t])=>{
+    if(F.sector&&String(t.sectorId)!==String(F.sector))return false;
+    const respIdx=F.emp?(t.responsibles||[]).findIndex(id=>String(id)===String(F.emp)):-2;
+    if(F.emp&&respIdx<0)return false; // colaborador não está nessa fila
+    if(F.level){
+      if(F.emp){
+        if(respIdx+1!==Number(F.level))return false; // precisa estar EXATAMENTE nesse nível
+      }else{
+        if((t.responsibles||[]).length<Number(F.level))return false; // a fila precisa ter esse nível
+      }
+    }
+    if(F.status&&todayStatusOf(tid,t)!==F.status)return false;
+    if(F.nature&&(t.nature||"executar")!==F.nature)return false;
+    return true;
+  });
+
+  // resumo de hoje (sempre sobre todas as tarefas)
+  let pend=0,prog=0,done=0,unassigned=0,notDone=0;
+  for(const iid in INSTANCES){const ins=INSTANCES[iid];if(!ins||ins.date!==today)continue;const t=TASKS[ins.taskId];if(!t||t.active===false)continue;
+    if(ins.status==="concluida")done++;
+    else if(ins.status==="nao_realizada")notDone++;
+    else if(ins.status==="em_andamento")prog++;
+    else if(ins.status==="pendente"){pend++;if(!ins.assignedTo)unassigned++}}
+
+  const maxLevel=Math.max(1,...all.map(([,t])=>(t.responsibles||[]).length));
+  const levelOpts=`<option value="">Todos os níveis</option>`+Array.from({length:maxLevel},(_,i)=>i+1)
+    .map(l=>`<option value="${l}" ${String(F.level)===String(l)?"selected":""}>R${l}${F.emp?"":" (fila com "+l+"+)"}</option>`).join("");
+  const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empOpts.map(e=>`<option value="${esc(e.id)}" ${String(e.id)===String(F.emp)?"selected":""}>${esc(e.name)}</option>`).join("");
+  const statusLabels={pendente:"Pendente hoje",em_andamento:"Em andamento",concluida:"Concluída hoje",adiada:"Adiada",nao_realizada:"Não realizada hoje",sem_responsavel:"Sem responsável",nao_ocorre:"Não ocorre hoje"};
+  const statusOpts=`<option value="">Todos os status</option>`+Object.entries(statusLabels).map(([v,l])=>`<option value="${v}" ${F.status===v?"selected":""}>${l}</option>`).join("");
+  const natureOpts=`<option value="">Todas as naturezas</option>`+Object.entries(natureLabels).map(([v,l])=>`<option value="${v}" ${F.nature===v?"selected":""}>${l}</option>`).join("");
+  const hasFilter=F.sector||F.emp||F.status||F.nature||F.level;
+
+  let h=`<div class="diag"><div class="kv">
+    <span>Hoje:</span> <b>${pend}</b> <span>pendentes</span>
+    <b>${prog}</b> <span>em andamento</span>
+    <b>${done}</b> <span>concluídas</span>
+    ${notDone?`<b>${notDone}</b> <span>não realizadas</span>`:""}
+    ${unassigned?`<b style="color:var(--accent)">${unassigned}</b> <span>sem responsável elegível</span>`:""}
+  </div><div class="actions">
+    <button class="btn sm" data-act="recalc">↻ Recalcular fila de hoje</button>
+    <button class="btn sm" data-act="open-report">📋 Relatório do dia</button>
+  </div></div>`;
+
+  const openTicketsCount=Object.values(TICKETS).filter(t=>t&&t.status==="aberto").length;
+  if(openTicketsCount){
+    h+=`<button type="button" class="btn-suggest has-open" style="width:100%;justify-content:center;padding:10px;margin-bottom:14px;font-size:13.5px" data-act="goto-tickets">
+      💬 ${openTicketsCount} sugestão(ões) em aberto — toque para ver</button>`;
+  }
+
+  h+=`<div class="filters">
+    <select data-filter="sector">${secOpts}</select>
+    <select data-filter="emp">${empFilterOpts}</select>
+    <select data-filter="level">${levelOpts}</select>
+    <select data-filter="status">${statusOpts}</select>
+    <select data-filter="nature">${natureOpts}</select>
+    ${hasFilter?`<button class="btn sm ghost" data-act="clear-filters">Limpar</button>`:""}
+  </div>`;
+  h+=F.emp&&F.level?`<p class="note" style="margin:-4px 2px 12px">Mostrando tarefas onde <b>${esc(empName(employeeById(F.emp)))}</b> é exatamente R${F.level}.</p>`:"";
+
+  h+=`<div class="section-title">Tarefas <span class="count-pill">${list.length}${list.length!==all.length?" de "+all.length:""}</span></div>`;
+  if(!all.length){h+=`<div class="empty"><b>Nenhuma tarefa cadastrada.</b>Toque em "Nova tarefa" para começar.</div>`;return h}
+  if(!list.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
+
+  for(const [tid,t] of list){
+    const resp=(t.responsibles||[]).map((id,i)=>`R${i+1} ${esc(empName(employeeById(id)))}`).join(" · ")||"—";
+    const nature=t.nature||"executar";
+
+    // responsável de HOJE, em destaque
+    let todayRow;
+    if(occursOn(t,today)){
+      const ins=INSTANCES[`${tid}__${today}`];
+      const assignee=ins?ins.assignedTo:computeAssignee(t,today);
+      const status=ins?ins.status:"pendente";
+      if(assignee){
+        const nm=empName(employeeById(assignee))||"—";
+        const ini=esc(nm.trim().charAt(0).toUpperCase()||"?");
+        todayRow=`<div class="today-row"><span class="avatar">${ini}</span>
+          <div class="today-info"><span class="today-label">Responsável hoje</span><span class="today-name">${esc(nm)}</span></div>
+          ${statusBadge(status)}</div>`;
+      }else{
+        todayRow=`<div class="today-row none"><span class="avatar none">!</span>
+          <div class="today-info"><span class="today-label">Hoje</span><span class="today-name">Sem responsável elegível</span></div></div>`;
+      }
+    }else{
+      todayRow=`<div class="today-row muted"><div class="today-info"><span class="today-name" style="color:var(--muted);font-weight:500">Não ocorre hoje</span></div></div>`;
+    }
+
+    // tarefas executar com instâncias atrasadas (pendente/em_andamento de dias anteriores)
+    let lateInfo="";
+    if(nature==="executar"){
+      let oldest=null;
+      for(const iid in INSTANCES){
+        const ins=INSTANCES[iid];if(!ins||ins.taskId!==tid)continue;
+        if((ins.status==="pendente"||ins.status==="em_andamento")&&ins.date<today){
+          if(!oldest||ins.date<oldest)oldest=ins.date;
+        }
+      }
+      if(oldest)lateInfo=`<span class="chip late">${daysBetween(oldest,today)} dia(s) em atraso</span>`;
+    }
+
+    h+=`<div class="tcard"><div class="tcard-head"><div>
+      <h3>${esc(t.title)}</h3>
+      <div class="small">${esc(sectorName(t.sectorId))} · ${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
+      <div class="meta" style="margin-top:6px"><span class="chip">${esc(natureLabels[nature])}</span>${lateInfo}</div>
+    </div></div>
+    ${todayRow}
+    <div class="small" style="margin-top:8px">Fila: ${resp}</div>
+    <div class="actions">
+      <button class="btn sm" data-act="edit-task" data-tid="${tid}">Editar</button>
+      <button class="btn sm danger" data-act="del-task" data-tid="${tid}">Excluir</button>
+    </div></div>`;
+  }
+  return h;
+}
+
+/* ---------- Desempenho da equipe (gestor) ---------- */
+function viewPerformance(){
+  const today=todayKey();
+  const F=state.perfFilter;
+  const ALERT_THRESHOLD=15; // pontos percentuais de variação p/ disparar alerta
+  const allEmps=employees().filter(e=>empCpfKey(e));
+  if(!allEmps.length)return `<div class="empty"><b>Nenhum colaborador com CPF cadastrado ainda.</b>A nota depende do CPF estar vinculado ao funcionário.</div>`;
+
+  const weeksN=Number(F.weeks)||4;
+  const weeks=lastNMondays(today,weeksN);
+
+  // nota de cada colaborador, semana a semana, no período escolhido
+  const empData=allEmps.map(emp=>{
+    const cpfNorm=empCpfKey(emp);
+    const series=buildSeries([cpfNorm],weeks,today);
+    const avg=avgIgnoringNulls(series.map(p=>p.pct));
+    const cur=currentWeekScore(cpfNorm,today);
+    const prev=previousClosedWeekScore(cpfNorm,today);
+    const sectorIds=[...new Set(sectorsForEmployee(emp).map(sid=>String(sid||"")))];
+    return {emp,cpfNorm,series,avg,cur,prev,sectorIds};
+  });
+
+  // ---- visão geral: média da equipe no período ----
+  const teamAvg=avgIgnoringNulls(empData.map(r=>r.avg));
+
+  // ---- alertas: variação >= limiar entre semana atual (parcial) e a nota fechada da semana anterior ----
+  const alerts=empData.filter(r=>r.cur.pct!=null&&r.prev.pct!=null&&Math.abs(r.cur.pct-r.prev.pct)>=ALERT_THRESHOLD)
+    .sort((a,b)=>Math.abs(b.cur.pct-b.prev.pct)-Math.abs(a.cur.pct-a.prev.pct));
+
+  // ---- setores (lista usada nos filtros e no ranking) ----
+  const usedSectors=sectors().filter(s=>empData.some(r=>r.sectorIds.includes(String(s.id))));
+
+  // ---- série do GRÁFICO: depende do filtro (1 pessoa = linha dela; setor/todos = média do grupo) ----
+  let graphCpfs,graphLabel;
+  if(F.emp){
+    const r=empData.find(x=>String(x.emp.id)===String(F.emp));
+    graphCpfs=r?[r.cpfNorm]:[];
+    graphLabel=r?empName(r.emp):"";
+  }else if(F.sector){
+    const inSector=empData.filter(r=>r.sectorIds.includes(F.sector));
+    graphCpfs=inSector.map(r=>r.cpfNorm);
+    graphLabel="Média de "+esc(sectorName(F.sector));
+  }else{
+    graphCpfs=empData.map(r=>r.cpfNorm);
+    graphLabel="Média de todos os colaboradores";
+  }
+  const graphSeries=buildSeries(graphCpfs,weeks,today);
+
+  // ---- filtros (afetam o gráfico) ----
+  const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(s=>`<option value="${esc(s.id)}" ${F.sector===String(s.id)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const empOpts=`<option value="">Todos os colaboradores</option>`+allEmps.map(e=>`<option value="${esc(e.id)}" ${F.emp===String(e.id)?"selected":""}>${esc(empName(e))}</option>`).join("");
+  const hasFilter=F.sector||F.emp;
+  const weekOpts=[4,8,12].map(n=>`<button type="button" class="${weeksN===n?"on":""}" data-act="set-perf-weeks" data-n="${n}">${n} semanas</button>`).join("");
+
+  let h=`<div class="diag"><div class="kv">
+    <span>Média da equipe (período):</span> <b style="font-size:18px">${teamAvg!=null?teamAvg+"%":"sem dados"}</b>
+  </div><p class="note" style="margin-top:6px">${weekLabel(weeks[0]).split(" – ")[0]} – ${weekLabel(weeks[weeks.length-1]).split(" – ")[1]} · a semana mais recente ainda está em andamento</p></div>`;
+
+  if(alerts.length){
+    h+=`<div class="section-title">Pontos de atenção</div>`;
+    for(const r of alerts){
+      const diff=r.cur.pct-r.prev.pct;
+      const type=diff>0?"up":"down";
+      const verb=diff>0?"subiu":"caiu";
+      h+=`<div class="alert-card ${type}"><span>${type==="up"?"📈":"📉"}</span>
+        <div><b>${esc(empName(r.emp))}</b>${verb} ${Math.abs(diff)} pontos em relação à nota final da semana passada: ${r.prev.pct}% → ${r.cur.pct}%</div></div>`;
+    }
+  }
+
+  // ---- gráfico de evolução ----
+  h+=`<div class="section-title">Evolução</div>
+    <div class="period-bar">${weekOpts}</div>
+    <div class="filters">
+      <select data-filter3="sector">${secOpts}</select>
+      <select data-filter3="emp">${empOpts}</select>
+      ${hasFilter?`<button class="btn sm ghost" data-act="clear-perf-filters">Limpar</button>`:""}
+    </div>
+    <div class="diag">${lineChartSvg(graphSeries)}
+      <p class="note" style="margin-top:6px;text-align:center">${graphLabel}</p>
+    </div>`;
+
+  // ---- ranking de funcionários (pela média do período) ----
+  const rankedEmps=empData.filter(r=>r.avg!=null).sort((a,b)=>b.avg-a.avg);
+  h+=`<div class="rank-box"><div class="rank-box-head"><h4>🏆 Ranking de colaboradores</h4><span>média de ${weeksN} semanas</span></div>`;
+  if(!rankedEmps.length){
+    h+=`<p class="note" style="padding:0 15px 13px">Sem dados suficientes ainda neste período.</p>`;
+  }else{
+    h+=`<div class="rank-scroll">`+rankedEmps.map((r,i)=>{
+      const cls=scoreClass(r.avg);
+      return `<button type="button" class="rank-line" data-act="open-perf-detail" data-id="${esc(r.emp.id)}">
+        <span class="rank-pos ${i<3?"top":""}">${i+1}º</span>
+        <div class="rank-main"><div class="rank-name">${esc(empName(r.emp))}</div>
+          <div class="rank-sub">semana atual: ${r.cur.pct!=null?r.cur.pct+"%":"sem dados"}</div></div>
+        <div class="perf-pct ${cls}">${r.avg}%</div>
+      </button>`;
+    }).join("")+`</div>`;
+  }
+  h+=`</div>`;
+
+  // ---- ranking de setores (média do período, sobre as médias dos colaboradores daquele setor) ----
+  const secAvg={};
+  for(const r of empData){
+    if(r.avg==null)continue;
+    for(const sid of r.sectorIds){(secAvg[sid]=secAvg[sid]||[]).push(r.avg)}
+  }
+  const rankedSectors=Object.entries(secAvg).map(([sid,arr])=>({sid,avg:avgIgnoringNulls(arr),n:arr.length}))
+    .sort((a,b)=>b.avg-a.avg);
+  h+=`<div class="rank-box"><div class="rank-box-head"><h4>🏢 Ranking de setores</h4><span>média de ${weeksN} semanas</span></div>`;
+  if(!rankedSectors.length){
+    h+=`<p class="note" style="padding:0 15px 13px">Sem dados suficientes ainda neste período.</p>`;
+  }else{
+    h+=`<div class="rank-scroll">`+rankedSectors.map((r,i)=>{
+      const cls=scoreClass(r.avg);
+      return `<div class="rank-line" style="cursor:default">
+        <span class="rank-pos ${i<3?"top":""}">${i+1}º</span>
+        <div class="rank-main"><div class="rank-name">${esc(sectorName(r.sid))}</div>
+          <div class="rank-sub">${r.n} colaborador(es)</div></div>
+        <div class="perf-pct ${cls}">${r.avg}%</div>
+      </div>`;
+    }).join("")+`</div>`;
+  }
+  h+=`</div>`;
+
+  // ---- Ordens de serviço: resumo à parte, não entra na nota semanal de rotina ----
+  const osAll=Object.values(SERVICE_ORDERS);
+  if(osAll.length){
+    const osOpen=osAll.filter(o=>o.status==="aberta").length;
+    const osProg=osAll.filter(o=>o.status==="em_andamento").length;
+    const osDone=osAll.filter(o=>o.status==="concluida").length;
+    const osLate=osAll.filter(o=>o.deadline&&o.status!=="concluida"&&o.status!=="cancelada"&&o.deadline<today).length;
+    h+=`<div class="section-title">Ordens de serviço</div>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="num">${osOpen}</div><div class="lbl">Abertas</div></div>
+      <div class="stat-box"><div class="num">${osProg}</div><div class="lbl">Em andamento</div></div>
+      <div class="stat-box"><div class="num">${osDone}</div><div class="lbl">Concluídas</div></div>
+      ${osLate?`<div class="stat-box r3"><div class="num">${osLate}</div><div class="lbl">Atrasadas</div></div>`:""}
+    </div>`;
+  }
+
+  h+=`<div class="actions" style="margin-top:6px"><button class="btn sm danger" data-act="reset-scores">🗑 Zerar notas semanais</button></div>`;
+
+  return h;
+}
+/* SVG de linha simples para a série de pontos semanais (1 ponto = 1 semana) */
+function lineChartSvg(points){
+  const valid=points.map((p,i)=>({...p,i})).filter(p=>p.pct!=null);
+  if(valid.length<2)return `<p class="note">Ainda não há semanas suficientes neste período para mostrar o gráfico.</p>`;
+  const W=320,H=130,pad=10;
+  const stepX=points.length>1?(W-pad*2)/(points.length-1):0;
+  const xy=valid.map(p=>({x:pad+p.i*stepX,y:pad+(H-pad*2)*(1-p.pct/100),pct:p.pct,partial:p.partial}));
+  const path=xy.map((p,i)=>(i===0?"M":"L")+p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ");
+  const dots=xy.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.partial?4.5:3.5}"
+    fill="${p.partial?"var(--accent)":"var(--primary)"}" stroke="var(--surface)" stroke-width="1.5"/>`).join("");
+  const labels=points.map((p,i)=>`<text x="${(pad+i*stepX).toFixed(1)}" y="${H-1}" font-size="8" fill="var(--muted-2)" text-anchor="middle">${parseKey(p.monday).getDate()}/${parseKey(p.monday).getMonth()+1}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" preserveAspectRatio="none">
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad-10}" stroke="var(--line)" stroke-width="1"/>
+    <line x1="${pad}" y1="${H-pad-10}" x2="${W-pad}" y2="${H-pad-10}" stroke="var(--line)" stroke-width="1"/>
+    <path d="${path}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+    ${dots}${labels}
+  </svg>`;
+}
+
+/* ---- Modal: detalhe de desempenho de um colaborador, com gráfico de evolução ---- */
+function openPerfDetail(empId){
+  const emp=employeeById(empId);if(!emp)return;
+  const cpfNorm=empCpfKey(emp);
+  const today=todayKey();
+  const cur=currentWeekScore(cpfNorm,today);
+  const closed=closedWeeksHistory(cpfNorm,8);
+  const points=[...closed.map(w=>({label:weekLabel(w.monday),pct:w.pct,partial:false})),
+    {label:weekLabel(mondayOf(today))+" (em andamento)",pct:cur.pct,partial:true}].filter(p=>p.pct!=null);
+
+  let chart="";
+  if(points.length>=2){
+    const W=300,H=110,pad=8;
+    const stepX=(W-pad*2)/(points.length-1);
+    const xy=points.map((p,i)=>({x:pad+i*stepX,y:pad+(H-pad*2)*(1-p.pct/100)}));
+    const path=xy.map((p,i)=>(i===0?"M":"L")+p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ");
+    const dots=xy.map((p,i)=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${points[i].partial?4.5:3.5}"
+      fill="${points[i].partial?"var(--accent)":"var(--primary)"}" stroke="var(--surface)" stroke-width="1.5"/>`).join("");
+    chart=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin:10px 0 4px" preserveAspectRatio="none">
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="var(--line)" stroke-width="1"/>
+      <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="var(--line)" stroke-width="1"/>
+      <path d="${path}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+      ${dots}
+    </svg>`;
+  }
+  const rows=points.slice().reverse().map(p=>`<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">
+    ${esc(p.label)} <b style="float:right">${p.pct}%</b></div>`).join("");
+
+  openSheet(`Desempenho — ${empName(emp)}`,`
+    <div class="meta" style="margin-bottom:6px"><span class="chip">Semana atual: ${cur.pct!=null?cur.pct+"%":"sem dados"}</span>
+      ${cur.total?`<span class="chip">${cur.completed}/${cur.total} tarefas</span>`:""}</div>
+    ${points.length>=2?chart:'<p class="note">Ainda não há semanas suficientes para mostrar evolução.</p>'}
+    <div class="section-title" style="margin-top:10px">Histórico</div>
+    ${rows||'<p class="note">Sem semanas fechadas ainda.</p>'}
+    <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
+  `);
+}
+
+/* ===================================================================
+   MIGRAÇÃO: corrige responsáveis das tarefas após mudança de IDs no app de escala
+   Lê /escala_lazer/employee_key_migration, traduz chaves antigas → novas,
+   é idempotente (seguro rodar mais de uma vez).
+   =================================================================== */
+async function fixResponsibles(){
+  if(!state.admin)return;
+  if(!confirm("Isso vai traduzir os IDs dos responsáveis de todas as tarefas, usando o mapeamento gerado pelo botão 'Corrigir estrutura' no app de Escala.\n\nNão altera quais pessoas estão nas tarefas — só traduz o formato do identificador.\n\nConfirma?"))return;
+
+  toast("Buscando mapeamento de migração…");
+
+  // 1. buscar o mapeamento gerado pelo app de escala
+  let migrationData;
+  try{
+    const snap=await dbRef("escala_lazer/employee_key_migration").once("value");
+    migrationData=snap.val();
+  }catch(e){
+    alert("Erro ao acessar o banco: "+e.message);return;
+  }
+  if(!migrationData||!migrationData.mapping){
+    alert("Mapeamento de migração não encontrado.\n\nO botão 'Corrigir estrutura' no app de Escala ainda não foi executado — peça ao gestor para fazer isso primeiro, depois tente novamente.");
+    return;
+  }
+
+  const mapping=migrationData.mapping; // {"0":"12345678901","1":"joao_silva_a1b2c",...}
+  const oldKeys=new Set(Object.keys(mapping));
+
+  // 2. percorrer todas as tarefas e traduzir responsáveis com chave antiga
+  const updates={};
+  const report=[]; // [{taskTitle, r, oldKey, newKey}]
+
+  for(const tid in TASKS){
+    const task=TASKS[tid];
+    if(!task||task.active===false)continue;
+    const responsibles=task.responsibles||[];
+    const newResponsibles=responsibles.map((id,i)=>{
+      const s=String(id);
+      if(oldKeys.has(s)){
+        report.push({taskTitle:task.title,r:i+1,oldKey:s,newKey:mapping[s]});
+        return mapping[s];
+      }
+      return id; // já está no formato novo, mantém como está
+    });
+    // só grava se algo mudou (evita escritas desnecessárias)
+    if(JSON.stringify(responsibles.map(String))!==JSON.stringify(newResponsibles.map(String))){
+      updates[`tasks/${tid}/responsibles`]=newResponsibles;
+    }
+  }
+
+  if(!Object.keys(updates).length){
+    alert(`Nenhuma tarefa precisou ser atualizada.\n\nTodos os IDs já estão no formato novo — a migração provavelmente já foi feita antes.`);
+    return;
+  }
+
+  // 3. gravar no Firebase
+  try{
+    await dbRef(PATH.tarefas).update(updates);
+  }catch(e){
+    alert("Erro ao salvar as atualizações: "+e.message);return;
+  }
+
+  // 4. mostrar relatório
+  const changed=Object.keys(updates).length;
+  const lines=report.map(r=>`• ${esc(r.taskTitle)} — R${r.r}: ${r.oldKey} → ${r.newKey}`).join("\n");
+  alert(`✓ Migração concluída!\n\n${changed} tarefa(s) atualizada(s), ${report.length} responsável(eis) traduzido(s).\n\n${lines}\n\nRecomendamos revisar manualmente os responsáveis de cada tarefa para confirmar que estão corretos.`);
+  toast("Responsáveis migrados ✓");
+}
+
+function viewDiag(){
+  const today=todayKey();
+  let h=`<div class="section-title">Como o app está lendo seus dados</div>`;
+  h+=`<div class="diag"><div class="kv">
+    <span>Setores:</span><b>${sectors().length}</b>
+    <span>Colaboradores:</span><b>${employees().length}</b>
+    <span>Tipos de turno:</span><b>${shiftTypes().length}</b>
+    <span>Usuários:</span><b>${toArray(USERS).length}</b>
+  </div><p class="note">Login atual: <b>${state.admin&&!state.emp?"Gestor (palavra-chave)":("CPF → "+esc(state.emp?empName(state.emp):"—"))}</b></p></div>`;
+
+  h+=`<div class="diag"><h4>Tipos de turno detectados</h4><table class="diag-t"><tr><th>Nome</th><th>Início</th><th>Fim</th><th>Interpretação</th></tr>`;
+  for(const s of shiftTypes()){
+    const nm=pick(s,SCHEMA.nameFields)||s._key,st=pick(s,SCHEMA.startTimeFields),en=pick(s,SCHEMA.endTimeFields);
+    const abs=isAbsenceName(nm)||SCHEMA.absenceFlagFields.some(f=>s[f]===true);
+    const tag=abs?'<span class="tag-no">ausência</span>':(timeToMin(st)!=null&&timeToMin(en)!=null?'<span class="tag-ok">presença</span>':'<span class="tag-no">sem horário</span>');
+    h+=`<tr><td>${esc(nm)}</td><td>${esc(st||"—")}</td><td>${esc(en||"—")}</td><td>${tag}</td></tr>`;
+  }
+  h+=`</table><p class="note">Se algum turno de presença aparecer como “ausência/sem horário”, ajuste os campos no bloco SCHEMA do arquivo.</p></div>`;
+
+  h+=`<div class="diag"><h4>Presença hoje (${fmtDate(today)})</h4><table class="diag-t"><tr><th>Colaborador</th><th>Turno</th><th>Faixa</th><th>Status</th></tr>`;
+  for(const e of employees()){
+    const p=presenceFor(e,today);
+    const tag=p.present?'<span class="tag-ok">presente</span>':'<span class="tag-no">ausente</span>';
+    h+=`<tr><td>${esc(empName(e))}</td><td>${esc(p.label||"—")}</td><td>${esc((p.start||"—")+" – "+(p.end||"—"))}</td><td>${tag}</td></tr>`;
+  }
+  h+=`</table></div>`;
+
+  // quem consegue entrar por CPF
+  const cpfMask=c=>{const d=onlyDigits(c);return d.length>=11?`•••.${d.slice(3,6)}.${d.slice(6,9)}-••`:null};
+  let semCpf=0;
+  h+=`<div class="diag"><h4>Login por CPF</h4><table class="diag-t"><tr><th>Colaborador</th><th>CPF</th><th>Acesso</th></tr>`;
+  for(const e of employees()){
+    const m=cpfMask(pick(e,SCHEMA.cpfFields));
+    if(!m)semCpf++;
+    h+=`<tr><td>${esc(empName(e))}</td><td>${m||"—"}</td><td>${m?'<span class="tag-ok">pode entrar</span>':'<span class="tag-no">sem CPF</span>'}</td></tr>`;
+  }
+  h+=`</table><p class="note">${semCpf?`<b>${semCpf}</b> colaborador(es) sem CPF não conseguem entrar — cadastre o CPF no app de escalas. `:""}Se o CPF aparecer como “sem CPF” mas existir no cadastro, ajuste <b>cpfFields</b> no bloco SCHEMA.</p></div>`;
+  // diagnóstico de IDs dos funcionários
+  h+=`<div class="diag"><h4>⚠️ IDs dos colaboradores na escala</h4>
+    <p class="note" style="margin-bottom:8px">O app salva responsáveis pelo <b>ID/chave</b> do funcionário na escala. Se o Firebase reorganizou os IDs (ex: após remover alguém), os responsáveis ficam apontando pra pessoa errada.</p>
+    <table class="diag-t"><tr><th>Colaborador</th><th>ID atual</th><th>Estabilidade</th></tr>
+    ${employees().map(e=>{const n=/^\d+$/.test(String(e._key))&&String(e._key).length<8;return `<tr><td>${esc(empName(e))}</td><td><code>${esc(e._key)}</code></td><td>${n?'<span class="tag-no">numérico ⚠️</span>':'<span class="tag-ok">estável ✓</span>'}</td></tr>`}).join("")}
+    </table></div>
+  <div class="diag"><h4>Cruzamento: responsáveis salvos vs funcionários atuais</h4>
+    <table class="diag-t"><tr><th>ID salvo</th><th>Pessoa atual</th><th>Tarefas</th></tr>
+    ${[...new Set(Object.values(TASKS).filter(t=>t&&t.active!==false).flatMap(t=>t.responsibles||[]).map(String))].sort().map(id=>{
+      const emp=employeeById(id);
+      const ts=Object.values(TASKS).filter(t=>t&&(t.responsibles||[]).map(String).includes(id)).map(t=>t.title).join(", ");
+      return `<tr><td><code>${esc(id)}</code></td><td>${emp?'<span class="tag-ok">'+esc(empName(emp))+'</span>':'<span class="tag-no">⚠️ Não encontrado</span>'}</td><td style="font-size:11px;color:var(--muted)">${esc(ts||"—")}</td></tr>`;
+    }).join("")}
+    </table></div>`;
+
+  // bloco de ação de migração (só relevante quando IDs são numéricos)
+  const hasNumericIds=employees().some(e=>/^\d+$/.test(String(e._key))&&String(e._key).length<8);
+  if(hasNumericIds){
+    h+=`<div class="diag" style="border-color:var(--accent);background:var(--accent-soft)">
+      <h4>⚠️ IDs numéricos detectados — ação necessária</h4>
+      <p class="note" style="margin-bottom:10px">Os colaboradores na escala ainda usam IDs numéricos instáveis. Para corrigir permanentemente:</p>
+      <ol class="note" style="padding-left:18px;margin-bottom:10px;line-height:1.8">
+        <li>No <b>app de Escala</b> → página Colaboradores → clique em <b>"🔧 Corrigir estrutura"</b></li>
+        <li>Aguarde a confirmação de migração concluída</li>
+        <li>Volte aqui e clique em <b>"Corrigir responsáveis"</b> abaixo</li>
+      </ol>
+      <div class="actions"><button class="btn primary" data-act="fix-responsibles">🔄 Corrigir responsáveis das tarefas</button></div>
+    </div>`;
+  }else{
+    h+=`<div class="diag" style="border-color:var(--ok)">
+      <h4>✓ IDs estáveis</h4>
+      <p class="note">Os colaboradores usam IDs textuais permanentes. Se precisar re-rodar a migração após atualizar a escala, use o botão abaixo.</p>
+      <div class="actions"><button class="btn sm ghost" data-act="fix-responsibles">🔄 Corrigir responsáveis das tarefas</button></div>
+    </div>`;
+  }
+
+  return h;
+}
+
+/* ===================================================================
+   11) MODAIS
+   =================================================================== */
+function closeModal(){$("#modalRoot").innerHTML="";transferState=null;formState=null;openTicketId=null;osFormState=null;openOSId=null;}
+function openSheet(title,bodyHtml){
+  $("#modalRoot").innerHTML=`<div class="overlay" data-overlay><div class="sheet">
+    <div class="sheet-head"><h2>${esc(title)}</h2><button class="x" data-act="close">✕</button></div>
+    ${bodyHtml}</div></div>`;
+}
+
+/* ---- Form de tarefa (criar/editar) ---- */
+let formState=null;
+function openTaskForm(tid){
+  const t=tid?TASKS[tid]:null;
+  formState={
+    id:tid||null,
+    title:t?t.title:"",description:t?t.description:"",
+    sectorId:t?t.sectorId:(sectors()[0]?sectors()[0].id:""),
+    nature:t?(t.nature||"executar"):"executar",
+    startTime:t?(t.startTime||""):"",
+    responsibles:t?(t.responsibles||[]).slice():[],
+    recurrence:t?(t.recurrence||{type:"daily",interval:1}):{type:"daily",interval:1},
+    checklist:t?(t.checklist||[]).slice():[],
+    createdDate:t?t.createdDate:null,createdBy:t?t.createdBy:null
+  };
+  if(formState.recurrence.interval==null)formState.recurrence.interval=1; // tarefas antigas
+  renderTaskForm();
+}
+function renderTaskForm(){
+  const f=formState;
+  const secOpts=sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(f.sectorId)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const respEmps=employees().filter(e=>!f.responsibles.map(String).includes(String(e.id))&&!f.responsibles.map(String).includes(String(e._key)));
+  const addOpts=respEmps.map(e=>`<option value="${esc(e._key!=null?e._key:e.id)}">${esc(empName(e))}</option>`).join("");
+  const respHtml=f.responsibles.length?f.responsibles.map((id,i)=>`
+    <div class="resp-item">
+      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
+      <div class="ord">
+        <button class="miniicon" data-act="resp-up" data-i="${i}" ${i===0?"disabled":""}>▲</button>
+        <button class="miniicon" data-act="resp-down" data-i="${i}" ${i===f.responsibles.length-1?"disabled":""}>▼</button>
+      </div>
+      <button class="miniicon rm" data-act="resp-rm" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
+
+  const checklistHtml=f.checklist.length?f.checklist.map((item,i)=>`
+    <div class="resp-item">
+      <span class="rname">${esc(item.text)}</span>
+      <button class="miniicon rm" data-act="check-rm" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
+
+  const rtype=f.recurrence.type||"daily";
+  const interval=f.recurrence.interval||1;
+  const isWeekly=rtype==="weekly",isMonthly=rtype==="monthly",isDaily=!isWeekly&&!isMonthly;
+  const wkOpts=WEEKDAYS.map((d,i)=>`<option value="${i}" ${isWeekly&&Number(f.recurrence.weekday)===i?"selected":""}>${d}</option>`).join("");
+  const refDay=f.recurrence.day||(parseKey(f.createdDate||todayKey()).getDate());
+  const unitLabel=isWeekly?"semana(s)":isMonthly?"mês(es)":"dia(s)";
+
+  const natureHelp={executar:"Tem início e fim claros no dia (ex.: limpar, repor estoque).",
+    demanda:"Só acontece quando a situação surge (ex.: mediar um conflito).",
+    continua:"Uma atenção constante durante o turno (ex.: garantir bom acolhimento)."};
+  openSheet(f.id?"Editar tarefa":"Nova tarefa",`
+    <div class="field"><label>Título</label><input id="fTitle" value="${esc(f.title)}" placeholder="Ex.: Limpeza da piscina"></div>
+    <div class="field"><label>Descrição</label><textarea id="fDesc" placeholder="Detalhes da tarefa (opcional)">${esc(f.description)}</textarea></div>
+    <div class="field"><label>Natureza da tarefa</label>
+      <div class="seg" data-seg="nature">
+        <button type="button" data-v="executar" class="${f.nature==="executar"?"on":""}">A executar</button>
+        <button type="button" data-v="demanda" class="${f.nature==="demanda"?"on":""}">Sob demanda</button>
+        <button type="button" data-v="continua" class="${f.nature==="continua"?"on":""}">Preocupação contínua</button>
+      </div>
+      <p class="note" id="fNatureHelp">${natureHelp[f.nature]}</p>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Setor</label><select id="fSector">${secOpts}</select></div>
+      <div class="field"><label>Horário de início (opcional)</label><input id="fTime" type="time" value="${esc(f.startTime||"")}"></div>
+    </div>
+    <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
+      <div class="resp-list">${respHtml}</div>
+      <div class="add-resp">
+        <select id="fAddResp"><option value="">＋ Adicionar responsável…</option>${addOpts}</select>
+        <button class="btn sm" data-act="resp-add">Adicionar</button>
+      </div>
+      <p class="note">A tarefa do dia vai para o R1; se ele estiver ausente ou fora do horário do turno, cai para o próximo R elegível.</p>
+    </div>
+    <div class="field"><label>Checklist (opcional)</label>
+      <div class="resp-list">${checklistHtml}</div>
+      <div class="add-resp">
+        <input id="fAddCheck" placeholder="Ex.: Testar som do ambiente" style="flex:1">
+        <button class="btn sm" data-act="check-add">Adicionar</button>
+      </div>
+      <p class="note">${f.checklist.length?"Todos os itens precisam estar marcados para a tarefa poder ser concluída.":"Sem itens, a tarefa pode ser concluída livremente."}</p>
+    </div>
+    <div class="field"><label>Repetir</label>
+      <div class="seg" data-seg="recurrence">
+        <button type="button" data-v="daily" class="${isDaily?"on":""}">Diária</button>
+        <button type="button" data-v="weekly" class="${isWeekly?"on":""}">Semanal</button>
+        <button type="button" data-v="monthly" class="${isMonthly?"on":""}">Mensal</button>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>A cada</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="fInterval" type="number" min="1" max="365" value="${interval}" style="width:74px;flex:0 0 auto">
+          <span class="note" style="margin:0">${unitLabel}</span>
+        </div>
+      </div>
+      <div class="field ${isWeekly?"":"hidden"}" id="fWeekdayWrap"><label>Dia da semana</label><select id="fWeekday">${wkOpts}</select></div>
+      <div class="field ${isMonthly?"":"hidden"}" id="fMonthDayWrap"><label>Dia do mês</label><input id="fMonthDay" type="number" min="1" max="31" value="${refDay}"></div>
+    </div>
+    <p class="note" id="fRecurPreview" style="margin-top:-4px">${recurrenceLabel(f.recurrence)}</p>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn primary" data-act="save-task">${f.id?"Salvar alterações":"Criar tarefa"}</button>
+    </div>
+  `);
+}
+function recurrenceLabel(rec){
+  const n=Math.max(1,Number(rec.interval)||1);
+  if(rec.type==="weekly"){
+    const dia=WEEKDAYS[Number(rec.weekday)||0];
+    return n===1?`Toda(o) ${dia}.`:`A cada ${n} semanas, ${dia}.`;
+  }
+  if(rec.type==="monthly"){
+    const d=rec.day||1;
+    return n===1?`Todo dia ${d} do mês.`:`A cada ${n} meses, no dia ${d}.`;
+  }
+  return n===1?"Todos os dias.":`A cada ${n} dias.`;
+}
+function syncFormInputs(){
+  const f=formState;if(!f)return;
+  const t=$("#fTitle"),d=$("#fDesc"),s=$("#fSector"),tm=$("#fTime");
+  if(t)f.title=t.value;if(d)f.description=d.value;if(s)f.sectorId=s.value;if(tm)f.startTime=tm.value;
+  const iv=$("#fInterval");if(iv)f.recurrence.interval=Math.max(1,parseInt(iv.value,10)||1);
+  const wd=$("#fWeekday");if(wd&&f.recurrence.type==="weekly")f.recurrence.weekday=Number(wd.value);
+  const md=$("#fMonthDay");if(md&&f.recurrence.type==="monthly")f.recurrence.day=Math.min(31,Math.max(1,parseInt(md.value,10)||1));
+}
+
+/* ---- Form de O.S. (criar/editar) ---- */
+let osFormState=null;
+function openOSForm(id){
+  const o=id?SERVICE_ORDERS[id]:null;
+  osFormState={
+    id:id||null,
+    title:o?o.title:"",description:o?(o.description||""):"",
+    sectorId:o?o.sectorId:(sectors()[0]?sectors()[0].id:""),
+    requester:o?(o.requester||""):"",
+    priority:o?(o.priority||"normal"):"normal",
+    deadline:o?(o.deadline||""):"",
+    responsibles:o?(o.responsibles||[]).slice():[],
+    checklist:o?(o.checklist||[]).slice():[]
+  };
+  renderOSForm();
+}
+function renderOSForm(){
+  const f=osFormState;
+  const secOpts=sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(f.sectorId)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
+  const respEmps=employees().filter(e=>!f.responsibles.map(String).includes(String(e.id))&&!f.responsibles.map(String).includes(String(e._key)));
+  const addOpts=respEmps.map(e=>`<option value="${esc(e._key!=null?e._key:e.id)}">${esc(empName(e))}</option>`).join("");
+  const respHtml=f.responsibles.length?f.responsibles.map((id,i)=>`
+    <div class="resp-item">
+      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
+      <div class="ord">
+        <button class="miniicon" data-act="os-resp-up" data-i="${i}" ${i===0?"disabled":""}>▲</button>
+        <button class="miniicon" data-act="os-resp-down" data-i="${i}" ${i===f.responsibles.length-1?"disabled":""}>▼</button>
+      </div>
+      <button class="miniicon rm" data-act="os-resp-rm" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
+  const checklistHtml=f.checklist.length?f.checklist.map((item,i)=>`
+    <div class="resp-item">
+      <span class="rname">${esc(item.text)}</span>
+      <button class="miniicon rm" data-act="os-check-rm" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Sem itens. Adicione abaixo para criar um checklist obrigatório.</p>`;
+  openSheet(f.id?"Editar O.S.":"Nova ordem de serviço",`
+    <div class="field"><label>Título</label><input id="osTitle" value="${esc(f.title)}" placeholder="Ex.: Reparar vazamento no chuveiro do quarto 204"></div>
+    <div class="field"><label>Descrição</label><textarea id="osDesc" placeholder="Detalhes (opcional)">${esc(f.description)}</textarea></div>
+    <div class="field"><label>Solicitante</label><input id="osRequester" value="${esc(f.requester)}" placeholder="Ex.: Hóspede 204, Governança, Recepção"></div>
+    <div class="field"><label>Prioridade</label>
+      <div class="seg" data-seg="os-priority">
+        ${Object.entries(OS_PRIORITIES).map(([v,l])=>`<button type="button" data-v="${v}" class="${f.priority===v?"on":""}">${l}</button>`).join("")}
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Setor</label><select id="osSector">${secOpts}</select></div>
+      <div class="field"><label>Prazo (opcional)</label><input id="osDeadline" type="date" value="${esc(f.deadline||"")}"></div>
+    </div>
+    <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
+      <div class="resp-list">${respHtml}</div>
+      <div class="add-resp">
+        <select id="osAddResp"><option value="">＋ Adicionar responsável…</option>${addOpts}</select>
+        <button class="btn sm" data-act="os-resp-add">Adicionar</button>
+      </div>
+      <p class="note">Enquanto a O.S. não é iniciada, recalcula todo dia quem está elegível, começando pelo R1. Ao apertar Iniciar, trava com quem iniciou.</p>
+    </div>
+    <div class="field"><label>Checklist (opcional)</label>
+      <div class="resp-list">${checklistHtml}</div>
+      <div class="add-resp">
+        <input id="osAddCheck" placeholder="Ex.: Testar registro após o reparo" style="flex:1">
+        <button class="btn sm" data-act="os-check-add">Adicionar</button>
+      </div>
+      <p class="note">${f.checklist.length?"Todos os itens precisam estar marcados para poder concluir.":"Sem itens, pode ser concluída livremente."}</p>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn primary" data-act="save-os">${f.id?"Salvar alterações":"Abrir O.S."}</button>
+    </div>
+  `);
+}
+function syncOSFormInputs(){
+  const f=osFormState;if(!f)return;
+  const t=$("#osTitle"),d=$("#osDesc"),s=$("#osSector"),r=$("#osRequester"),dl=$("#osDeadline");
+  if(t)f.title=t.value;if(d)f.description=d.value;if(s)f.sectorId=s.value;if(r)f.requester=r.value;if(dl)f.deadline=dl.value;
+}
+
+/* ---- Detalhes da O.S. (clique no card) — info, checklist, fila, conversa e ações ---- */
+function openOSDetail(osid){
+  const os=SERVICE_ORDERS[osid];if(!os)return;
+  openOSId=osid;
+  const today=todayKey();
+  const isLate=!!os.deadline&&os.status!=="concluida"&&os.status!=="cancelada"&&os.deadline<today;
+  const resp=(os.responsibles||[]).map((id,i)=>{
+    const myIds=[state.emp&&state.emp._key,state.emp&&state.emp.id].map(String);
+    const isMe=myIds.includes(String(id));
+    return `<span class="chip r" style="${isMe?'box-shadow:0 0 0 1.5px var(--primary) inset':''}">R${i+1} ${esc(empName(employeeById(id)))}${isMe?" (você)":""}</span>`;
+  }).join(" ")||"—";
+  const checklistOk=osChecklistComplete(os);
+  const checklistHtml=(os.checklist&&os.checklist.length)?`
+    <div class="section-title" style="margin-top:14px">Checklist ${checklistOk?"✓":`(${os.checklist.filter(it=>(os.checklistState&&os.checklistState[it.id])===true).length}/${os.checklist.length})`}</div>
+    <div class="resp-list">${os.checklist.map(it=>{
+      const checked=(os.checklistState&&os.checklistState[it.id])===true;
+      return `<button type="button" class="opt ${checked?"sel":""}" data-act="toggle-os-check" data-osid="${osid}" data-item="${esc(it.id)}" style="text-align:left">
+        <span class="opt-check" style="order:-1">${checked?"☑":"☐"}</span>
+        <span class="opt-main"><span class="opt-name" style="${checked?'text-decoration:line-through;color:var(--muted)':''}">${esc(it.text)}</span></span>
+      </button>`;
+    }).join("")}</div>
+    ${!checklistOk?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
+  `:"";
+  const bubbles=(os.messages||[]).map(m=>{
+    const isMe=String(m.by)===String(state.user.username);
+    const who=m.by==="gestor"||/gestor/i.test(m.by)?"Gestor":(empName(employeeByCpf(m.by))||"Colaborador");
+    return `<div class="bubble ${isMe?"me":"other"}"><span class="bwho">${esc(isMe?"Você":who)}</span>${esc(m.text)}
+      <span class="bwhen">${new Date(m.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>`;
+  }).join("");
+  const canAct=canActOS(os);
+  const canChat=canChatOS(os);
+  let actionBtns="";
+  if(os.status==="aberta"&&canAct)actionBtns+=`<button class="btn primary" data-act="start-os" data-osid="${osid}">Iniciar</button>`;
+  if(os.status==="em_andamento"&&canAct)actionBtns+=`<button class="btn ok" data-act="open-os-complete" data-osid="${osid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+  if(state.admin&&(os.status==="aberta"||os.status==="em_andamento")){
+    actionBtns+=`<button class="btn ghost" data-act="edit-os" data-osid="${osid}">Editar</button>`;
+    actionBtns+=`<button class="btn danger" data-act="open-os-cancel" data-osid="${osid}">Cancelar</button>`;
+  }
+  const footer=canChat?`<div class="field"><textarea id="osReply" placeholder="Escrever uma mensagem…" style="min-height:54px"></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Fechar</button>
+      ${actionBtns}
+      <button class="btn primary" data-act="send-os-reply" data-osid="${osid}">Enviar</button>
+    </div>`:`<div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Fechar</button>
+      ${actionBtns}
+    </div>`;
+  openSheet(os.title,`
+    <div class="meta" style="margin-bottom:4px">
+      <span class="chip sector">${esc(sectorName(os.sectorId))}</span>
+      ${osPriorityChip(os.priority)}
+      ${os.deadline?`<span class="chip${isLate?" late":""}">📅 ${fmtDate(os.deadline)}</span>`:""}
+      ${osStatusBadge(os.status)}
+    </div>
+    ${os.requester?`<p class="note" style="margin:6px 2px">Solicitante: <b>${esc(os.requester)}</b></p>`:""}
+    ${os.description?`<p class="desc" style="margin:10px 2px">${esc(os.description)}</p>`:'<p class="note" style="margin:10px 2px">Sem descrição.</p>'}
+    ${os.completionNote?`<div class="diag" style="margin:10px 0 4px"><b style="font-size:13px">Observação de conclusão</b><p class="note" style="margin-top:4px">${esc(os.completionNote)}</p></div>`:""}
+    ${os.cancelReason?`<div class="diag" style="margin:10px 0 4px"><b style="font-size:13px">Motivo do cancelamento</b><p class="note" style="margin-top:4px">${esc(os.cancelReason)}</p></div>`:""}
+    ${checklistHtml}
+    <div class="section-title" style="margin-top:14px">Fila de responsáveis</div>
+    <div class="meta">${resp}</div>
+    <div class="section-title">Conversa</div>
+    <div class="chat">${bubbles||'<p class="note">Nenhuma mensagem ainda.</p>'}</div>
+    ${footer}
+  `);
+}
+function openOSCompleteModal(osid){
+  const os=SERVICE_ORDERS[osid];if(!os)return;
+  openSheet("Concluir O.S.",`
+    <p class="note" style="margin-bottom:12px"><b>${esc(os.title)}</b> — quer deixar uma nota de encerramento? (opcional)</p>
+    <div class="field"><textarea id="osCompleteNote" placeholder="Ex.: troquei a vedação, testado e funcionando."></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn ok" data-act="confirm-os-complete" data-osid="${osid}">Concluir</button>
+    </div>
+  `);
+}
+function openOSCancelModal(osid){
+  const os=SERVICE_ORDERS[osid];if(!os||!state.admin)return;
+  openSheet("Cancelar O.S.",`
+    <p class="note" style="margin-bottom:12px"><b>${esc(os.title)}</b> — por que está sendo cancelada?</p>
+    <div class="field"><textarea id="osCancelReason" placeholder="Ex.: duplicada, resolvida por outro meio…"></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Voltar</button>
+      <button class="btn danger" data-act="confirm-os-cancel" data-osid="${osid}">Cancelar O.S.</button>
+    </div>
+  `);
+}
+
+/* ---- Detalhes da tarefa (clique no card) ---- */
+function openTaskDetail(iid){
+  const ins=INSTANCES[iid];if(!ins)return;
+  const task=TASKS[ins.taskId];if(!task)return;
+  const resp=(task.responsibles||[]).map((id,i)=>{
+    const myIds=[state.emp&&state.emp._key,state.emp&&state.emp.id].map(String);
+    const isMe=myIds.includes(String(id));
+    return `<span class="chip r" style="${isMe?'box-shadow:0 0 0 1.5px var(--primary) inset':''}">R${i+1} ${esc(empName(employeeById(id)))}${isMe?" (você)":""}</span>`;
+  }).join(" ");
+  const hist=Array.isArray(ins.history)?ins.history.slice().reverse():[];
+  const histHtml=hist.length?hist.map(h=>{
+    const labels={iniciada:"Iniciada",concluida:"Concluída",nao_realizada:"Não realizada",reaberta:"Reaberta",transferida:"Transferida",adiada:"Adiada","recebida-adiamento":"Recebida (adiamento)"};
+    const who=h.by==="sistema"?"Sistema":(empName(employeeById(h.by))!=="—"?empName(employeeById(h.by)):(h.by||"—"));
+    let extra="";
+    if(h.type==="transferida")extra=` → ${esc(empName(employeeById(h.to)))}`;
+    if(h.type==="adiada")extra=` → ${esc(fmtDate(h.to))}`;
+    if(h.note)extra+=`<br><span class="note" style="margin:2px 0 0">"${esc(h.note)}"</span>`;
+    return `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${labels[h.type]||h.type}</b>${extra} — ${esc(who)} · ${new Date(h.at).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>`;
+  }).join(""):'<p class="note">Sem movimentações ainda.</p>';
+
+  const isTerminal=ins.status==="concluida"||ins.status==="nao_realizada";
+  const checklistOk=checklistComplete(task,ins);
+  const checklistHtml=(task.checklist&&task.checklist.length)?`
+    <div class="section-title" style="margin-top:14px">Checklist ${checklistOk?"✓":`(${task.checklist.filter(it=>(ins.checklistState&&ins.checklistState[it.id])===true).length}/${task.checklist.length})`}</div>
+    <div class="resp-list">${task.checklist.map(it=>{
+      const checked=(ins.checklistState&&ins.checklistState[it.id])===true;
+      return `<button type="button" class="opt ${checked?"sel":""}" data-act="toggle-check" data-iid="${iid}" data-item="${esc(it.id)}" style="text-align:left">
+        <span class="opt-check" style="order:-1">${checked?"☑":"☐"}</span>
+        <span class="opt-main"><span class="opt-name" style="${checked?'text-decoration:line-through;color:var(--muted)':''}">${esc(it.text)}</span></span>
+      </button>`;
+    }).join("")}</div>
+    ${!checklistOk?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
+  `:"";
+  const actionBtns=isTerminal
+    ?`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`
+    :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+  openSheet(task.title,`
+    <div class="meta" style="margin-bottom:4px">
+      <span class="chip sector">${esc(sectorName(task.sectorId))}</span>
+      <span class="chip">${recurrenceLabel(task.recurrence||{type:"daily",interval:1})}</span>
+      ${task.startTime?`<span class="chip time">🕐 ${esc(task.startTime)}</span>`:""}
+      ${statusBadge(ins.status)}
+    </div>
+    ${task.description?`<p class="desc" style="margin:10px 2px">${esc(task.description)}</p>`:'<p class="note" style="margin:10px 2px">Sem descrição.</p>'}
+    ${ins.completionNote?`<div class="diag" style="margin:10px 0 4px"><b style="font-size:13px">Observação</b><p class="note" style="margin-top:4px">${esc(ins.completionNote)}</p></div>`:""}
+    ${checklistHtml}
+    <div class="section-title" style="margin-top:14px">Fila de responsáveis</div>
+    <div class="meta">${resp}</div>
+    <div class="section-title">Movimentações desta ocorrência</div>
+    ${histHtml}
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Fechar</button>
+      ${actionBtns}
+    </div>
+  `);
+}
+
+/* ---- Concluir com observação opcional ---- */
+function openCompleteModal(iid){
+  const ins=INSTANCES[iid];if(!ins)return;
+  const task=TASKS[ins.taskId];if(!task)return;
+  openSheet("Concluir tarefa",`
+    <p class="note" style="margin-bottom:12px"><b>${esc(task.title)}</b> — quer deixar alguma observação? (opcional)</p>
+    <div class="field"><textarea id="completeNote" placeholder="Ex.: faltou material, deixei para o próximo turno…"></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn ok" data-act="confirm-complete" data-iid="${iid}">Concluir</button>
+    </div>
+  `);
+}
+function openNotDoneModal(iid){
+  const ins=INSTANCES[iid];if(!ins)return;
+  const task=TASKS[ins.taskId];if(!task)return;
+  openSheet("Marcar como não realizada",`
+    <p class="note" style="margin-bottom:12px"><b>${esc(task.title)}</b> — por que não foi possível realizar? (opcional, ajuda o gestor a entender)</p>
+    <div class="field"><textarea id="completeNote" placeholder="Ex.: não houve tempo, situação não ocorreu, faltou recurso…"></textarea></div>
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn danger" data-act="confirm-notdone" data-iid="${iid}">Marcar como não realizada</button>
+    </div>
+  `);
+}
+
+/* ---- Co-responsável: tarefas de hoje onde você não é o titular ---- */
+function openCorespModal(){
+  const {coresp}=myInstances();
+  const rows=coresp.map(c=>{
+    const nm=empName(employeeById(c.ins.assignedTo))||"—";
+    return `<div class="resp-task-row">
+      <div class="rlevelbig">R${c.rlevel}</div>
+      <div class="rmain"><span class="rtitle">${esc(c.task.title)}</span>
+        <div class="rmeta"><span class="chip sector">${esc(sectorName(c.task.sectorId))}</span>
+          ${statusBadge(c.ins.status)}<span class="chip">Responsável hoje: ${esc(nm)}</span></div>
+      </div></div>`;
+  }).join("");
+  openSheet("Você é co-responsável",`
+    <p class="note" style="margin-bottom:12px">Hoje, em ${coresp.length} tarefa(s), você está na fila mas não é o titular do dia.</p>
+    ${rows||'<p class="empty">Nenhuma agora.</p>'}
+    <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
+  `);
+}
+
+/* ---- Parceiro: tarefas relacionadas ---- */
+function openPartnerTasks(empId){
+  const all=myActiveTasksWithLevel();
+  const shared=all.filter(t=>(t.responsibles||[]).map(String).includes(String(empId)));
+  const nm=empName(employeeById(empId))||"—";
+  const myIds=[state.emp._key,state.emp.id].map(String);
+  const rows=shared.map(t=>{
+    const resp=t.responsibles||[];
+    const myIdx=resp.findIndex(id=>myIds.includes(String(id)));
+    const hisIdx=resp.findIndex(id=>String(id)===String(empId));
+    return `<div class="resp-task-row">
+      <div class="rlevelbig">R${myIdx+1}</div>
+      <div class="rmain"><span class="rtitle">${esc(t.title)}</span>
+        <div class="rmeta"><span class="chip sector">${esc(sectorName(t.sectorId))}</span>
+          <span class="chip r">Você: R${myIdx+1}</span><span class="chip r">${esc(nm)}: R${hisIdx+1}</span></div>
+      </div></div>`;
+  }).join("");
+  openSheet(`Tarefas com ${nm}`,`
+    <p class="note" style="margin-bottom:12px">${shared.length} tarefa(s) em que você e <b>${esc(nm)}</b> estão na mesma fila.</p>
+    ${rows||'<p class="empty">Nenhuma tarefa em comum.</p>'}
+    <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
+  `);
+}
+
+/* ---- Relatório do dia: movimentações de hoje, agrupadas por colaborador ---- */
+function openDailyReport(){
+  const today=todayKey();
+  const startOfDay=parseKey(today).getTime();
+  const endOfDay=startOfDay+86400000;
+  const byEmp={}; // username -> [{time,label,taskTitle,extra}]
+  const moveLabels={iniciada:"Iniciou",concluida:"Concluiu",nao_realizada:"Marcou não realizada",reaberta:"Reabriu",transferida:"Transferiu",adiada:"Adiou",
+    "recebida-adiamento":"Recebeu (adiamento)"};
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||!Array.isArray(ins.history))continue;
+    const task=TASKS[ins.taskId];const title=task?task.title:"(tarefa removida)";
+    for(const h of ins.history){
+      if(!h.at||h.at<startOfDay||h.at>=endOfDay)continue;
+      const who=h.by||"—";
+      let extra="";
+      if(h.type==="transferida")extra=` → ${empName(employeeById(h.to))||h.to}`;
+      if(h.type==="adiada")extra=` → ${fmtDate(h.to)}`;
+      if(h.note)extra+=` ("${h.note}")`;
+      (byEmp[who]=byEmp[who]||[]).push({time:h.at,label:moveLabels[h.type]||h.type,title,extra});
+    }
+  }
+  const emps=Object.keys(byEmp).sort((a,b)=>byEmp[b].length-byEmp[a].length);
+  let body=`<p class="note" style="margin-bottom:14px">Movimentações de hoje (${fmtDate(today)}), por colaborador. Login usado no app (CPF) identifica quem fez a ação.</p>`;
+  if(!emps.length){
+    body+=`<div class="empty"><b>Nenhuma movimentação registrada hoje ainda.</b></div>`;
+  }else{
+    for(const who of emps){
+      const moves=byEmp[who].sort((a,b)=>a.time-b.time);
+      const emp=employees().find(e=>{const c=onlyDigits(pick(e,SCHEMA.cpfFields));return c&&cpf11(c)===cpf11(who)});
+      const label=emp?empName(emp):(who==="gestor"?"Gestor":who);
+      body+=`<div class="diag" style="margin-bottom:10px"><h4>${esc(label)} <span class="count-pill">${moves.length}</span></h4>`;
+      body+=moves.map(m=>`<div class="small" style="padding:5px 0;border-bottom:1px solid var(--line)">
+        <b>${esc(m.label)}</b> — ${esc(m.title)}${esc(m.extra)}
+        <span style="color:var(--muted-2)"> · ${new Date(m.time).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>
+      </div>`).join("");
+      body+=`</div>`;
+    }
+  }
+
+  // tarefas "a executar" atualmente atrasadas (dias acumulados), por colaborador responsável
+  const lateByEmp={};const lateUnassigned=[];
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||ins.date>=today)continue;
+    if(ins.status!=="pendente"&&ins.status!=="em_andamento")continue;
+    const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
+    const who=ins.assignedTo;
+    const days=daysBetween(ins.date,today);
+    if(!who){lateUnassigned.push({title:task.title,days,date:ins.date});continue}
+    const nm=empName(employeeById(who))||"—";
+    (lateByEmp[nm]=lateByEmp[nm]||[]).push({title:task.title,days});
+  }
+  const lateEmps=Object.keys(lateByEmp).sort((a,b)=>Math.max(...lateByEmp[b].map(x=>x.days))-Math.max(...lateByEmp[a].map(x=>x.days)));
+  if(lateEmps.length){
+    body+=`<div class="section-title">Tarefas em atraso (acumulado)</div>`;
+    for(const nm of lateEmps){
+      const items=lateByEmp[nm].sort((a,b)=>b.days-a.days);
+      body+=`<div class="diag" style="margin-bottom:10px"><h4>${esc(nm)}</h4>`;
+      body+=items.map(it=>`<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(it.title)} <span class="chip late" style="margin-left:4px">${it.days} dia(s)</span></div>`).join("");
+      body+=`</div>`;
+    }
+  }
+  if(lateUnassigned.length){
+    body+=`<div class="section-title">Sem responsável elegível (não chegaram a ninguém)</div>
+      <p class="note" style="margin:-2px 2px 10px">Nenhum colaborador da fila estava presente/elegível nesses dias — ninguém recebeu a tarefa.</p>`;
+    body+=`<div class="diag">`;
+    body+=lateUnassigned.sort((a,b)=>b.days-a.days).map(it=>`<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(it.title)} · ${esc(fmtDate(it.date))} <span class="chip late" style="margin-left:4px">${it.days} dia(s)</span></div>`).join("");
+    body+=`</div>`;
+  }
+
+  openSheet("Relatório do dia",body+`<div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>`);
+}
+
+/* ---- Transferir ---- */
+let transferState=null;
+function openTransfer(iid){
+  const ins=INSTANCES[iid];if(!ins)return;
+  transferState={iid,taskId:ins.taskId,sel:null,date:addDays(todayKey(),1)};
+  renderTransfer();
+}
+function renderTransfer(){
+  const ts=transferState;const ins=INSTANCES[ts.iid];const task=TASKS[ts.taskId];const today=todayKey();
+  const others=(task.responsibles||[]).filter(id=>String(id)!==String(ins.assignedTo));
+  const rows=others.map(id=>{
+    const emp=employeeById(id);if(!emp)return"";
+    const e=eligibility(emp,today,task.startTime);
+    const idx=(task.responsibles||[]).findIndex(x=>String(x)===String(id));
+    const sel=ts.sel&&ts.sel.type==="r"&&String(ts.sel.empId)===String(id);
+    return `<button type="button" class="opt ${sel?"sel":""} ${e.ok?"":"disabled"}" ${e.ok?`data-act="sel-r" data-to="${esc(id)}"`:""}>
+      <span class="rlevel">R${idx+1}</span>
+      <span class="opt-main"><span class="opt-name">${esc(empName(emp))}</span>
+        <small style="color:${e.ok?'var(--ok)':'var(--accent)'}">${e.ok?"elegível hoje":"indisponível ("+e.reason+")"}</small></span>
+      <span class="opt-check">${sel?"●":""}</span>
+    </button>`;
+  }).join("");
+  const daySel=ts.sel&&ts.sel.type==="day";
+  openSheet("Transferir tarefa",`
+    <p class="note" style="margin-bottom:14px"><b>${esc(task.title)}</b> — escolha para quem passar, ou adie para outro dia, e confirme.</p>
+    <div class="section-title" style="margin-top:0">Passar para outro responsável</div>
+    <div class="opt-list">${rows||'<p class="note">Esta tarefa não tem outros responsáveis cadastrados.</p>'}</div>
+    <div class="section-title">Ou adiar para outro dia</div>
+    <button type="button" class="opt ${daySel?"sel":""}" data-act="sel-day">
+      <span class="opt-main"><span class="opt-name">Adiar a tarefa</span>
+        <small style="color:var(--muted)">reagenda e recalcula a fila no novo dia</small></span>
+      <span class="opt-check">${daySel?"●":""}</span>
+    </button>
+    <input id="postDate" type="date" min="${addDays(today,1)}" value="${ts.date}" class="${daySel?"":"hidden"}"
+      style="width:100%;margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)">
+    <div class="sheet-actions">
+      <button class="btn ghost" data-act="close">Cancelar</button>
+      <button class="btn primary" data-act="confirm-transfer" ${ts.sel?"":"disabled"}>Confirmar</button>
+    </div>
+  `);
+}
+
+/* ===================================================================
+   12) EVENTOS
+   =================================================================== */
+$("#lgBtn").addEventListener("click",doLogin);
+$("#lgPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
+$("#lgUser").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
+$("#lgUser").addEventListener("input",e=>{
+  const v=e.target.value;
+  if(/[a-zA-Z]/.test(v)){ // pode ser a palavra "gestor"
+    $("#pinField").classList.toggle("hidden",!(GESTOR_PIN&&norm(v.trim())===norm(GESTOR_KEYWORD)));
+    return;
+  }
+  $("#pinField").classList.add("hidden");
+  const d=onlyDigits(v).slice(0,11);let out=d;
+  if(d.length>9)out=d.slice(0,3)+"."+d.slice(3,6)+"."+d.slice(6,9)+"-"+d.slice(9);
+  else if(d.length>6)out=d.slice(0,3)+"."+d.slice(3,6)+"."+d.slice(6);
+  else if(d.length>3)out=d.slice(0,3)+"."+d.slice(3);
+  e.target.value=out;
+});
+$("#logoutBtn").addEventListener("click",logout);
+$("#tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;state.view=t.dataset.view;setActiveTab();render()});
+document.addEventListener("input",e=>{
+  if(!formState)return;
+  if(["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
+    syncFormInputs();
+    const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
+  }
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&e.target.id==="fAddCheck"){
+    e.preventDefault();
+    syncFormInputs();
+    const text=e.target.value.trim();
+    if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm()}
+  }
+  if(e.key==="Enter"&&e.target.id==="osAddCheck"){
+    e.preventDefault();
+    syncOSFormInputs();
+    const text=e.target.value.trim();
+    if(text){osFormState.checklist.push({id:genId("chk"),text});renderOSForm()}
+  }
+});
+
+document.addEventListener("click",e=>{
+  // fecha modal ao tocar fora
+  if(e.target.closest("[data-overlay]")&&!e.target.closest(".sheet")){closeModal();return}
+  // botões segmentados (natureza / recorrência) — não têm data-act
+  const seg=e.target.closest(".seg button");
+  if(seg&&formState){
+    const field=seg.closest("[data-seg]").dataset.seg, v=seg.dataset.v;
+    syncFormInputs();
+    if(field==="nature")formState.nature=v;
+    if(field==="recurrence"){
+      const keepInterval=formState.recurrence.interval||1;
+      const rec={type:v,interval:keepInterval};
+      if(v==="weekly")rec.weekday=formState.recurrence.weekday??1;
+      if(v==="monthly")rec.day=formState.recurrence.day||parseKey(formState.createdDate||todayKey()).getDate();
+      formState.recurrence=rec;
+    }
+    renderTaskForm();return;
+  }
+  if(seg&&osFormState){
+    const field=seg.closest("[data-seg]").dataset.seg, v=seg.dataset.v;
+    syncOSFormInputs();
+    if(field==="os-priority")osFormState.priority=v;
+    renderOSForm();return;
+  }
+  const a=e.target.closest("[data-act]");
+  if(!a)return;
+  const act=a.dataset.act,iid=a.dataset.iid,tid=a.dataset.tid,osid=a.dataset.osid;
+  switch(act){
+    case"close":closeModal();break;
+    case"new-task":openTaskForm(null);break;
+    case"new-os":openOSForm(null);break;
+    case"edit-os":closeModal();openOSForm(osid);break;
+    case"clear-os-filters":state.osFilter={status:"",priority:"",sector:""};render();break;
+    case"open-os-detail":openOSDetail(osid);break;
+    case"start-os":startOS(osid);break;
+    case"open-os-complete":openOSCompleteModal(osid);break;
+    case"confirm-os-complete":{const note=$("#osCompleteNote")?$("#osCompleteNote").value:"";completeOS(osid,note);break}
+    case"open-os-cancel":openOSCancelModal(osid);break;
+    case"confirm-os-cancel":{const reason=$("#osCancelReason")?$("#osCancelReason").value:"";cancelOS(osid,reason);break}
+    case"toggle-os-check":toggleOSCheck(osid,a.dataset.item);break;
+    case"send-os-reply":{const txt=$("#osReply")?$("#osReply").value:"";addOSMessage(osid,txt);break}
+    case"os-resp-add":{const sel=$("#osAddResp");if(sel&&sel.value){syncOSFormInputs();osFormState.responsibles.push(sel.value);renderOSForm()}break}
+    case"os-resp-rm":{syncOSFormInputs();osFormState.responsibles.splice(+a.dataset.i,1);renderOSForm();break}
+    case"os-resp-up":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderOSForm();break}
+    case"os-resp-down":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderOSForm();break}
+    case"os-check-add":{
+      syncOSFormInputs();
+      const inp=$("#osAddCheck");const text=inp?inp.value.trim():"";
+      if(text){osFormState.checklist.push({id:genId("chk"),text});renderOSForm()}
+      break;
+    }
+    case"os-check-rm":{syncOSFormInputs();osFormState.checklist.splice(+a.dataset.i,1);renderOSForm();break}
+    case"save-os":{
+      syncOSFormInputs();const f=osFormState;
+      if(!f.title.trim()){toast("Informe o título.");return}
+      if(!f.responsibles.length){toast("Adicione ao menos um responsável.");return}
+      saveOS(f,f.id);break;
+    }
+    case"edit-task":openTaskForm(tid);break;
+    case"del-task":deleteTask(tid);break;
+    case"recalc":recalcQueue();break;
+    case"clear-filters":state.adminFilter={sector:"",emp:"",status:"",nature:"",level:""};render();break;
+    case"clear-resp-filters":state.respFilter={sector:"",level:""};render();break;
+    case"clear-perf-filters":state.perfFilter={sector:"",emp:"",weeks:state.perfFilter.weeks};render();break;
+    case"set-perf-weeks":state.perfFilter.weeks=Number(a.dataset.n);render();break;
+    case"reset-scores":resetWeeklyScores();break;
+    case"fix-responsibles":fixResponsibles();break;
+    case"open-perf-detail":openPerfDetail(a.dataset.id);break;
+    case"start":startTask(iid);break;
+    case"open-complete":openCompleteModal(iid);break;
+    case"confirm-complete":{const note=$("#completeNote")?$("#completeNote").value:"";completeTask(iid,note);closeModal();break}
+    case"open-notdone":openNotDoneModal(iid);break;
+    case"confirm-notdone":{const note=$("#completeNote")?$("#completeNote").value:"";markNotDone(iid,note);closeModal();break}
+    case"reopen":reopenTask(iid);closeModal();break;
+    case"open-detail":openTaskDetail(iid);break;
+    case"toggle-check":{
+      const itemId=a.dataset.item;
+      const ins=INSTANCES[iid];if(!ins||!canAct(ins))break;
+      ins.checklistState=ins.checklistState||{};
+      const newVal=!(ins.checklistState[itemId]===true);
+      ins.checklistState[itemId]=newVal; // otimista, antes do round-trip do Firebase
+      dbRef(`${PATH.tarefas}/instances/${iid}/checklistState/${itemId}`).set(newVal);
+      openTaskDetail(iid); // re-renderiza o modal já refletindo o novo estado
+      break;
+    }
+    case"show-partner":openPartnerTasks(a.dataset.emp);break;
+    case"show-coresp":openCorespModal();break;
+    case"open-report":openDailyReport();break;
+    case"goto-tickets":state.view="tickets";setActiveTab();render();break;
+    case"open-new-ticket":openNewTicketModal(a.dataset.tid);break;
+    case"confirm-new-ticket":{const txt=$("#ticketText")?$("#ticketText").value:"";openTicket(a.dataset.tid,txt);break}
+    case"open-ticket":openTicketConversation(a.dataset.id);break;
+    case"send-ticket-reply":{const txt=$("#ticketReply")?$("#ticketReply").value:"";addTicketMessage(a.dataset.id,txt);break}
+    case"close-ticket":closeTicket(a.dataset.id);break;
+    case"edit-task-from-ticket":closeModal();openTaskForm(a.dataset.tid);break;
+    case"transfer":openTransfer(iid);break;
+    case"sel-r":transferState.sel={type:"r",empId:a.dataset.to};renderTransfer();break;
+    case"sel-day":transferState.sel={type:"day"};renderTransfer();setTimeout(()=>{const el=$("#postDate");if(el)el.focus()},0);break;
+    case"confirm-transfer":{
+      const ts=transferState;if(!ts||!ts.sel)break;
+      if(ts.sel.type==="r")transferToR(ts.iid,ts.sel.empId);
+      else{const d=($("#postDate")&&$("#postDate").value)||ts.date;postpone(ts.iid,d)}
+      break;
+    }
+    // form
+    case"resp-add":{const sel=$("#fAddResp");if(sel&&sel.value){syncFormInputs();formState.responsibles.push(sel.value);renderTaskForm()}break}
+    case"resp-rm":{syncFormInputs();formState.responsibles.splice(+a.dataset.i,1);renderTaskForm();break}
+    case"resp-up":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderTaskForm();break}
+    case"resp-down":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderTaskForm();break}
+    case"check-add":{
+      syncFormInputs();
+      const inp=$("#fAddCheck");const text=inp?inp.value.trim():"";
+      if(text){formState.checklist.push({id:genId("chk"),text});renderTaskForm()}
+      break;
+    }
+    case"check-rm":{syncFormInputs();formState.checklist.splice(+a.dataset.i,1);renderTaskForm();break}
+    case"save-task":{
+      syncFormInputs();const f=formState;
+      if(!f.title.trim()){toast("Informe o título.");return}
+      if(!f.responsibles.length){toast("Adicione ao menos um responsável.");return}
+      saveTask(f,f.id);break;
+    }
+  }
+});
+
+/* selects de filtro do gestor */
+document.addEventListener("change",e=>{
+  const f=e.target.closest("[data-filter]");
+  if(f){state.adminFilter[f.dataset.filter]=f.value;render();return}
+  const f2=e.target.closest("[data-filter2]");
+  if(f2){state.respFilter[f2.dataset.filter2]=f2.value;render();return}
+  const f3=e.target.closest("[data-filter3]");
+  if(f3){state.perfFilter[f3.dataset.filter3]=f3.value;render();return}
+  const fos=e.target.closest("[data-filter-os]");
+  if(fos){state.osFilter[fos.dataset.filterOs]=fos.value;render();return}
+  if(e.target.id==="postDate"&&transferState){transferState.date=e.target.value}
+  if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
+    syncFormInputs();
+    const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
+  }
+});
+
+/* ===================================================================
+   13) LISTENERS DE DADOS
+   =================================================================== */
+function afterData(){
+  if(state.ready){materialize();render();}
+}
+if(FB_OK){
+  dbRef(PATH.escala).on("value",s=>{
+    const novo=s.val()||{};
+    const novoN=toArray(novo.employees).length;
+    const anteriorN=ESCALA?toArray(ESCALA.employees).length:0;
+    // proteção contra snapshot parcial: se chegou com menos da metade dos funcionários que já tínhamos,
+    // é muito provável que o app de escala estava no meio de uma escrita — ignora e aguarda o próximo evento
+    if(anteriorN>0&&(novoN===0||novoN<anteriorN/2)){
+      console.warn(`[escala] snapshot parcial ignorado: tinha ${anteriorN} colaboradores, chegou ${novoN} — aguardando próximo update`);
+      return;
+    }
+    ESCALA=novo;
+    const n=employees().length;
+    $("#lgStatus").textContent=n?("Pronto. "+n+" colaboradores na escala."):"Nenhum colaborador encontrado na escala.";
+    tryRestore();afterData();
+  },err=>{
+    $("#lgStatus").textContent="Erro ao ler a escala: "+err.code+". Verifique as regras do banco.";
+  });
+  dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};TICKETS=v.tickets||{};WEEKLY_SCORES=v.weeklyScores||{};SCORE_RESET_AT=v.scoreResetAt||null;SERVICE_ORDERS=v.serviceOrders||{};afterData()});
+
+  /* usuários: opcional agora (login é por CPF). Mantido só para o Diagnóstico. */
+  dbRef(PATH.users).once("value").then(s=>{USERS=s.val()||{}}).catch(()=>{USERS={}});
+
+  /* sessão de gestor pode ser restaurada sem esperar a escala */
+  tryRestore();
+}else{
+  $("#lgStatus").innerHTML="⚠️ Firebase não carregou — abra este arquivo no GitHub Pages (ou via servidor local) para conectar.";
+  const errBox=$("#loginError");
+  errBox.innerHTML="Sem conexão com o Firebase neste ambiente. O app funciona quando hospedado (GitHub Pages) ou servido por http local.";
+  errBox.classList.remove("hidden");
+}
+</script>
+</body>
+</html>
