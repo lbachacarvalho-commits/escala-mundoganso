@@ -1290,11 +1290,16 @@ function viewDiscussionsAdmin(){
 /* ===================================================================
    7c) ORDENS DE SERVIÇO (O.S.) — pontuais, sem recorrência, com prioridade e prazo opcional
    =================================================================== */
-/* colaborador do setor "Lideranças" (cadastro na escala) — libera abrir/ver O.S., igual ao gestor */
+/* colaborador do setor "Lideranças" (cadastro na escala) — libera abrir/ver O.S., igual ao gestor.
+   Aceita tanto o nome do setor escrito direto no campo quanto um ID que aponte pra um setor
+   chamado "Lideranças" na lista de setores (alguns cadastros guardam o ID, não o texto). */
 function isLideranca(emp){
   if(!emp)return false;
   const v=pick(emp,SCHEMA.employeeSectorFields);
-  return v!=null && norm(v)===norm(LIDERANCA_SETOR);
+  if(v==null)return false;
+  if(norm(v)===norm(LIDERANCA_SETOR))return true;
+  const resolved=sectorName(v);
+  return !!resolved && norm(resolved)===norm(LIDERANCA_SETOR);
 }
 function canOpenOS(){return state.admin||isLideranca(state.emp)}
 /* responsável elegível de hoje (primeiro da fila presente na escala), igual à lógica das tarefas mas sem horário fixo */
@@ -2378,6 +2383,20 @@ function viewDiag(){
     h+=`<tr><td>${esc(empName(e))}</td><td>${m||"—"}</td><td>${m?'<span class="tag-ok">pode entrar</span>':'<span class="tag-no">sem CPF</span>'}</td></tr>`;
   }
   h+=`</table><p class="note">${semCpf?`<b>${semCpf}</b> colaborador(es) sem CPF não conseguem entrar — cadastre o CPF no app de escalas. `:""}Se o CPF aparecer como “sem CPF” mas existir no cadastro, ajuste <b>cpfFields</b> no bloco SCHEMA.</p></div>`;
+  // diagnóstico de quem é reconhecido como "Lideranças" (libera abrir/ver O.S.)
+  h+=`<div class="diag"><h4>🔧 Quem consegue abrir O.S. (setor Lideranças)</h4>
+    <p class="note" style="margin-bottom:8px">Compara o valor de <code>${esc(SCHEMA.employeeSectorFields.join('/'))}</code> (nessa ordem) no cadastro de cada colaborador com "<b>${esc(LIDERANCA_SETOR)}</b>". Se alguém que deveria estar aqui não aparecer com "Lideranças ✓", o campo no cadastro está com nome ou valor diferente do esperado.</p>
+    <table class="diag-t"><tr><th>Colaborador</th><th>Campo encontrado</th><th>Valor bruto</th><th>Resolvido como setor</th><th>Reconhecido?</th></tr>
+    ${employees().map(e=>{
+      let foundField=null,foundVal=null;
+      for(const f of SCHEMA.employeeSectorFields){if(e[f]!=null&&e[f]!==""){foundField=f;foundVal=e[f];break}}
+      const ok=isLideranca(e);
+      const resolved=foundVal?sectorName(foundVal):null;
+      return `<tr><td>${esc(empName(e))}</td><td>${foundField?`<code>${esc(foundField)}</code>`:"—"}</td><td>${foundVal?esc(foundVal):"—"}</td><td>${resolved?esc(resolved):"—"}</td><td>${ok?'<span class="tag-ok">Lideranças ✓</span>':'<span class="tag-no">não</span>'}</td></tr>`;
+    }).join("")}
+    </table>
+    <p class="note" style="margin-top:8px">Se o valor bruto aparecer certo ("Lideranças") mas mesmo assim não for reconhecido, pode ter espaço extra ou acento diferente — me mande o valor exato daqui que eu ajusto a comparação. Se o campo nem aparecer (coluna "Campo encontrado" com "—"), o nome do campo no Firebase é outro — me diga o nome real que eu adiciono em <b>employeeSectorFields</b> no bloco SCHEMA.</p>
+  </div>`;
   // diagnóstico de IDs dos funcionários
   h+=`<div class="diag"><h4>⚠️ IDs dos colaboradores na escala</h4>
     <p class="note" style="margin-bottom:8px">O app salva responsáveis pelo <b>ID/chave</b> do funcionário na escala. Se o Firebase reorganizou os IDs (ex: após remover alguém), os responsáveis ficam apontando pra pessoa errada.</p>
