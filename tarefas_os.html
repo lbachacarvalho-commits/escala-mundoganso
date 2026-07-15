@@ -203,6 +203,22 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 .miniicon.rm{color:#b8311a}
 .add-resp{display:flex;gap:8px;margin-top:8px}
 .add-resp select{flex:1}
+.combo{position:relative}
+.combo-input-wrap{position:relative}
+.combo-input-wrap input{width:100%;padding:9px 11px 9px 30px;border:1px solid var(--line);border-radius:10px;
+  font-size:13.5px;font-family:inherit;background:#fff}
+.combo-input-wrap input:focus{outline:none;border-color:var(--primary)}
+.emp-picker-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.55;pointer-events:none}
+.combo-list{position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:60;background:#fff;
+  border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.14);
+  max-height:230px;overflow-y:auto;padding:6px}
+.combo-list.hidden{display:none}
+.combo-opt{display:block;width:100%;text-align:left;background:none;border:none;border-radius:8px;
+  padding:10px 11px;font-size:14px;font-weight:500;color:var(--ink);cursor:pointer;font-family:inherit}
+.combo-opt:hover{background:var(--surface-2)}
+.combo-opt.reset{color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);border-radius:0;margin-bottom:4px;padding-bottom:10px}
+.combo-empty{padding:10px 11px;font-size:13px;color:var(--muted)}
+.add-resp .combo,.filters .combo{flex:1;min-width:150px}
 .note{font-size:12px;color:var(--muted);margin-top:7px}
 
 /* admin task list */
@@ -228,6 +244,11 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 .kv span{color:var(--muted)} .kv b{color:var(--ink)}
 
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin:2px 2px 6px}
+.date-nav{display:flex;gap:6px;overflow-x:auto;margin:2px 2px 14px;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+.date-nav::-webkit-scrollbar{display:none}
+.date-chip{flex:0 0 auto;padding:8px 13px;border:1px solid var(--line);border-radius:20px;background:#fff;
+  font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;cursor:pointer}
+.date-chip.on{background:var(--primary);border-color:var(--primary);color:#fff}
 .filters select{flex:1;min-width:150px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;
   background:var(--surface);font-size:13px;color:var(--ink);box-shadow:var(--shadow)}
 .filters .btn{flex:0 0 auto}
@@ -337,7 +358,9 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
 .status.ticket-aberto{background:var(--accent-soft);color:#b24722}
 .status.ticket-fechado{background:var(--ok-soft);color:#1d7a4f}
 .status.ticket-inativo{background:var(--surface-2);color:var(--muted)}
-.badge-dot,.tab-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:5px;vertical-align:middle}
+.badge-dot,.tab-dot{display:inline-block;width:11px;height:11px;border-radius:50%;background:#e5342b;
+  margin-left:6px;vertical-align:middle;box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(229,52,43,.35)}
+.tab-dot{vertical-align:top;margin-left:4px}
 .chat{display:flex;flex-direction:column;gap:10px;margin:6px 0 14px;max-height:340px;overflow-y:auto;padding-right:2px}
 .bubble{max-width:82%;padding:9px 12px;border-radius:13px;font-size:13.5px;line-height:1.4}
 .bubble.me{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
@@ -363,7 +386,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
   .who{font-size:11.5px}
   .row2{grid-template-columns:1fr;gap:10px} /* empilha setor/horário, intervalo/dia etc */
   .add-resp{flex-direction:column}
-  .add-resp select,.add-resp button{width:100%}
+  .add-resp select,.add-resp button,.add-resp .combo{width:100%}
   .card-body{padding:12px 13px 12px 16px}
   .card h3{font-size:15px}
   .sheet{padding:18px 16px 18px;border-radius:16px;max-width:none;width:calc(100% - 8px)}
@@ -372,6 +395,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
   .actions{gap:6px}
   .btn.sm{padding:8px 12px;font-size:13px}
   .filters select{min-width:0;flex:1 1 calc(50% - 4px)}
+  .filters .combo{min-width:0;flex:1 1 calc(50% - 4px)}
   .fab{right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);padding:13px 16px;font-size:14px}
   .stat-grid{grid-template-columns:repeat(2,1fr)}
   .resp-task-row,.tcard{padding:11px 12px}
@@ -419,6 +443,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
       <button class="tab hidden" data-view="suggestions" id="tabSuggestions">Minhas discussões<span class="tab-dot hidden" id="dotMine"></span></button>
       <button class="tab hidden" data-view="admin" id="tabAdmin">Tarefas</button>
       <button class="tab hidden" data-view="os" id="tabOS">O.S.</button>
+      <button class="tab hidden" data-view="team" id="tabTeam">Equipe</button>
       <button class="tab hidden" data-view="tickets" id="tabTickets">Discussões<span class="tab-dot hidden" id="dotAdmin"></span></button>
       <button class="tab hidden" data-view="performance" id="tabPerformance">Desempenho da equipe</button>
       <button class="tab hidden" data-view="diag" id="tabDiag">Informações</button>
@@ -510,7 +535,7 @@ let WEEKLY_SCORES = {};         // /escala_tarefas/weeklyScores/{empCpf}/{monday
 let SCORE_RESET_AT = null;      // /escala_tarefas/scoreResetAt — instâncias anteriores a esta data não contam na nota
 let SERVICE_ORDERS = {};        // /escala_tarefas/serviceOrders/{osid} (O.S. — pontuais, sem recorrência)
 let DISCUSSIONS = {};           // /escala_tarefas/discussions/{task_<id>|os_<id>} (chat único por tarefa/O.S.)
-let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:"",weeks:4}, osFilter:{status:"",priority:"",sector:""}, discFilter:"active" };
+let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:"",weeks:4}, osFilter:{status:"",priority:"",sector:""}, discFilter:"active", mineOffset:0, teamFilter:{sector:"",emp:""} };
 let materializing = false;
 
 /* ===================================================================
@@ -565,6 +590,70 @@ function sectors(){return toArray(ESCALA&&ESCALA.sectors)}
 function shiftTypes(){return toArray(ESCALA&&ESCALA.shiftTypes)}
 
 function empName(emp){return emp?(pick(emp,SCHEMA.employeeNameFields)||emp._key||emp.id):"—"}
+/* combobox de colaborador: clique/foco abre a lista, digitar filtra ao vivo, clicar escolhe.
+   mode "add" (Responsáveis de tarefa/O.S.): escolher já adiciona, sem botão separado.
+   mode "filter" (filtros de pesquisa): escolher define o filtro; tem opção "Todos" pra limpar. */
+function empOptionsSorted(list){
+  return (list||employees()).map(e=>({id:e._key!=null?e._key:e.id,name:empName(e)}))
+    .filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
+}
+function comboListHtml(comboId,options,mode,resetLabel){
+  let html=mode==="filter"?`<button type="button" class="combo-opt reset" data-act="combo-pick" data-combo="${esc(comboId)}" data-value="" data-comboname="">${esc(resetLabel||"Todos")}</button>`:"";
+  html+=options.map(o=>`<button type="button" class="combo-opt" data-act="combo-pick" data-combo="${esc(comboId)}" data-value="${esc(o.id)}" data-comboname="${esc(o.name)}">${esc(o.name)}</button>`).join("");
+  return html||'<div class="combo-empty">Nenhum colaborador encontrado.</div>';
+}
+function empComboHtml(comboId,options,{mode="add",placeholder="Buscar…",resetLabel,currentLabel=""}={}){
+  return `<div class="combo" data-combowrap="${esc(comboId)}">
+    <div class="combo-input-wrap"><span class="emp-picker-icon">🔍</span>
+      <input type="text" class="combo-input" id="${esc(comboId)}" data-comboinput="${esc(comboId)}" data-combomode="${esc(mode)}"
+        placeholder="${esc(placeholder)}" autocomplete="off" value="${esc(currentLabel)}">
+    </div>
+    <div class="combo-list hidden" data-combolist="${esc(comboId)}">${comboListHtml(comboId,options,mode,resetLabel)}</div>
+  </div>`;
+}
+function openCombo(comboId){
+  document.querySelectorAll(".combo-list").forEach(l=>{if(l.dataset.combolist!==comboId)l.classList.add("hidden")});
+  const list=document.querySelector(`.combo-list[data-combolist="${comboId}"]`);
+  if(list)list.classList.remove("hidden");
+}
+function closeAllCombos(){document.querySelectorAll(".combo-list").forEach(l=>l.classList.add("hidden"))}
+function filterCombo(comboId,query){
+  const list=document.querySelector(`.combo-list[data-combolist="${comboId}"]`);
+  if(!list)return;
+  const q=norm(query);
+  let anyVisible=false;
+  list.querySelectorAll(".combo-opt").forEach(btn=>{
+    if(btn.classList.contains("reset")){btn.style.display="";return} // "Todos" sempre visível, não conta pro "sem resultado"
+    const match=!q||norm(btn.dataset.comboname||btn.textContent).includes(q);
+    btn.style.display=match?"":"none";
+    if(match)anyVisible=true;
+  });
+  let empty=list.querySelector(".combo-empty");
+  if(!anyVisible&&!empty){
+    empty=document.createElement("div");empty.className="combo-empty";empty.textContent="Nenhum colaborador encontrado.";
+    list.appendChild(empty);
+  }else if(anyVisible&&empty){empty.remove()}
+}
+/* trata a escolha feita num combobox — roteia por id porque cada um alimenta um lugar diferente
+   (fila de responsáveis de tarefa/O.S., ou um filtro de pesquisa) */
+function handleComboPick(comboId,mode,value,label){
+  if(mode==="filter"){
+    const routes={
+      filterEmpAdmin:()=>{state.adminFilter.emp=value;render()},
+      filterEmpPerf:()=>{state.perfFilter.emp=value;render()},
+      filterEmpTeam:()=>{state.teamFilter.emp=value;render()}
+    };
+    if(routes[comboId])routes[comboId]();
+    closeAllCombos();
+    return;
+  }
+  if(!value)return;
+  if(comboId==="fAddResp"&&formState){
+    if(!formState.responsibles.map(String).includes(String(value))){formState.responsibles.push(value);refreshTaskResp()}
+  }else if(comboId==="osAddResp"&&osFormState){
+    if(!osFormState.responsibles.map(String).includes(String(value))){osFormState.responsibles.push(value);refreshOSResp()}
+  }
+}
 function employeeById(id){if(id==null)return null;const s=String(id);return employees().find(e=>String(e.id)===s||String(e._key)===s)||null}
 function sectorName(id){const s=sectors().find(x=>String(x.id)===String(id)||String(x._key)===String(id));return s?(pick(s,SCHEMA.nameFields)||s._key):(id||"—")}
 
@@ -989,7 +1078,7 @@ function reopenTask(iid){
 }
 
 function transferToR(iid,toEmpId){
-  const ins=INSTANCES[iid];if(!ins||!canAct(ins))return;
+  const ins=INSTANCES[iid];if(!ins||!(canAct(ins)||canManageTeam()))return;
   dbRef(`${PATH.tarefas}/instances/${iid}`).update({assignedTo:String(toEmpId),autoAssigned:false,
     history:pushHistory(iid,{type:"transferida",to:String(toEmpId)})});
   closeModal();toast("Transferida para "+empName(employeeById(toEmpId)));
@@ -1302,6 +1391,8 @@ function isLideranca(emp){
   return !!resolved && norm(resolved)===norm(LIDERANCA_SETOR);
 }
 function canOpenOS(){return state.admin||isLideranca(state.emp)}
+/* Lideranças também pode transferir tarefas de qualquer colaborador (visão "Equipe"), não só as próprias */
+function canManageTeam(){return state.admin||isLideranca(state.emp)}
 /* responsável elegível de hoje (primeiro da fila presente na escala), igual à lógica das tarefas mas sem horário fixo */
 function osComputeAssignee(os){
   const today=todayKey();
@@ -1509,6 +1600,7 @@ function finishLogin(){
   $("#tabTickets").classList.toggle("hidden",!state.admin);
   $("#tabPerformance").classList.toggle("hidden",!state.admin);
   $("#tabOS").classList.toggle("hidden",!canOpenOS());
+  $("#tabTeam").classList.toggle("hidden",!canManageTeam());
   renderWho();
   state.view=state.admin?"admin":"mine";
   setActiveTab();
@@ -1527,7 +1619,7 @@ function tryRestore(){
 }
 function logout(){
   try{localStorage.removeItem("tarefas_session")}catch(e){}
-  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:"",weeks:4},osFilter:{status:"",priority:"",sector:""},discFilter:"active"};
+  state={user:null,emp:null,admin:false,view:"mine",ready:false,adminFilter:{sector:"",emp:"",status:"",nature:"",level:""},respFilter:{sector:"",level:""},perfFilter:{sector:"",emp:"",weeks:4},osFilter:{status:"",priority:"",sector:""},discFilter:"active",mineOffset:0,teamFilter:{sector:"",emp:""}};
   $("#appScreen").classList.add("hidden");$("#fab").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#lgPass").value="";$("#lgUser").value="";$("#pinField").classList.add("hidden");
@@ -1555,6 +1647,7 @@ function render(){
   else if(state.view==="tickets")m.innerHTML=viewDiscussionsAdmin();
   else if(state.view==="performance")m.innerHTML=viewPerformance();
   else if(state.view==="os")m.innerHTML=viewOS();
+  else if(state.view==="team")m.innerHTML=viewTeam();
   else if(state.view==="diag")m.innerHTML=viewDiag();
   updateDiscussionBadges();
 }
@@ -1608,7 +1701,7 @@ function taskCardMine({iid,ins,task},opts={}){
   }
   const unreadDisc=opts.coresp?false:threadHasUnread("task",ins.taskId);
   const discussBtn=opts.coresp?"":`<button type="button" class="btn-suggest${unreadDisc?" has-open":""}" data-act="open-discussion" data-type="task" data-id="${esc(ins.taskId)}">
-        💬 Discussão${unreadDisc?" •":""}</button>`;
+        💬 Discussão${unreadDisc?'<span class="badge-dot"></span>':""}</button>`;
   return `<article class="${cls.join(" ")}" data-act="open-detail" data-iid="${iid}" style="cursor:pointer"><div class="card-body">
     <div class="card-head"><h3>${esc(task.title)}</h3>
       <div class="card-head-right" data-stop="1">${statusBadge(ins.status)}${discussBtn}</div>
@@ -1652,7 +1745,7 @@ function osCardMine(os,osid){
   actions+="</div>";
   const unreadDisc=threadHasUnread("os",osid);
   const discussBtn=`<button type="button" class="btn-suggest${unreadDisc?" has-open":""}" data-act="open-discussion" data-type="os" data-id="${esc(osid)}">
-        💬 Discussão${unreadDisc?" •":""}</button>`;
+        💬 Discussão${unreadDisc?'<span class="badge-dot"></span>':""}</button>`;
   return `<article class="${cls.join(" ")}" data-act="open-os-detail" data-osid="${osid}" style="cursor:pointer"><div class="card-body">
     <div class="card-head"><h3>${esc(os.title)}</h3>
       <div class="card-head-right" data-stop="1">${osStatusBadge(os.status)}${discussBtn}</div>
@@ -1661,13 +1754,82 @@ function osCardMine(os,osid){
     <div data-stop="1">${actions}</div>
   </div></article>`;
 }
+function dateNavBar(){
+  const off=state.mineOffset||0;
+  let h='<div class="date-nav">';
+  for(let i=0;i<=6;i++){
+    const d=addDays(todayKey(),i);
+    const label=i===0?"Hoje":i===1?"Amanhã":`${WEEKDAYS[weekdayOf(d)].slice(0,3)} ${d.slice(8,10)}`;
+    h+=`<button type="button" class="date-chip${off===i?" on":""}" data-act="set-mine-offset" data-off="${i}">${label}</button>`;
+  }
+  h+='</div>';
+  return h;
+}
+/* prévia read-only de dias futuros: não há instância materializada ainda (materialize() só olha
+   até hoje), então recalcula ao vivo com occursOn()/computeAssignee() — as mesmas funções puras
+   que a materialização usa, só que sem gravar nada no banco. Pode mudar até o dia chegar, se a
+   escala mudar nesse meio tempo. */
+function myFuturePreview(dKey){
+  if(!state.emp)return {groups:{executar:[],demanda:[],continua:[]},coresp:[]};
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  const mine=id=>myIds.includes(String(id));
+  const groups={executar:[],demanda:[],continua:[]},coresp=[];
+  for(const tid in TASKS){
+    const task=TASKS[tid];if(!task||task.active===false)continue;
+    if(!occursOn(task,dKey))continue;
+    const idx=(task.responsibles||[]).findIndex(mine);
+    if(idx<0)continue;
+    const assignee=computeAssignee(task,dKey);
+    const nature=task.nature||"executar";
+    if(mine(assignee))(groups[nature]||groups.executar).push({task,dKey,assignee});
+    else coresp.push({task,dKey,assignee,rlevel:idx+1});
+  }
+  const ord=(a,b)=>(timeToMin(a.task.startTime)??1e9)-(timeToMin(b.task.startTime)??1e9);
+  groups.executar.sort(ord);groups.demanda.sort(ord);groups.continua.sort(ord);
+  return {groups,coresp};
+}
+function taskCardFuture({task,assignee}){
+  const cls=["card"];
+  if(task.nature==="continua")cls.push("v-continua");else if(task.nature==="demanda")cls.push("v-demanda");
+  let meta=`<span class="chip sector">${esc(sectorName(task.sectorId))}</span>`;
+  if(task.startTime)meta+=`<span class="chip time">🕐 ${esc(task.startTime)}</span>`;
+  return `<article class="${cls.join(" ")}"><div class="card-body">
+    <div class="card-head"><h3>${esc(task.title)}</h3>
+      <div class="card-head-right"><span class="status" style="background:var(--surface-2);color:var(--muted)">Prévia</span></div>
+    </div>
+    <div class="meta">${meta}</div>
+  </div></article>`;
+}
 function viewMine(){
   if(!state.emp){
     if(state.admin)return `<div class="empty"><b>Você está logado como gestor.</b>Use a aba <b>Tarefas</b> para criar tarefas e acompanhar quem é responsável a cada dia.</div>`;
     return `<div class="empty"><b>Seu CPF não está vinculado a um colaborador.</b>Peça ao gestor para cadastrar seu CPF no seu funcionário da escala.</div>`;
   }
+  const off=state.mineOffset||0;
+  let h=dateNavBar();
+
+  if(off>0){
+    const dKey=addDays(todayKey(),off);
+    const {groups,coresp}=myFuturePreview(dKey);
+    h+=`<p class="note" style="margin:0 2px 12px">Prévia de ${fmtDate(dKey)} — calculada pela escala de hoje, pode mudar até lá. Ações (iniciar/concluir) só ficam disponíveis no dia.</p>`;
+    if(coresp.length){
+      h+=`<button type="button" class="btn ghost full" data-act="show-coresp-future" data-date="${dKey}" style="margin-bottom:14px">👀 Você é co-responsável em ${coresp.length} tarefa(s) nesse dia</button>`;
+    }
+    if(groups.continua.length){
+      h+=dayBlockHead("continua","👁","Preocupação contínua",null,groups.continua.length);
+      h+=groups.continua.map(taskCardFuture).join("");
+    }
+    if(groups.demanda.length){
+      h+=dayBlockHead("demanda","📡","Sob demanda",null,groups.demanda.length);
+      h+=groups.demanda.map(taskCardFuture).join("");
+    }
+    h+=dayBlockHead("executar","✅","A executar",null,groups.executar.length);
+    h+=groups.executar.length?groups.executar.map(taskCardFuture).join(""):
+      `<div class="empty"><b>Nada previsto pra executar nesse dia.</b></div>`;
+    return h;
+  }
+
   const {today,late,coresp,done}=myInstances();
-  let h="";
   if(coresp.length){
     h+=`<button type="button" class="btn ghost full" data-act="show-coresp" style="margin-bottom:14px">👀 Você é co-responsável em ${coresp.length} tarefa(s) hoje</button>`;
   }
@@ -1880,6 +2042,70 @@ function viewResp(){
 }
 
 /* ---------- Ordens de serviço (gestor + Lideranças) ---------- */
+/* ---------- Equipe (Lideranças): ver/filtrar tarefas de todo mundo hoje + transferir ---------- */
+function viewTeam(){
+  if(!canManageTeam())return `<div class="empty"><b>Disponível só para o gestor e para o grupo Lideranças.</b></div>`;
+  const today=todayKey();
+  const F=state.teamFilter;
+  const rows=[];
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||ins.date!==today||ins.status==="adiada")continue;
+    const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
+    rows.push({iid,ins,task});
+  }
+  const usedSectors=[...new Set(rows.map(r=>String(r.task.sectorId||"")))];
+  const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(id=>`<option value="${esc(id)}" ${F.sector===id?"selected":""}>${esc(sectorName(id))}</option>`).join("");
+  const usedEmpIds=[...new Set(rows.map(r=>String(r.ins.assignedTo||"")).filter(Boolean))];
+  const empList=usedEmpIds.map(id=>({id,name:empName(employeeById(id))})).filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
+  const hasFilter=F.sector||F.emp;
+
+  let h=`<div class="filters">
+    <select data-filter-team="sector">${secOpts}</select>
+    ${empComboHtml("filterEmpTeam",empList,{mode:"filter",placeholder:"Buscar colaborador…",resetLabel:"Todos os colaboradores",currentLabel:F.emp?(empList.find(e=>String(e.id)===String(F.emp))||{}).name||"":""})}
+    ${hasFilter?`<button class="btn sm ghost" data-act="clear-team-filters">Limpar</button>`:""}
+  </div>`;
+
+  const filtered=rows.filter(({ins,task})=>{
+    if(F.sector&&String(task.sectorId||"")!==F.sector)return false;
+    if(F.emp&&String(ins.assignedTo||"")!==F.emp)return false;
+    return true;
+  }).sort((a,b)=>a.task.title.localeCompare(b.task.title,"pt-BR"));
+
+  h+=`<div class="section-title" style="margin-top:0">Tarefas de hoje da equipe <span class="count-pill">${filtered.length}${filtered.length!==rows.length?" de "+rows.length:""}</span></div>`;
+  if(!rows.length){h+=`<div class="empty"><b>Nenhuma tarefa materializada hoje ainda.</b>Peça pra alguém abrir "Minhas tarefas" primeiro, ou volte mais tarde.</div>`;return h}
+  if(!filtered.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
+
+  const teamCard=({iid,ins,task})=>{
+    const respName=ins.assignedTo?empName(employeeById(ins.assignedTo)):null;
+    return `<div class="tcard"><div class="tcard-head"><div>
+      <h3>${esc(task.title)}</h3>
+      <div class="small">${esc(sectorName(task.sectorId))}${task.startTime?` · 🕐 ${esc(task.startTime)}`:""}</div>
+      <div class="meta" style="margin-top:6px">${statusBadge(ins.status)}<span class="chip">${respName?esc(respName):"Sem responsável elegível hoje"}</span></div>
+    </div></div>
+    ${(ins.status==="pendente"||ins.status==="em_andamento")?`<div class="actions"><button class="btn sm" data-act="transfer-team" data-iid="${iid}">Transferir</button></div>`:""}
+    </div>`;
+  };
+  const statusGroups=[
+    ["em_andamento","🔵","Em andamento"],
+    ["pendente","⏳","Pendente"],
+    ["nao_realizada","⚠️","Não realizada"],
+    ["concluida","✅","Concluída"],
+  ];
+  for(const [st,icon,label] of statusGroups){
+    const group=filtered.filter(r=>r.ins.status===st);
+    if(!group.length)continue;
+    h+=dayBlockHead(st,icon,label,null,group.length);
+    h+=group.map(teamCard).join("");
+  }
+  // qualquer status fora do mapa acima (segurança contra status novo/inesperado) ainda aparece, sem ficar escondido
+  const known=new Set(statusGroups.map(g=>g[0]));
+  const leftover=filtered.filter(r=>!known.has(r.ins.status));
+  if(leftover.length){
+    h+=dayBlockHead("outro","❔","Outros",null,leftover.length);
+    h+=leftover.map(teamCard).join("");
+  }
+  return h;
+}
 function viewOS(){
   if(!canOpenOS())return `<div class="empty"><b>Disponível só para o gestor e para o grupo Lideranças.</b></div>`;
   const today=todayKey();
@@ -1988,7 +2214,6 @@ function viewAdmin(){
   const levelOpts=`<option value="">Todos os níveis</option>`+Array.from({length:maxLevel},(_,i)=>i+1)
     .map(l=>`<option value="${l}" ${String(F.level)===String(l)?"selected":""}>R${l}${F.emp?"":" (fila com "+l+"+)"}</option>`).join("");
   const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empOpts.map(e=>`<option value="${esc(e.id)}" ${String(e.id)===String(F.emp)?"selected":""}>${esc(e.name)}</option>`).join("");
   const statusLabels={pendente:"Pendente hoje",em_andamento:"Em andamento",concluida:"Concluída hoje",adiada:"Adiada",nao_realizada:"Não realizada hoje",sem_responsavel:"Sem responsável",nao_ocorre:"Não ocorre hoje"};
   const statusOpts=`<option value="">Todos os status</option>`+Object.entries(statusLabels).map(([v,l])=>`<option value="${v}" ${F.status===v?"selected":""}>${l}</option>`).join("");
   const natureOpts=`<option value="">Todas as naturezas</option>`+Object.entries(natureLabels).map(([v,l])=>`<option value="${v}" ${F.nature===v?"selected":""}>${l}</option>`).join("");
@@ -2005,15 +2230,22 @@ function viewAdmin(){
     <button class="btn sm" data-act="open-report">📋 Relatório do dia</button>
   </div></div>`;
 
-  const activeDiscCount=Object.values(DISCUSSIONS).filter(th=>th&&!threadIsInactive(th)&&th.status!=="fechado").length;
-  if(activeDiscCount){
+  const unreadDiscKeys=Object.keys(DISCUSSIONS).filter(key=>{
+    const th=DISCUSSIONS[key];if(!th)return false;
+    const msgs=th.messages||[];if(!msgs.length)return false;
+    const last=msgs[msgs.length-1];
+    if(String(last.by)===String(state.user.username))return false;
+    const readAt=(th.readBy&&th.readBy[state.user.username])||0;
+    return last.at>readAt;
+  });
+  if(unreadDiscKeys.length){
     h+=`<button type="button" class="btn-suggest has-open" style="width:100%;justify-content:center;padding:10px;margin-bottom:14px;font-size:13.5px" data-act="goto-discussions">
-      💬 ${activeDiscCount} discussão(ões) ativa(s) — toque para ver</button>`;
+      💬 ${unreadDiscKeys.length} discussão(ões) com mensagem não lida — toque para ver</button>`;
   }
 
   h+=`<div class="filters">
     <select data-filter="sector">${secOpts}</select>
-    <select data-filter="emp">${empFilterOpts}</select>
+    ${empComboHtml("filterEmpAdmin",empOpts,{mode:"filter",placeholder:"Buscar colaborador…",resetLabel:"Todos os colaboradores",currentLabel:F.emp?(empOpts.find(e=>String(e.id)===String(F.emp))||{}).name||"":""})}
     <select data-filter="level">${levelOpts}</select>
     <select data-filter="status">${statusOpts}</select>
     <select data-filter="nature">${natureOpts}</select>
@@ -2128,7 +2360,7 @@ function viewPerformance(){
 
   // ---- filtros (afetam o gráfico) ----
   const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(s=>`<option value="${esc(s.id)}" ${F.sector===String(s.id)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const empOpts=`<option value="">Todos os colaboradores</option>`+allEmps.map(e=>`<option value="${esc(e.id)}" ${F.emp===String(e.id)?"selected":""}>${esc(empName(e))}</option>`).join("");
+  const empOpts=empOptionsSorted(allEmps);
   const hasFilter=F.sector||F.emp;
   const weekOpts=[4,8,12].map(n=>`<button type="button" class="${weeksN===n?"on":""}" data-act="set-perf-weeks" data-n="${n}">${n} semanas</button>`).join("");
 
@@ -2152,7 +2384,7 @@ function viewPerformance(){
     <div class="period-bar">${weekOpts}</div>
     <div class="filters">
       <select data-filter3="sector">${secOpts}</select>
-      <select data-filter3="emp">${empOpts}</select>
+      ${empComboHtml("filterEmpPerf",empOpts,{mode:"filter",placeholder:"Buscar colaborador…",resetLabel:"Todos os colaboradores",currentLabel:F.emp?(empOpts.find(e=>String(e.id)===String(F.emp))||{}).name||"":""})}
       ${hasFilter?`<button class="btn sm ghost" data-act="clear-perf-filters">Limpar</button>`:""}
     </div>
     <div class="diag">${lineChartSvg(graphSeries)}
@@ -2457,6 +2689,33 @@ let formState=null;
 /* Corpo do checklist (lista + campo de adicionar + nota), compartilhado entre tarefa e O.S.
    Renderizado à parte pra poder atualizar só esse pedaço do formulário — refazer a folha inteira
    a cada item adicionado gera piscada e perde a posição do scroll. */
+/* Corpo do campo "Responsáveis" (fila + combobox de adicionar), compartilhado entre tarefa e O.S.
+   Mesmo raciocínio do checklist: atualiza só esse pedaço ao adicionar/remover/reordenar, sem
+   refazer a folha inteira (evita piscada e perda de scroll). */
+function respBodyHtml(responsibles,kind){
+  const rmAct=kind==="task"?"resp-rm":"os-resp-rm",upAct=kind==="task"?"resp-up":"os-resp-up",downAct=kind==="task"?"resp-down":"os-resp-down";
+  const respHtml=responsibles.length?responsibles.map((id,i)=>`
+    <div class="resp-item">
+      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
+      <div class="ord">
+        <button class="miniicon" data-act="${upAct}" data-i="${i}" ${i===0?"disabled":""}>▲</button>
+        <button class="miniicon" data-act="${downAct}" data-i="${i}" ${i===responsibles.length-1?"disabled":""}>▼</button>
+      </div>
+      <button class="miniicon rm" data-act="${rmAct}" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
+  const available=empOptionsSorted(employees().filter(e=>!responsibles.map(String).includes(String(e._key!=null?e._key:e.id))));
+  const comboId=kind==="task"?"fAddResp":"osAddResp";
+  return `<div class="resp-list">${respHtml}</div>
+    ${empComboHtml(comboId,available,{mode:"add",placeholder:"Buscar e adicionar responsável…"})}`;
+}
+function refreshTaskResp(){
+  const body=$("#fRespBody");if(!body||!formState)return;
+  body.innerHTML=respBodyHtml(formState.responsibles,"task");
+}
+function refreshOSResp(){
+  const body=$("#osRespBody");if(!body||!osFormState)return;
+  body.innerHTML=respBodyHtml(osFormState.responsibles,"os");
+}
 function checklistBodyHtml(items,kind){
   const rmAct=kind==="task"?"check-rm":"os-check-rm";
   const addAct=kind==="task"?"check-add":"os-check-add";
@@ -2509,17 +2768,6 @@ function openTaskForm(tid){
 function renderTaskForm(){
   const f=formState;
   const secOpts=sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(f.sectorId)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const respEmps=employees().filter(e=>!f.responsibles.map(String).includes(String(e.id))&&!f.responsibles.map(String).includes(String(e._key)));
-  const addOpts=respEmps.map(e=>`<option value="${esc(e._key!=null?e._key:e.id)}">${esc(empName(e))}</option>`).join("");
-  const respHtml=f.responsibles.length?f.responsibles.map((id,i)=>`
-    <div class="resp-item">
-      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
-      <div class="ord">
-        <button class="miniicon" data-act="resp-up" data-i="${i}" ${i===0?"disabled":""}>▲</button>
-        <button class="miniicon" data-act="resp-down" data-i="${i}" ${i===f.responsibles.length-1?"disabled":""}>▼</button>
-      </div>
-      <button class="miniicon rm" data-act="resp-rm" data-i="${i}">✕</button>
-    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
 
   const rtype=f.recurrence.type||"daily";
   const interval=f.recurrence.interval||1;
@@ -2547,11 +2795,7 @@ function renderTaskForm(){
       <div class="field"><label>Horário de início (opcional)</label><input id="fTime" type="time" value="${esc(f.startTime||"")}"></div>
     </div>
     <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
-      <div class="resp-list">${respHtml}</div>
-      <div class="add-resp">
-        <select id="fAddResp"><option value="">＋ Adicionar responsável…</option>${addOpts}</select>
-        <button class="btn sm" data-act="resp-add">Adicionar</button>
-      </div>
+      <div id="fRespBody">${respBodyHtml(f.responsibles,"task")}</div>
       <p class="note">A tarefa do dia vai para o R1; se ele estiver ausente ou fora do horário do turno, cai para o próximo R elegível.</p>
     </div>
     <div class="field"><label>Checklist (opcional)</label>
@@ -2621,17 +2865,6 @@ function openOSForm(id){
 function renderOSForm(){
   const f=osFormState;
   const secOpts=sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(f.sectorId)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const respEmps=employees().filter(e=>!f.responsibles.map(String).includes(String(e.id))&&!f.responsibles.map(String).includes(String(e._key)));
-  const addOpts=respEmps.map(e=>`<option value="${esc(e._key!=null?e._key:e.id)}">${esc(empName(e))}</option>`).join("");
-  const respHtml=f.responsibles.length?f.responsibles.map((id,i)=>`
-    <div class="resp-item">
-      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
-      <div class="ord">
-        <button class="miniicon" data-act="os-resp-up" data-i="${i}" ${i===0?"disabled":""}>▲</button>
-        <button class="miniicon" data-act="os-resp-down" data-i="${i}" ${i===f.responsibles.length-1?"disabled":""}>▼</button>
-      </div>
-      <button class="miniicon rm" data-act="os-resp-rm" data-i="${i}">✕</button>
-    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
   openSheet(f.id?"Editar O.S.":"Nova ordem de serviço",`
     <div class="field"><label>Título</label><input id="osTitle" value="${esc(f.title)}" placeholder="Ex.: Reparar vazamento no chuveiro do quarto 204"></div>
     <div class="field"><label>Descrição</label><textarea id="osDesc" placeholder="Detalhes (opcional)">${esc(f.description)}</textarea></div>
@@ -2646,11 +2879,7 @@ function renderOSForm(){
       <div class="field"><label>Prazo (opcional)</label><input id="osDeadline" type="date" value="${esc(f.deadline||"")}"></div>
     </div>
     <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
-      <div class="resp-list">${respHtml}</div>
-      <div class="add-resp">
-        <select id="osAddResp"><option value="">＋ Adicionar responsável…</option>${addOpts}</select>
-        <button class="btn sm" data-act="os-resp-add">Adicionar</button>
-      </div>
+      <div id="osRespBody">${respBodyHtml(f.responsibles,"os")}</div>
       <p class="note">Enquanto a O.S. não é iniciada, recalcula todo dia quem está elegível, começando pelo R1. Ao apertar Iniciar, trava com quem iniciou.</p>
     </div>
     <div class="field"><label>Checklist (opcional)</label>
@@ -2702,7 +2931,7 @@ function openOSDetail(osid){
     actionBtns+=`<button class="btn ghost" data-act="edit-os" data-osid="${osid}">Editar</button>`;
     actionBtns+=`<button class="btn danger" data-act="open-os-cancel" data-osid="${osid}">Cancelar</button>`;
   }
-  if(canChat)actionBtns+=`<button class="btn ghost" data-act="open-discussion" data-type="os" data-id="${esc(osid)}">💬 Discussão${unreadDisc?" •":""}</button>`;
+  if(canChat)actionBtns+=`<button class="btn ghost" data-act="open-discussion" data-type="os" data-id="${esc(osid)}">💬 Discussão${unreadDisc?'<span class="badge-dot"></span>':""}</button>`;
   const footer=`<div class="sheet-actions">
       <button class="btn ghost" data-act="close">Fechar</button>
       ${actionBtns}
@@ -2799,7 +3028,7 @@ function openTaskDetail(iid){
     ${histHtml}
     <div class="sheet-actions">
       <button class="btn ghost" data-act="close">Fechar</button>
-      ${canChatThread("task",ins.taskId)?`<button class="btn ghost" data-act="open-discussion" data-type="task" data-id="${esc(ins.taskId)}">💬 Discussão${threadHasUnread("task",ins.taskId)?" •":""}</button>`:""}
+      ${canChatThread("task",ins.taskId)?`<button class="btn ghost" data-act="open-discussion" data-type="task" data-id="${esc(ins.taskId)}">💬 Discussão${threadHasUnread("task",ins.taskId)?'<span class="badge-dot"></span>':""}</button>`:""}
       ${actionBtns}
     </div>
   `);
@@ -2846,6 +3075,23 @@ function openCorespModal(){
   openSheet("Você é co-responsável",`
     <p class="note" style="margin-bottom:12px">Hoje, em ${coresp.length} tarefa(s), você está na fila mas não é o titular do dia.</p>
     ${rows||'<p class="empty">Nenhuma agora.</p>'}
+    <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
+  `);
+}
+function openCorespFutureModal(dKey){
+  const {coresp}=myFuturePreview(dKey);
+  const rows=coresp.map(c=>{
+    const nm=empName(employeeById(c.assignee))||"—";
+    return `<div class="resp-task-row">
+      <div class="rlevelbig">R${c.rlevel}</div>
+      <div class="rmain"><span class="rtitle">${esc(c.task.title)}</span>
+        <div class="rmeta"><span class="chip sector">${esc(sectorName(c.task.sectorId))}</span>
+          <span class="chip">Previsto: ${esc(nm)}</span></div>
+      </div></div>`;
+  }).join("");
+  openSheet("Você é co-responsável",`
+    <p class="note" style="margin-bottom:12px">Em ${fmtDate(dKey)}, em ${coresp.length} tarefa(s), você está na fila mas não seria o titular do dia (previsão, pode mudar).</p>
+    ${rows||'<p class="empty">Nenhuma.</p>'}
     <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
   `);
 }
@@ -3052,7 +3298,16 @@ document.addEventListener("input",e=>{
     if(ce.dataset.checkedit==="task"&&formState&&formState.checklist[i])formState.checklist[i].text=ce.value;
     if(ce.dataset.checkedit==="os"&&osFormState&&osFormState.checklist[i])osFormState.checklist[i].text=ce.value;
   }
+  const ci=e.target.closest("[data-comboinput]");
+  if(ci)filterCombo(ci.dataset.comboinput,ci.value);
 });
+document.addEventListener("focusin",e=>{
+  const inp=e.target.closest("[data-comboinput]");
+  if(inp){openCombo(inp.dataset.comboinput);filterCombo(inp.dataset.comboinput,inp.value)}
+});
+document.addEventListener("click",e=>{
+  if(!e.target.closest(".combo"))closeAllCombos();
+},true);
 document.addEventListener("paste",e=>{
   if(e.target.id!=="fAddCheck"&&e.target.id!=="osAddCheck")return;
   const text=(e.clipboardData||window.clipboardData).getData("text");
@@ -3069,6 +3324,7 @@ document.addEventListener("paste",e=>{
   }
 });
 document.addEventListener("keydown",e=>{
+  if(e.key==="Escape")closeAllCombos();
   if(e.key==="Enter"&&e.target.id==="fAddCheck"){
     e.preventDefault();
     const text=e.target.value.trim();
@@ -3114,6 +3370,8 @@ document.addEventListener("click",e=>{
     case"new-os":openOSForm(null);break;
     case"edit-os":closeModal();openOSForm(osid);break;
     case"clear-os-filters":state.osFilter={status:"",priority:"",sector:""};render();break;
+    case"clear-team-filters":state.teamFilter={sector:"",emp:""};render();break;
+    case"transfer-team":openTransfer(iid);break;
     case"open-os-detail":openOSDetail(osid);break;
     case"start-os":startOS(osid);break;
     case"open-os-complete":openOSCompleteModal(osid);break;
@@ -3124,10 +3382,9 @@ document.addEventListener("click",e=>{
     case"transfer-os":openOSTransfer(osid);break;
     case"sel-os-r":osTransferState.sel=a.dataset.to;renderOSTransfer();break;
     case"confirm-os-transfer":{const ts=osTransferState;if(!ts||!ts.sel)break;transferOS(ts.osid,ts.sel);break}
-    case"os-resp-add":{const sel=$("#osAddResp");if(sel&&sel.value){syncOSFormInputs();osFormState.responsibles.push(sel.value);renderOSForm()}break}
-    case"os-resp-rm":{syncOSFormInputs();osFormState.responsibles.splice(+a.dataset.i,1);renderOSForm();break}
-    case"os-resp-up":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderOSForm();break}
-    case"os-resp-down":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderOSForm();break}
+    case"os-resp-rm":{osFormState.responsibles.splice(+a.dataset.i,1);refreshOSResp();break}
+    case"os-resp-up":{const i=+a.dataset.i;const r=osFormState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];refreshOSResp();break}
+    case"os-resp-down":{const i=+a.dataset.i;const r=osFormState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];refreshOSResp();break}
     case"os-check-add":{
       const inp=$("#osAddCheck");const text=inp?inp.value.trim():"";
       if(text){osFormState.checklist.push({id:genId("chk"),text});refreshOSChecklist()}
@@ -3169,6 +3426,8 @@ document.addEventListener("click",e=>{
     }
     case"show-partner":openPartnerTasks(a.dataset.emp);break;
     case"show-coresp":openCorespModal();break;
+    case"show-coresp-future":openCorespFutureModal(a.dataset.date);break;
+    case"set-mine-offset":state.mineOffset=+a.dataset.off;render();break;
     case"open-report":openDailyReport();break;
     case"goto-discussions":state.view="tickets";setActiveTab();render();break;
     case"open-discussion":openDiscussionThread(a.dataset.type,a.dataset.id);break;
@@ -3188,10 +3447,16 @@ document.addEventListener("click",e=>{
       break;
     }
     // form
-    case"resp-add":{const sel=$("#fAddResp");if(sel&&sel.value){syncFormInputs();formState.responsibles.push(sel.value);renderTaskForm()}break}
-    case"resp-rm":{syncFormInputs();formState.responsibles.splice(+a.dataset.i,1);renderTaskForm();break}
-    case"resp-up":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderTaskForm();break}
-    case"resp-down":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderTaskForm();break}
+    case"combo-pick":{
+      const combo=a.dataset.combo,value=a.dataset.value,label=a.dataset.comboname||"";
+      const inp=document.getElementById(combo);
+      const mode=inp?inp.dataset.combomode:"add";
+      handleComboPick(combo,mode,value,label);
+      break;
+    }
+    case"resp-rm":{formState.responsibles.splice(+a.dataset.i,1);refreshTaskResp();break}
+    case"resp-up":{const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];refreshTaskResp();break}
+    case"resp-down":{const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];refreshTaskResp();break}
     case"check-add":{
       const inp=$("#fAddCheck");const text=inp?inp.value.trim():"";
       if(text){formState.checklist.push({id:genId("chk"),text});refreshTaskChecklist()}
@@ -3219,6 +3484,8 @@ document.addEventListener("change",e=>{
   if(fos){state.osFilter[fos.dataset.filterOs]=fos.value;render();return}
   const fdisc=e.target.closest("[data-filter-disc]");
   if(fdisc){state.discFilter=fdisc.value;render();return}
+  const fteam=e.target.closest("[data-filter-team]");
+  if(fteam){state.teamFilter[fteam.dataset.filterTeam]=fteam.value;render();return}
   if(e.target.id==="postDate"&&transferState){transferState.date=e.target.value}
   if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
     syncFormInputs();
