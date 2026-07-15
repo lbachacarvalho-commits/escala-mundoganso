@@ -1600,7 +1600,7 @@ function finishLogin(){
   $("#tabTickets").classList.toggle("hidden",!state.admin);
   $("#tabPerformance").classList.toggle("hidden",!state.admin);
   $("#tabOS").classList.toggle("hidden",!canOpenOS());
-  $("#tabTeam").classList.toggle("hidden",!isLideranca(state.emp));
+  $("#tabTeam").classList.toggle("hidden",!canManageTeam());
   renderWho();
   state.view=state.admin?"admin":"mine";
   setActiveTab();
@@ -2044,7 +2044,7 @@ function viewResp(){
 /* ---------- Ordens de serviço (gestor + Lideranças) ---------- */
 /* ---------- Equipe (Lideranças): ver/filtrar tarefas de todo mundo hoje + transferir ---------- */
 function viewTeam(){
-  if(!isLideranca(state.emp))return `<div class="empty"><b>Disponível só para o grupo Lideranças.</b></div>`;
+  if(!canManageTeam())return `<div class="empty"><b>Disponível só para o gestor e para o grupo Lideranças.</b></div>`;
   const today=todayKey();
   const F=state.teamFilter;
   const rows=[];
