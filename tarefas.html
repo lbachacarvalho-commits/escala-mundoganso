@@ -203,13 +203,22 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 .miniicon.rm{color:#b8311a}
 .add-resp{display:flex;gap:8px;margin-top:8px}
 .add-resp select{flex:1}
-.add-resp .emp-picker{flex:1}
-.emp-picker{display:flex;flex-direction:column;gap:5px;min-width:150px}
-.emp-picker-search{position:relative}
-.emp-picker-search input{width:100%;padding:9px 11px 9px 30px;border:1px solid var(--line);border-radius:10px;
+.combo{position:relative}
+.combo-input-wrap{position:relative}
+.combo-input-wrap input{width:100%;padding:9px 11px 9px 30px;border:1px solid var(--line);border-radius:10px;
   font-size:13.5px;font-family:inherit;background:#fff}
+.combo-input-wrap input:focus{outline:none;border-color:var(--primary)}
 .emp-picker-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.55;pointer-events:none}
-.filters .emp-picker{flex:1}
+.combo-list{position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:60;background:#fff;
+  border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.14);
+  max-height:230px;overflow-y:auto;padding:6px}
+.combo-list.hidden{display:none}
+.combo-opt{display:block;width:100%;text-align:left;background:none;border:none;border-radius:8px;
+  padding:10px 11px;font-size:14px;font-weight:500;color:var(--ink);cursor:pointer;font-family:inherit}
+.combo-opt:hover{background:var(--surface-2)}
+.combo-opt.reset{color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);border-radius:0;margin-bottom:4px;padding-bottom:10px}
+.combo-empty{padding:10px 11px;font-size:13px;color:var(--muted)}
+.add-resp .combo,.filters .combo{flex:1;min-width:150px}
 .note{font-size:12px;color:var(--muted);margin-top:7px}
 
 /* admin task list */
@@ -377,7 +386,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
   .who{font-size:11.5px}
   .row2{grid-template-columns:1fr;gap:10px} /* empilha setor/horário, intervalo/dia etc */
   .add-resp{flex-direction:column}
-  .add-resp select,.add-resp button,.add-resp .emp-picker{width:100%}
+  .add-resp select,.add-resp button,.add-resp .combo{width:100%}
   .card-body{padding:12px 13px 12px 16px}
   .card h3{font-size:15px}
   .sheet{padding:18px 16px 18px;border-radius:16px;max-width:none;width:calc(100% - 8px)}
@@ -386,7 +395,7 @@ table.diag-t th{color:var(--muted);font-weight:600;font-size:11px;text-transform
   .actions{gap:6px}
   .btn.sm{padding:8px 12px;font-size:13px}
   .filters select{min-width:0;flex:1 1 calc(50% - 4px)}
-  .filters .emp-picker{min-width:0;flex:1 1 calc(50% - 4px)}
+  .filters .combo{min-width:0;flex:1 1 calc(50% - 4px)}
   .fab{right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);padding:13px 16px;font-size:14px}
   .stat-grid{grid-template-columns:repeat(2,1fr)}
   .resp-task-row,.tcard{padding:11px 12px}
@@ -581,11 +590,69 @@ function sectors(){return toArray(ESCALA&&ESCALA.sectors)}
 function shiftTypes(){return toArray(ESCALA&&ESCALA.shiftTypes)}
 
 function empName(emp){return emp?(pick(emp,SCHEMA.employeeNameFields)||emp._key||emp.id):"—"}
-/* campo de busca por nome que filtra ao vivo as <option> do <select> alvo (por id) — mesmo
-   componente visual usado em toda seleção de responsável/colaborador no app */
-function empSearchInput(targetSelectId,placeholder){
-  return `<div class="emp-picker-search"><span class="emp-picker-icon">🔍</span>
-    <input type="text" class="emp-picker-input" data-empsearch="${esc(targetSelectId)}" placeholder="${esc(placeholder||"Buscar por nome…")}" autocomplete="off"></div>`;
+/* combobox de colaborador: clique/foco abre a lista, digitar filtra ao vivo, clicar escolhe.
+   mode "add" (Responsáveis de tarefa/O.S.): escolher já adiciona, sem botão separado.
+   mode "filter" (filtros de pesquisa): escolher define o filtro; tem opção "Todos" pra limpar. */
+function empOptionsSorted(list){
+  return (list||employees()).map(e=>({id:e._key!=null?e._key:e.id,name:empName(e)}))
+    .filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
+}
+function comboListHtml(comboId,options,mode,resetLabel){
+  let html=mode==="filter"?`<button type="button" class="combo-opt reset" data-act="combo-pick" data-combo="${esc(comboId)}" data-value="" data-comboname="">${esc(resetLabel||"Todos")}</button>`:"";
+  html+=options.map(o=>`<button type="button" class="combo-opt" data-act="combo-pick" data-combo="${esc(comboId)}" data-value="${esc(o.id)}" data-comboname="${esc(o.name)}">${esc(o.name)}</button>`).join("");
+  return html||'<div class="combo-empty">Nenhum colaborador encontrado.</div>';
+}
+function empComboHtml(comboId,options,{mode="add",placeholder="Buscar…",resetLabel,currentLabel=""}={}){
+  return `<div class="combo" data-combowrap="${esc(comboId)}">
+    <div class="combo-input-wrap"><span class="emp-picker-icon">🔍</span>
+      <input type="text" class="combo-input" id="${esc(comboId)}" data-comboinput="${esc(comboId)}" data-combomode="${esc(mode)}"
+        placeholder="${esc(placeholder)}" autocomplete="off" value="${esc(currentLabel)}">
+    </div>
+    <div class="combo-list hidden" data-combolist="${esc(comboId)}">${comboListHtml(comboId,options,mode,resetLabel)}</div>
+  </div>`;
+}
+function openCombo(comboId){
+  document.querySelectorAll(".combo-list").forEach(l=>{if(l.dataset.combolist!==comboId)l.classList.add("hidden")});
+  const list=document.querySelector(`.combo-list[data-combolist="${comboId}"]`);
+  if(list)list.classList.remove("hidden");
+}
+function closeAllCombos(){document.querySelectorAll(".combo-list").forEach(l=>l.classList.add("hidden"))}
+function filterCombo(comboId,query){
+  const list=document.querySelector(`.combo-list[data-combolist="${comboId}"]`);
+  if(!list)return;
+  const q=norm(query);
+  let anyVisible=false;
+  list.querySelectorAll(".combo-opt").forEach(btn=>{
+    if(btn.classList.contains("reset")){btn.style.display="";return} // "Todos" sempre visível, não conta pro "sem resultado"
+    const match=!q||norm(btn.dataset.comboname||btn.textContent).includes(q);
+    btn.style.display=match?"":"none";
+    if(match)anyVisible=true;
+  });
+  let empty=list.querySelector(".combo-empty");
+  if(!anyVisible&&!empty){
+    empty=document.createElement("div");empty.className="combo-empty";empty.textContent="Nenhum colaborador encontrado.";
+    list.appendChild(empty);
+  }else if(anyVisible&&empty){empty.remove()}
+}
+/* trata a escolha feita num combobox — roteia por id porque cada um alimenta um lugar diferente
+   (fila de responsáveis de tarefa/O.S., ou um filtro de pesquisa) */
+function handleComboPick(comboId,mode,value,label){
+  if(mode==="filter"){
+    const routes={
+      filterEmpAdmin:()=>{state.adminFilter.emp=value;render()},
+      filterEmpPerf:()=>{state.perfFilter.emp=value;render()},
+      filterEmpTeam:()=>{state.teamFilter.emp=value;render()}
+    };
+    if(routes[comboId])routes[comboId]();
+    closeAllCombos();
+    return;
+  }
+  if(!value)return;
+  if(comboId==="fAddResp"&&formState){
+    if(!formState.responsibles.map(String).includes(String(value))){formState.responsibles.push(value);refreshTaskResp()}
+  }else if(comboId==="osAddResp"&&osFormState){
+    if(!osFormState.responsibles.map(String).includes(String(value))){osFormState.responsibles.push(value);refreshOSResp()}
+  }
 }
 function employeeById(id){if(id==null)return null;const s=String(id);return employees().find(e=>String(e.id)===s||String(e._key)===s)||null}
 function sectorName(id){const s=sectors().find(x=>String(x.id)===String(id)||String(x._key)===String(id));return s?(pick(s,SCHEMA.nameFields)||s._key):(id||"—")}
@@ -1990,14 +2057,11 @@ function viewTeam(){
   const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(id=>`<option value="${esc(id)}" ${F.sector===id?"selected":""}>${esc(sectorName(id))}</option>`).join("");
   const usedEmpIds=[...new Set(rows.map(r=>String(r.ins.assignedTo||"")).filter(Boolean))];
   const empList=usedEmpIds.map(id=>({id,name:empName(employeeById(id))})).filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
-  const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empList.map(e=>`<option value="${esc(e.id)}" data-name="${esc(norm(e.name))}" ${F.emp===e.id?"selected":""}>${esc(e.name)}</option>`).join("");
   const hasFilter=F.sector||F.emp;
 
   let h=`<div class="filters">
     <select data-filter-team="sector">${secOpts}</select>
-    <div class="emp-picker">${empSearchInput("filterEmpTeam","Buscar colaborador…")}
-      <select id="filterEmpTeam" data-filter-team="emp">${empFilterOpts}</select>
-    </div>
+    ${empComboHtml("filterEmpTeam",empList,{mode:"filter",placeholder:"Buscar colaborador…",resetLabel:"Todos os colaboradores",currentLabel:F.emp?(empList.find(e=>String(e.id)===String(F.emp))||{}).name||"":""})}
     ${hasFilter?`<button class="btn sm ghost" data-act="clear-team-filters">Limpar</button>`:""}
   </div>`;
 
@@ -2150,7 +2214,6 @@ function viewAdmin(){
   const levelOpts=`<option value="">Todos os níveis</option>`+Array.from({length:maxLevel},(_,i)=>i+1)
     .map(l=>`<option value="${l}" ${String(F.level)===String(l)?"selected":""}>R${l}${F.emp?"":" (fila com "+l+"+)"}</option>`).join("");
   const secOpts=`<option value="">Todos os setores</option>`+sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(F.sector)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const empFilterOpts=`<option value="">Todos os colaboradores</option>`+empOpts.map(e=>`<option value="${esc(e.id)}" data-name="${esc(norm(e.name))}" ${String(e.id)===String(F.emp)?"selected":""}>${esc(e.name)}</option>`).join("");
   const statusLabels={pendente:"Pendente hoje",em_andamento:"Em andamento",concluida:"Concluída hoje",adiada:"Adiada",nao_realizada:"Não realizada hoje",sem_responsavel:"Sem responsável",nao_ocorre:"Não ocorre hoje"};
   const statusOpts=`<option value="">Todos os status</option>`+Object.entries(statusLabels).map(([v,l])=>`<option value="${v}" ${F.status===v?"selected":""}>${l}</option>`).join("");
   const natureOpts=`<option value="">Todas as naturezas</option>`+Object.entries(natureLabels).map(([v,l])=>`<option value="${v}" ${F.nature===v?"selected":""}>${l}</option>`).join("");
@@ -2182,9 +2245,7 @@ function viewAdmin(){
 
   h+=`<div class="filters">
     <select data-filter="sector">${secOpts}</select>
-    <div class="emp-picker">${empSearchInput("filterEmpAdmin","Buscar colaborador…")}
-      <select id="filterEmpAdmin" data-filter="emp">${empFilterOpts}</select>
-    </div>
+    ${empComboHtml("filterEmpAdmin",empOpts,{mode:"filter",placeholder:"Buscar colaborador…",resetLabel:"Todos os colaboradores",currentLabel:F.emp?(empOpts.find(e=>String(e.id)===String(F.emp))||{}).name||"":""})}
     <select data-filter="level">${levelOpts}</select>
     <select data-filter="status">${statusOpts}</select>
     <select data-filter="nature">${natureOpts}</select>
@@ -2299,7 +2360,7 @@ function viewPerformance(){
 
   // ---- filtros (afetam o gráfico) ----
   const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(s=>`<option value="${esc(s.id)}" ${F.sector===String(s.id)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const empOpts=`<option value="">Todos os colaboradores</option>`+allEmps.slice().sort((a,b)=>empName(a).localeCompare(empName(b),"pt-BR")).map(e=>`<option value="${esc(e.id)}" data-name="${esc(norm(empName(e)))}" ${F.emp===String(e.id)?"selected":""}>${esc(empName(e))}</option>`).join("");
+  const empOpts=empOptionsSorted(allEmps);
   const hasFilter=F.sector||F.emp;
   const weekOpts=[4,8,12].map(n=>`<button type="button" class="${weeksN===n?"on":""}" data-act="set-perf-weeks" data-n="${n}">${n} semanas</button>`).join("");
 
@@ -2323,9 +2384,7 @@ function viewPerformance(){
     <div class="period-bar">${weekOpts}</div>
     <div class="filters">
       <select data-filter3="sector">${secOpts}</select>
-      <div class="emp-picker">${empSearchInput("filterEmpPerf","Buscar colaborador…")}
-        <select id="filterEmpPerf" data-filter3="emp">${empOpts}</select>
-      </div>
+      ${empComboHtml("filterEmpPerf",empOpts,{mode:"filter",placeholder:"Buscar colaborador…",resetLabel:"Todos os colaboradores",currentLabel:F.emp?(empOpts.find(e=>String(e.id)===String(F.emp))||{}).name||"":""})}
       ${hasFilter?`<button class="btn sm ghost" data-act="clear-perf-filters">Limpar</button>`:""}
     </div>
     <div class="diag">${lineChartSvg(graphSeries)}
@@ -2630,6 +2689,33 @@ let formState=null;
 /* Corpo do checklist (lista + campo de adicionar + nota), compartilhado entre tarefa e O.S.
    Renderizado à parte pra poder atualizar só esse pedaço do formulário — refazer a folha inteira
    a cada item adicionado gera piscada e perde a posição do scroll. */
+/* Corpo do campo "Responsáveis" (fila + combobox de adicionar), compartilhado entre tarefa e O.S.
+   Mesmo raciocínio do checklist: atualiza só esse pedaço ao adicionar/remover/reordenar, sem
+   refazer a folha inteira (evita piscada e perda de scroll). */
+function respBodyHtml(responsibles,kind){
+  const rmAct=kind==="task"?"resp-rm":"os-resp-rm",upAct=kind==="task"?"resp-up":"os-resp-up",downAct=kind==="task"?"resp-down":"os-resp-down";
+  const respHtml=responsibles.length?responsibles.map((id,i)=>`
+    <div class="resp-item">
+      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
+      <div class="ord">
+        <button class="miniicon" data-act="${upAct}" data-i="${i}" ${i===0?"disabled":""}>▲</button>
+        <button class="miniicon" data-act="${downAct}" data-i="${i}" ${i===responsibles.length-1?"disabled":""}>▼</button>
+      </div>
+      <button class="miniicon rm" data-act="${rmAct}" data-i="${i}">✕</button>
+    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
+  const available=empOptionsSorted(employees().filter(e=>!responsibles.map(String).includes(String(e._key!=null?e._key:e.id))));
+  const comboId=kind==="task"?"fAddResp":"osAddResp";
+  return `<div class="resp-list">${respHtml}</div>
+    ${empComboHtml(comboId,available,{mode:"add",placeholder:"Buscar e adicionar responsável…"})}`;
+}
+function refreshTaskResp(){
+  const body=$("#fRespBody");if(!body||!formState)return;
+  body.innerHTML=respBodyHtml(formState.responsibles,"task");
+}
+function refreshOSResp(){
+  const body=$("#osRespBody");if(!body||!osFormState)return;
+  body.innerHTML=respBodyHtml(osFormState.responsibles,"os");
+}
 function checklistBodyHtml(items,kind){
   const rmAct=kind==="task"?"check-rm":"os-check-rm";
   const addAct=kind==="task"?"check-add":"os-check-add";
@@ -2682,18 +2768,6 @@ function openTaskForm(tid){
 function renderTaskForm(){
   const f=formState;
   const secOpts=sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(f.sectorId)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const respEmps=employees().filter(e=>!f.responsibles.map(String).includes(String(e.id))&&!f.responsibles.map(String).includes(String(e._key)))
-    .sort((a,b)=>empName(a).localeCompare(empName(b),"pt-BR"));
-  const addOpts=respEmps.map(e=>`<option value="${esc(e._key!=null?e._key:e.id)}" data-name="${esc(norm(empName(e)))}">${esc(empName(e))}</option>`).join("");
-  const respHtml=f.responsibles.length?f.responsibles.map((id,i)=>`
-    <div class="resp-item">
-      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
-      <div class="ord">
-        <button class="miniicon" data-act="resp-up" data-i="${i}" ${i===0?"disabled":""}>▲</button>
-        <button class="miniicon" data-act="resp-down" data-i="${i}" ${i===f.responsibles.length-1?"disabled":""}>▼</button>
-      </div>
-      <button class="miniicon rm" data-act="resp-rm" data-i="${i}">✕</button>
-    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
 
   const rtype=f.recurrence.type||"daily";
   const interval=f.recurrence.interval||1;
@@ -2721,13 +2795,7 @@ function renderTaskForm(){
       <div class="field"><label>Horário de início (opcional)</label><input id="fTime" type="time" value="${esc(f.startTime||"")}"></div>
     </div>
     <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
-      <div class="resp-list">${respHtml}</div>
-      <div class="add-resp">
-        <div class="emp-picker">${empSearchInput("fAddResp","Buscar responsável…")}
-          <select id="fAddResp"><option value="">＋ Adicionar responsável…</option>${addOpts}</select>
-        </div>
-        <button class="btn sm" data-act="resp-add">Adicionar</button>
-      </div>
+      <div id="fRespBody">${respBodyHtml(f.responsibles,"task")}</div>
       <p class="note">A tarefa do dia vai para o R1; se ele estiver ausente ou fora do horário do turno, cai para o próximo R elegível.</p>
     </div>
     <div class="field"><label>Checklist (opcional)</label>
@@ -2797,18 +2865,6 @@ function openOSForm(id){
 function renderOSForm(){
   const f=osFormState;
   const secOpts=sectors().map(s=>`<option value="${esc(s.id)}" ${String(s.id)===String(f.sectorId)?"selected":""}>${esc(pick(s,SCHEMA.nameFields)||s._key)}</option>`).join("");
-  const respEmps=employees().filter(e=>!f.responsibles.map(String).includes(String(e.id))&&!f.responsibles.map(String).includes(String(e._key)))
-    .sort((a,b)=>empName(a).localeCompare(empName(b),"pt-BR"));
-  const addOpts=respEmps.map(e=>`<option value="${esc(e._key!=null?e._key:e.id)}" data-name="${esc(norm(empName(e)))}">${esc(empName(e))}</option>`).join("");
-  const respHtml=f.responsibles.length?f.responsibles.map((id,i)=>`
-    <div class="resp-item">
-      <span class="rlevel">R${i+1}</span><span class="rname">${esc(empName(employeeById(id)))}</span>
-      <div class="ord">
-        <button class="miniicon" data-act="os-resp-up" data-i="${i}" ${i===0?"disabled":""}>▲</button>
-        <button class="miniicon" data-act="os-resp-down" data-i="${i}" ${i===f.responsibles.length-1?"disabled":""}>▼</button>
-      </div>
-      <button class="miniicon rm" data-act="os-resp-rm" data-i="${i}">✕</button>
-    </div>`).join(""):`<p class="note">Nenhum responsável ainda. Adicione na ordem R1, R2, R3…</p>`;
   openSheet(f.id?"Editar O.S.":"Nova ordem de serviço",`
     <div class="field"><label>Título</label><input id="osTitle" value="${esc(f.title)}" placeholder="Ex.: Reparar vazamento no chuveiro do quarto 204"></div>
     <div class="field"><label>Descrição</label><textarea id="osDesc" placeholder="Detalhes (opcional)">${esc(f.description)}</textarea></div>
@@ -2823,13 +2879,7 @@ function renderOSForm(){
       <div class="field"><label>Prazo (opcional)</label><input id="osDeadline" type="date" value="${esc(f.deadline||"")}"></div>
     </div>
     <div class="field"><label>Responsáveis (fila R1 → R2 → R3…)</label>
-      <div class="resp-list">${respHtml}</div>
-      <div class="add-resp">
-        <div class="emp-picker">${empSearchInput("osAddResp","Buscar responsável…")}
-          <select id="osAddResp"><option value="">＋ Adicionar responsável…</option>${addOpts}</select>
-        </div>
-        <button class="btn sm" data-act="os-resp-add">Adicionar</button>
-      </div>
+      <div id="osRespBody">${respBodyHtml(f.responsibles,"os")}</div>
       <p class="note">Enquanto a O.S. não é iniciada, recalcula todo dia quem está elegível, começando pelo R1. Ao apertar Iniciar, trava com quem iniciou.</p>
     </div>
     <div class="field"><label>Checklist (opcional)</label>
@@ -3248,18 +3298,16 @@ document.addEventListener("input",e=>{
     if(ce.dataset.checkedit==="task"&&formState&&formState.checklist[i])formState.checklist[i].text=ce.value;
     if(ce.dataset.checkedit==="os"&&osFormState&&osFormState.checklist[i])osFormState.checklist[i].text=ce.value;
   }
-  const es=e.target.closest("[data-empsearch]");
-  if(es){
-    const sel=document.getElementById(es.dataset.empsearch);
-    if(sel){
-      const q=norm(es.value);
-      for(const opt of sel.options){
-        if(!opt.value){opt.hidden=false;continue} // placeholder ("Todos os colaboradores"/"Adicionar…") sempre visível
-        opt.hidden=!!q&&!(opt.dataset.name||norm(opt.textContent)).includes(q);
-      }
-    }
-  }
+  const ci=e.target.closest("[data-comboinput]");
+  if(ci)filterCombo(ci.dataset.comboinput,ci.value);
 });
+document.addEventListener("focusin",e=>{
+  const inp=e.target.closest("[data-comboinput]");
+  if(inp){openCombo(inp.dataset.comboinput);filterCombo(inp.dataset.comboinput,inp.value)}
+});
+document.addEventListener("click",e=>{
+  if(!e.target.closest(".combo"))closeAllCombos();
+},true);
 document.addEventListener("paste",e=>{
   if(e.target.id!=="fAddCheck"&&e.target.id!=="osAddCheck")return;
   const text=(e.clipboardData||window.clipboardData).getData("text");
@@ -3276,6 +3324,7 @@ document.addEventListener("paste",e=>{
   }
 });
 document.addEventListener("keydown",e=>{
+  if(e.key==="Escape")closeAllCombos();
   if(e.key==="Enter"&&e.target.id==="fAddCheck"){
     e.preventDefault();
     const text=e.target.value.trim();
@@ -3333,10 +3382,9 @@ document.addEventListener("click",e=>{
     case"transfer-os":openOSTransfer(osid);break;
     case"sel-os-r":osTransferState.sel=a.dataset.to;renderOSTransfer();break;
     case"confirm-os-transfer":{const ts=osTransferState;if(!ts||!ts.sel)break;transferOS(ts.osid,ts.sel);break}
-    case"os-resp-add":{const sel=$("#osAddResp");if(sel&&sel.value){syncOSFormInputs();osFormState.responsibles.push(sel.value);renderOSForm()}break}
-    case"os-resp-rm":{syncOSFormInputs();osFormState.responsibles.splice(+a.dataset.i,1);renderOSForm();break}
-    case"os-resp-up":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderOSForm();break}
-    case"os-resp-down":{syncOSFormInputs();const i=+a.dataset.i;const r=osFormState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderOSForm();break}
+    case"os-resp-rm":{osFormState.responsibles.splice(+a.dataset.i,1);refreshOSResp();break}
+    case"os-resp-up":{const i=+a.dataset.i;const r=osFormState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];refreshOSResp();break}
+    case"os-resp-down":{const i=+a.dataset.i;const r=osFormState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];refreshOSResp();break}
     case"os-check-add":{
       const inp=$("#osAddCheck");const text=inp?inp.value.trim():"";
       if(text){osFormState.checklist.push({id:genId("chk"),text});refreshOSChecklist()}
@@ -3399,10 +3447,16 @@ document.addEventListener("click",e=>{
       break;
     }
     // form
-    case"resp-add":{const sel=$("#fAddResp");if(sel&&sel.value){syncFormInputs();formState.responsibles.push(sel.value);renderTaskForm()}break}
-    case"resp-rm":{syncFormInputs();formState.responsibles.splice(+a.dataset.i,1);renderTaskForm();break}
-    case"resp-up":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];renderTaskForm();break}
-    case"resp-down":{syncFormInputs();const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];renderTaskForm();break}
+    case"combo-pick":{
+      const combo=a.dataset.combo,value=a.dataset.value,label=a.dataset.comboname||"";
+      const inp=document.getElementById(combo);
+      const mode=inp?inp.dataset.combomode:"add";
+      handleComboPick(combo,mode,value,label);
+      break;
+    }
+    case"resp-rm":{formState.responsibles.splice(+a.dataset.i,1);refreshTaskResp();break}
+    case"resp-up":{const i=+a.dataset.i;const r=formState.responsibles;[r[i-1],r[i]]=[r[i],r[i-1]];refreshTaskResp();break}
+    case"resp-down":{const i=+a.dataset.i;const r=formState.responsibles;[r[i+1],r[i]]=[r[i],r[i+1]];refreshTaskResp();break}
     case"check-add":{
       const inp=$("#fAddCheck");const text=inp?inp.value.trim():"";
       if(text){formState.checklist.push({id:genId("chk"),text});refreshTaskChecklist()}
