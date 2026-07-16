@@ -1464,7 +1464,7 @@ function startOS(osid){
   }).then(()=>{toast("O.S. iniciada");refreshOpenOSModal(osid);});
 }
 function transferOS(osid,toEmpId){
-  const os=SERVICE_ORDERS[osid];if(!os||!canActOS(os))return;
+  const os=SERVICE_ORDERS[osid];if(!os||!(canActOS(os)||canManageTeam()))return;
   dbRef(`${PATH.tarefas}/serviceOrders/${osid}`).update({
     assignedTo:String(toEmpId),autoAssigned:false,
     history:pushOSHistory(os,{type:"transferida",to:String(toEmpId)})
@@ -2053,9 +2053,17 @@ function viewTeam(){
     const task=TASKS[ins.taskId];if(!task||task.active===false)continue;
     rows.push({iid,ins,task});
   }
-  const usedSectors=[...new Set(rows.map(r=>String(r.task.sectorId||"")))];
+  const osRows=[];
+  for(const osid in SERVICE_ORDERS){
+    const os=SERVICE_ORDERS[osid];if(!os||(os.status!=="aberta"&&os.status!=="em_andamento"))continue;
+    osRows.push({osid,os});
+  }
+  const usedSectors=[...new Set([...rows.map(r=>String(r.task.sectorId||"")),...osRows.map(r=>String(r.os.sectorId||""))])];
   const secOpts=`<option value="">Todos os setores</option>`+usedSectors.map(id=>`<option value="${esc(id)}" ${F.sector===id?"selected":""}>${esc(sectorName(id))}</option>`).join("");
-  const usedEmpIds=[...new Set(rows.map(r=>String(r.ins.assignedTo||"")).filter(Boolean))];
+  const usedEmpIds=[...new Set([
+    ...rows.map(r=>String(r.ins.assignedTo||"")),
+    ...osRows.map(r=>String(osCurrentAssignee(r.os)||""))
+  ].filter(Boolean))];
   const empList=usedEmpIds.map(id=>({id,name:empName(employeeById(id))})).filter(e=>e.name&&e.name!=="—").sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
   const hasFilter=F.sector||F.emp;
 
@@ -2070,40 +2078,78 @@ function viewTeam(){
     if(F.emp&&String(ins.assignedTo||"")!==F.emp)return false;
     return true;
   }).sort((a,b)=>a.task.title.localeCompare(b.task.title,"pt-BR"));
+  const osFiltered=osRows.filter(({os})=>{
+    if(F.sector&&String(os.sectorId||"")!==F.sector)return false;
+    if(F.emp&&String(osCurrentAssignee(os)||"")!==F.emp)return false;
+    return true;
+  }).sort((a,b)=>a.os.title.localeCompare(b.os.title,"pt-BR"));
 
+  // ---- Tarefas ----
   h+=`<div class="section-title" style="margin-top:0">Tarefas de hoje da equipe <span class="count-pill">${filtered.length}${filtered.length!==rows.length?" de "+rows.length:""}</span></div>`;
-  if(!rows.length){h+=`<div class="empty"><b>Nenhuma tarefa materializada hoje ainda.</b>Peça pra alguém abrir "Minhas tarefas" primeiro, ou volte mais tarde.</div>`;return h}
-  if(!filtered.length){h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;return h}
+  if(!rows.length){
+    h+=`<div class="empty"><b>Nenhuma tarefa materializada hoje ainda.</b>Peça pra alguém abrir "Minhas tarefas" primeiro, ou volte mais tarde.</div>`;
+  }else if(!filtered.length){
+    h+=`<div class="empty"><b>Nenhuma tarefa com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;
+  }else{
+    const teamCard=({iid,ins,task})=>{
+      const respName=ins.assignedTo?empName(employeeById(ins.assignedTo)):null;
+      return `<div class="tcard"><div class="tcard-head"><div>
+        <h3>${esc(task.title)}</h3>
+        <div class="small">${esc(sectorName(task.sectorId))}${task.startTime?` · 🕐 ${esc(task.startTime)}`:""}</div>
+        <div class="meta" style="margin-top:6px">${statusBadge(ins.status)}<span class="chip">${respName?esc(respName):"Sem responsável elegível hoje"}</span></div>
+      </div></div>
+      ${(ins.status==="pendente"||ins.status==="em_andamento")?`<div class="actions"><button class="btn sm" data-act="transfer-team" data-iid="${iid}">Transferir</button></div>`:""}
+      </div>`;
+    };
+    const statusGroups=[
+      ["em_andamento","🔵","Em andamento"],
+      ["pendente","⏳","Pendente"],
+      ["nao_realizada","⚠️","Não realizada"],
+      ["concluida","✅","Concluída"],
+    ];
+    for(const [st,icon,label] of statusGroups){
+      const group=filtered.filter(r=>r.ins.status===st);
+      if(!group.length)continue;
+      h+=dayBlockHead(st,icon,label,null,group.length);
+      h+=group.map(teamCard).join("");
+    }
+    // qualquer status fora do mapa acima (segurança contra status novo/inesperado) ainda aparece, sem ficar escondido
+    const known=new Set(statusGroups.map(g=>g[0]));
+    const leftover=filtered.filter(r=>!known.has(r.ins.status));
+    if(leftover.length){
+      h+=dayBlockHead("outro","❔","Outros",null,leftover.length);
+      h+=leftover.map(teamCard).join("");
+    }
+  }
 
-  const teamCard=({iid,ins,task})=>{
-    const respName=ins.assignedTo?empName(employeeById(ins.assignedTo)):null;
-    return `<div class="tcard"><div class="tcard-head"><div>
-      <h3>${esc(task.title)}</h3>
-      <div class="small">${esc(sectorName(task.sectorId))}${task.startTime?` · 🕐 ${esc(task.startTime)}`:""}</div>
-      <div class="meta" style="margin-top:6px">${statusBadge(ins.status)}<span class="chip">${respName?esc(respName):"Sem responsável elegível hoje"}</span></div>
-    </div></div>
-    ${(ins.status==="pendente"||ins.status==="em_andamento")?`<div class="actions"><button class="btn sm" data-act="transfer-team" data-iid="${iid}">Transferir</button></div>`:""}
-    </div>`;
-  };
-  const statusGroups=[
-    ["em_andamento","🔵","Em andamento"],
-    ["pendente","⏳","Pendente"],
-    ["nao_realizada","⚠️","Não realizada"],
-    ["concluida","✅","Concluída"],
-  ];
-  for(const [st,icon,label] of statusGroups){
-    const group=filtered.filter(r=>r.ins.status===st);
-    if(!group.length)continue;
-    h+=dayBlockHead(st,icon,label,null,group.length);
-    h+=group.map(teamCard).join("");
+  // ---- Ordens de serviço ----
+  h+=`<div class="section-title">Ordens de serviço da equipe <span class="count-pill">${osFiltered.length}${osFiltered.length!==osRows.length?" de "+osRows.length:""}</span></div>`;
+  if(!osRows.length){
+    h+=`<div class="empty"><b>Nenhuma O.S. ativa no momento.</b></div>`;
+  }else if(!osFiltered.length){
+    h+=`<div class="empty"><b>Nenhuma O.S. com esses filtros.</b>Ajuste ou limpe os filtros acima.</div>`;
+  }else{
+    const teamOSCard=({osid,os})=>{
+      const assignee=osCurrentAssignee(os);
+      const respName=assignee?empName(employeeById(assignee)):null;
+      const isLate=!!os.deadline&&os.deadline<today;
+      return `<div class="tcard"><div class="tcard-head"><div>
+        <h3>${esc(os.title)}</h3>
+        <div class="small">${esc(sectorName(os.sectorId))}${os.requester?" · "+esc(os.requester):""}</div>
+        <div class="meta" style="margin-top:6px">${osStatusBadge(os.status)}${osPriorityChip(os.priority)}${os.deadline?`<span class="chip${isLate?" late":""}">📅 ${fmtDate(os.deadline)}</span>`:""}<span class="chip">${respName?esc(respName):"Sem responsável elegível hoje"}</span></div>
+      </div></div>
+      <div class="actions"><button class="btn sm" data-act="transfer-team-os" data-osid="${osid}">Transferir</button></div>
+      </div>`;
+    };
+    const osStatusGroups=[["em_andamento","🔵","Em andamento"],["aberta","⏳","Abertas"]];
+    for(const [st,icon,label] of osStatusGroups){
+      const group=osFiltered.filter(r=>r.os.status===st);
+      if(!group.length)continue;
+      h+=dayBlockHead(st,icon,label,null,group.length);
+      h+=group.map(teamOSCard).join("");
+    }
   }
-  // qualquer status fora do mapa acima (segurança contra status novo/inesperado) ainda aparece, sem ficar escondido
-  const known=new Set(statusGroups.map(g=>g[0]));
-  const leftover=filtered.filter(r=>!known.has(r.ins.status));
-  if(leftover.length){
-    h+=dayBlockHead("outro","❔","Outros",null,leftover.length);
-    h+=leftover.map(teamCard).join("");
-  }
+
   return h;
 }
 function viewOS(){
@@ -3372,6 +3418,7 @@ document.addEventListener("click",e=>{
     case"clear-os-filters":state.osFilter={status:"",priority:"",sector:""};render();break;
     case"clear-team-filters":state.teamFilter={sector:"",emp:""};render();break;
     case"transfer-team":openTransfer(iid);break;
+    case"transfer-team-os":openOSTransfer(osid);break;
     case"open-os-detail":openOSDetail(osid);break;
     case"start-os":startOS(osid);break;
     case"open-os-complete":openOSCompleteModal(osid);break;
