@@ -97,6 +97,12 @@ body{
   border-radius:6px; margin-bottom:26px;
 }
 .read-aloud p{font-style:italic; color:var(--ink-soft); font-size:14px; margin-top:8px;}
+.script-rules ol{margin:10px 0 0 18px; padding:0;}
+.script-rules li{font-size:13.5px; color:var(--ink-soft); margin-bottom:6px; line-height:1.5;}
+.script-line{
+  font-size:12.5px; color:var(--aqua); background:rgba(44,168,164,0.07);
+  border-left:2px solid var(--aqua); padding:6px 10px; border-radius:4px; margin-bottom:8px;
+}
 
 .form-msg{font-size:13.5px; margin-bottom:14px; min-height:18px;}
 .form-msg.error{color:var(--coral);}
@@ -191,11 +197,11 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
       <span>Ganso</span><span class="brand-sub">Pesquisa · All Inclusive</span>
     </div>
     <h1>Entrar</h1>
-    <p class="sub">Digite <b>atendente</b> ou <b>gestor</b>, de acordo com o seu acesso.</p>
+    <p class="sub">Digite sua senha de acesso.</p>
     <form id="loginForm">
       <div class="field-row">
-        <label>Seu acesso</label>
-        <input type="text" name="papel" required placeholder="atendente ou gestor" autocomplete="off">
+        <label>Senha de acesso</label>
+        <input type="password" name="papel" required autocomplete="off">
       </div>
       <div id="loginMsg" class="form-msg"></div>
       <button type="submit" class="submit-btn">Entrar</button>
@@ -235,6 +241,17 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
 
       <form id="surveyForm">
 
+        <div class="read-aloud script-rules">
+          <span class="tag">Antes de ligar — regras do roteiro</span>
+          <ol>
+            <li>Leia as perguntas com o texto exato mostrado na tela, na mesma ordem, para todo mundo.</li>
+            <li>Não reaja ao valor que o cliente disser — nem "nossa, tão barato" nem "que bom!". Agradeça de forma neutra ("entendi", "certo") e siga para a próxima.</li>
+            <li>Não repita o valor de uma pergunta como referência para a pergunta seguinte.</li>
+            <li>Se o cliente perguntar "qual é o preço certo?", responda que não existe resposta certa — é só a opinião dele mesmo.</li>
+            <li>Leia todas as opções de múltipla escolha antes de esperar a resposta, sempre na mesma ordem em que aparecem na tela.</li>
+          </ol>
+        </div>
+
         <div class="field-row">
           <label>Atendente responsável <span class="opt">(opcional)</span></label>
           <input type="text" name="atendente" placeholder="Seu nome">
@@ -254,6 +271,7 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
         </div>
 
         <div class="field-row">
+          <div class="script-line">Leia exatamente: <i>"Quanto você pagou, ou pagaria, pelo ingresso do Day Use tradicional?"</i></div>
           <label>Quanto pagou (ou pagaria) pelo ingresso do Day Use tradicional? *</label>
           <div class="pills" data-name="preco_tradicional">
             <button type="button" class="pill">Não sei / não se aplica</button>
@@ -285,11 +303,13 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
         </div>
 
         <div class="field-row">
+          <div class="script-line">Lembrete: não reaja aos valores anteriores nem repita o que o cliente disse antes desta pergunta.</div>
           <label>A que preço você consideraria <b>barato demais</b>, a ponto de desconfiar da qualidade? *</label>
           <div class="pills price-pills" data-name="barato_demais"></div>
         </div>
 
         <div class="field-row">
+          <div class="script-line">Leia as 5 opções abaixo, sempre nessa ordem, antes de perguntar qual pesa mais.</div>
           <label>Dos itens incluídos no pacote, qual pesa mais na decisão de pagar por ele? *</label>
           <div class="pills stack" data-name="o_que_pesa_mais">
             <button type="button" class="pill">Café da manhã, almoço e café da tarde inclusos</button>
@@ -301,6 +321,7 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
         </div>
 
         <div class="field-row">
+          <div class="script-line">Leia as 4 opções abaixo, sempre nessa ordem, antes de esperar a resposta.</div>
           <label>Comparado ao Day Use tradicional, o all inclusive muda o quanto teria vontade de visitar? *</label>
           <div class="pills stack" data-name="muda_interesse">
             <button type="button" class="pill">Aumenta bastante o interesse</button>
@@ -311,6 +332,7 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
         </div>
 
         <div class="field-row">
+          <div class="script-line">Leia as 4 opções abaixo, sempre nessa ordem, antes de esperar a resposta.</div>
           <label>Se o all inclusive existisse, trocaria o formato tradicional por ele na maioria das visitas? *</label>
           <div class="pills stack" data-name="trocaria_formato">
             <button type="button" class="pill">Sim, sempre que possível</button>
@@ -331,13 +353,17 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
         </div>
 
         <div class="field-row">
-          <label>Em qual faixa de renda o cliente se enquadra? *</label>
-          <div class="pills" data-name="faixa_renda">
-            <button type="button" class="pill">Muito Baixa</button>
-            <button type="button" class="pill">Baixa</button>
-            <button type="button" class="pill">Média</button>
-            <button type="button" class="pill">Alta</button>
-            <button type="button" class="pill">Muito Alta</button>
+          <div class="script-line">Pergunte primeiro se o cliente sabe se classificar sozinho — não estime pela voz, forma de falar ou qualquer outra impressão pessoal.</div>
+          <label>Classe socioeconômica do cliente *</label>
+          <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 10px;">
+            Se o cliente não souber se classificar, leia as 5 faixas de renda como referência.
+          </p>
+          <div class="pills stack" data-name="classe_social">
+            <button type="button" class="pill">Classe A — acima de R$28.240</button>
+            <button type="button" class="pill">Classe B — de R$14.120 a R$28.240</button>
+            <button type="button" class="pill">Classe C — de R$5.648 a R$14.120</button>
+            <button type="button" class="pill">Classe D — de R$2.824 a R$5.648</button>
+            <button type="button" class="pill">Classe E — até R$2.824</button>
           </div>
         </div>
 
@@ -498,7 +524,7 @@ loginForm.addEventListener('submit', (e)=>{
   if(valor === 'gestor' || valor === 'atendente'){
     enterAs(valor);
   }else{
-    loginMsg.textContent = 'Digite "atendente" ou "gestor".';
+    loginMsg.textContent = 'Senha de acesso inválida.';
     loginMsg.className = 'form-msg error';
   }
 });
@@ -572,7 +598,7 @@ document.querySelectorAll('.pills[data-name]').forEach(container=>{
 
 // ===================== SUBMIT (Formulário de pesquisa) =====================
 const REQUIRED_PILL_FIELDS = ['ja_visitou','preco_tradicional','barato','caro','caro_demais',
-  'barato_demais','o_que_pesa_mais','muda_interesse','trocaria_formato','grupo','faixa_renda'];
+  'barato_demais','o_que_pesa_mais','muda_interesse','trocaria_formato','grupo','classe_social'];
 
 document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -605,7 +631,7 @@ document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
     muda_interesse: formState.muda_interesse,
     trocaria_formato: formState.trocaria_formato,
     grupo: formState.grupo,
-    faixa_renda: formState.faixa_renda,
+    classe_social: formState.classe_social,
     mudanca_texto: e.target.mudanca_texto.value.trim() || null,
     criado_em: firebase.database.ServerValue.TIMESTAMP
   };
@@ -637,7 +663,7 @@ const COLUMNS = [
   ['ja_visitou','Já visitou'], ['preco_tradicional','Preço tradicional'],
   ['barato','Barato'], ['caro','Caro'], ['caro_demais','Caro demais'], ['barato_demais','Barato demais'],
   ['o_que_pesa_mais','O que pesa mais'], ['muda_interesse','Muda interesse'],
-  ['trocaria_formato','Trocaria formato'], ['grupo','Grupo'], ['faixa_renda','Faixa renda'],
+  ['trocaria_formato','Trocaria formato'], ['grupo','Grupo'], ['classe_social','Classe social'],
   ['mudanca_texto','O que faria pagar mais']
 ];
 
