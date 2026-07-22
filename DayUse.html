@@ -91,6 +91,17 @@ body{
 .pill:hover{border-color:var(--aqua);}
 .pill.selected{background:var(--aqua); border-color:var(--aqua); color:#04211f; font-weight:600;}
 .price-pills .pill{font-family:'IBM Plex Mono',monospace; min-width:64px; text-align:center;}
+.price-input{display:flex; align-items:center; gap:0; max-width:220px;}
+.price-input span{
+  background:var(--sand); border:1px solid var(--line); border-right:none;
+  padding:11px 12px; border-radius:8px 0 0 8px; font-family:'IBM Plex Mono',monospace;
+  font-size:14px; color:var(--ink-soft);
+}
+.price-input input{
+  flex:1; border:1px solid var(--line); border-radius:0 8px 8px 0; padding:11px 13px;
+  font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--ink); min-width:0;
+}
+.price-input input:focus{outline:2px solid var(--aqua); outline-offset:1px;}
 
 .read-aloud{
   background:var(--sand); border-left:3px solid var(--gold); padding:16px 18px;
@@ -289,23 +300,23 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
 
         <div class="field-row">
           <label>A que preço você consideraria esse Day Use All Inclusive <b>barato</b> (uma pechincha)? *</label>
-          <div class="pills price-pills" data-name="barato"></div>
+          <div class="price-input"><span>R$</span><input type="number" name="barato" min="1" step="1" required placeholder="Ex: 90"></div>
         </div>
 
         <div class="field-row">
           <label>A que preço você consideraria <b>caro</b>, mas ainda assim compraria? *</label>
-          <div class="pills price-pills" data-name="caro"></div>
+          <div class="price-input"><span>R$</span><input type="number" name="caro" min="1" step="1" required placeholder="Ex: 150"></div>
         </div>
 
         <div class="field-row">
           <label>A que preço você consideraria <b>caro demais</b>, a ponto de não comprar? *</label>
-          <div class="pills price-pills" data-name="caro_demais"></div>
+          <div class="price-input"><span>R$</span><input type="number" name="caro_demais" min="1" step="1" required placeholder="Ex: 220"></div>
         </div>
 
         <div class="field-row">
           <div class="script-line">Lembrete: não reaja aos valores anteriores nem repita o que o cliente disse antes desta pergunta.</div>
           <label>A que preço você consideraria <b>barato demais</b>, a ponto de desconfiar da qualidade? *</label>
-          <div class="pills price-pills" data-name="barato_demais"></div>
+          <div class="price-input"><span>R$</span><input type="number" name="barato_demais" min="1" step="1" required placeholder="Ex: 50"></div>
         </div>
 
         <div class="field-row">
@@ -480,13 +491,6 @@ const RESPONSES_PATH = "respostas_all_inclusive";
 // ================================================================
 </script>
 <script>
-// Escala de preço usada nas 4 perguntas Van Westendorp do all inclusive.
-// Ajuste esses valores se tiverem uma referência melhor de custo/margem —
-// se muitas respostas caírem no valor mais alto, o teto real da curva fica invisível.
-const PRICE_LADDER = [60, 80, 100, 120, 140, 160, 180, 200, 220, 250, 280, 320];
-
-</script>
-<script>
 // ===================== LOGIN SIMPLES (por palavra-chave) =====================
 // Sem contas de usuário: quem digitar "gestor" entra como gestor, quem digitar
 // "atendente" entra como atendente. Por baixo dos panos, o app ainda faz um
@@ -571,20 +575,6 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 // ===================== FORM: PILL FIELDS =====================
 const formState = {};
 
-function renderPricePills(){
-  document.querySelectorAll('.price-pills').forEach(container=>{
-    PRICE_LADDER.forEach(v=>{
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'pill';
-      btn.textContent = 'R$'+v;
-      btn.dataset.value = v;
-      container.appendChild(btn);
-    });
-  });
-}
-renderPricePills();
-
 document.querySelectorAll('.pills[data-name]').forEach(container=>{
   const name = container.dataset.name;
   container.addEventListener('click', (e)=>{
@@ -597,8 +587,8 @@ document.querySelectorAll('.pills[data-name]').forEach(container=>{
 });
 
 // ===================== SUBMIT (Formulário de pesquisa) =====================
-const REQUIRED_PILL_FIELDS = ['ja_visitou','preco_tradicional','barato','caro','caro_demais',
-  'barato_demais','o_que_pesa_mais','muda_interesse','trocaria_formato','grupo','classe_social'];
+const REQUIRED_PILL_FIELDS = ['ja_visitou','preco_tradicional',
+  'o_que_pesa_mais','muda_interesse','trocaria_formato','grupo','classe_social'];
 
 document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -618,15 +608,35 @@ document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
     return;
   }
 
+  const barato = Number(e.target.barato.value);
+  const caro = Number(e.target.caro.value);
+  const caroDemais = Number(e.target.caro_demais.value);
+  const baratoDemais = Number(e.target.barato_demais.value);
+
+  if(![barato, caro, caroDemais, baratoDemais].every(v=>Number.isFinite(v) && v > 0)){
+    msg.textContent = 'Preencha os 4 valores de preço com números maiores que zero.';
+    msg.className = 'form-msg error';
+    return;
+  }
+
+  const ordemEsperada = baratoDemais < barato && barato < caro && caro < caroDemais;
+  if(!ordemEsperada){
+    const seguir = confirm(
+      'Os valores fogem da ordem esperada (barato demais < barato < caro < caro demais).\n'+
+      'Confira com o cliente se digitou certo.\n\nSalvar assim mesmo?'
+    );
+    if(!seguir) return;
+  }
+
   const payload = {
     atendente: e.target.atendente.value.trim() || null,
     nome,
     ja_visitou: formState.ja_visitou,
     preco_tradicional: formState.preco_tradicional,
-    barato: Number(formState.barato),
-    caro: Number(formState.caro),
-    caro_demais: Number(formState.caro_demais),
-    barato_demais: Number(formState.barato_demais),
+    barato,
+    caro,
+    caro_demais: caroDemais,
+    barato_demais: baratoDemais,
     o_que_pesa_mais: formState.o_que_pesa_mais,
     muda_interesse: formState.muda_interesse,
     trocaria_formato: formState.trocaria_formato,
