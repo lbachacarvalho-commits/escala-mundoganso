@@ -116,6 +116,8 @@ body{
   border-radius:8px; font-size:13px; cursor:pointer; font-family:'Space Grotesk',sans-serif;
 }
 .secondary-btn:hover{border-color:var(--aqua);}
+.danger-btn{color:var(--coral); border-color:rgba(240,101,74,0.35);}
+.danger-btn:hover{background:rgba(240,101,74,0.08); border-color:var(--coral);}
 .table-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:#fff;}
 table{border-collapse:collapse; width:100%; font-size:12.5px;}
 thead th{
@@ -361,6 +363,7 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
       <div class="table-actions">
         <button id="exportCsvBtn" class="secondary-btn">Exportar CSV</button>
         <button id="refreshBtn" class="secondary-btn">Atualizar</button>
+        <button id="resetBtn" class="secondary-btn danger-btn">Zerar respostas</button>
       </div>
       <div class="table-scroll">
         <table id="responsesTable">
@@ -685,6 +688,26 @@ async function refreshCount(){
 }
 
 document.getElementById('refreshBtn').addEventListener('click', loadResponses);
+
+document.getElementById('resetBtn').addEventListener('click', async ()=>{
+  const total = cachedDocs.length;
+  const confirmacao = prompt(
+    'Isso vai apagar TODAS as '+total+' respostas salvas, sem volta.\n'+
+    'Digite ZERAR (em maiúsculas) para confirmar:'
+  );
+  if(confirmacao !== 'ZERAR'){
+    if(confirmacao !== null) alert('Cancelado — o texto não confere.');
+    return;
+  }
+  try{
+    await db.ref(RESPONSES_PATH).remove();
+    alert('Respostas apagadas.');
+    loadResponses();
+  }catch(err){
+    console.error(err);
+    alert('Erro ao apagar. Confira sua conexão/permissão no Firebase.');
+  }
+});
 
 document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
   if(!cachedDocs.length){ alert('Não há respostas para exportar ainda.'); return; }
