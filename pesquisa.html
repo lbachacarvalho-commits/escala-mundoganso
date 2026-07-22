@@ -189,15 +189,11 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
       <span>Ganso</span><span class="brand-sub">Pesquisa · All Inclusive</span>
     </div>
     <h1>Entrar</h1>
-    <p class="sub">Use o e-mail e senha cadastrados pelo gestor.</p>
+    <p class="sub">Digite <b>atendente</b> ou <b>gestor</b>, de acordo com o seu acesso.</p>
     <form id="loginForm">
       <div class="field-row">
-        <label>E-mail</label>
-        <input type="email" name="email" required autocomplete="username">
-      </div>
-      <div class="field-row">
-        <label>Senha</label>
-        <input type="password" name="senha" required autocomplete="current-password">
+        <label>Seu acesso</label>
+        <input type="text" name="papel" required placeholder="atendente ou gestor" autocomplete="off">
       </div>
       <div id="loginMsg" class="form-msg"></div>
       <button type="submit" class="submit-btn">Entrar</button>
@@ -217,7 +213,6 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
     <button class="tab-btn active" data-tab="form">Formulário</button>
     <button class="tab-btn" data-tab="responses" data-role="gestor">Respostas <span id="respCount" class="count-badge">0</span></button>
     <button class="tab-btn" data-tab="analysis" data-role="gestor">Plano de Análise</button>
-    <button class="tab-btn" data-tab="users" data-role="gestor">Usuários</button>
   </nav>
   <div class="conn-status">
     <span id="roleTag" class="role-tag"></span>
@@ -421,57 +416,6 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
     </div>
   </section>
 
-  <!-- ============ ABA USUÁRIOS (só gestor) ============ -->
-  <section id="tab-users" class="tab-panel">
-    <div class="panel-wrap wide">
-      <div class="panel-header">
-        <span class="tag">Acesso ao app</span>
-        <h1>Gerenciar usuários</h1>
-        <p class="sub">Cadastre aqui quem pode entrar no app como atendente ou gestor. A conta é criada na hora — a pessoa já pode logar com o e-mail e senha definidos abaixo.</p>
-      </div>
-
-      <div class="grid-2">
-        <div class="card">
-          <h3 class="card-title">Novo usuário</h3>
-          <form id="userForm">
-            <div class="field-row">
-              <label>Nome *</label>
-              <input type="text" name="nome_usuario" required placeholder="Nome da pessoa">
-            </div>
-            <div class="field-row">
-              <label>E-mail *</label>
-              <input type="email" name="email_usuario" required placeholder="email@exemplo.com">
-            </div>
-            <div class="field-row">
-              <label>Senha *</label>
-              <input type="password" name="senha_usuario" required placeholder="Mínimo 6 caracteres" minlength="6">
-            </div>
-            <div class="field-row">
-              <label>Papel *</label>
-              <select name="papel_usuario" required style="width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 13px;font-family:'Space Grotesk',sans-serif;font-size:14px;background:#fff;">
-                <option value="">Selecione…</option>
-                <option value="atendente">Atendente</option>
-                <option value="gestor">Gestor</option>
-              </select>
-            </div>
-            <div id="userFormMsg" class="form-msg"></div>
-            <button type="submit" class="submit-btn">Criar usuário</button>
-          </form>
-        </div>
-
-        <div class="card">
-          <h3 class="card-title">Usuários cadastrados</h3>
-          <div class="table-scroll">
-            <table id="usersTable">
-              <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th></tr></thead>
-              <tbody><tr><td colspan="3">Carregando…</td></tr></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
 </main>
 
 <footer>
@@ -514,7 +458,16 @@ const PRICE_LADDER = [60, 80, 100, 120, 140, 160, 180, 200, 220, 250, 280, 320];
 
 </script>
 <script>
-// ===================== LOGIN =====================
+// ===================== LOGIN SIMPLES (por palavra-chave) =====================
+// Sem contas de usuário: quem digitar "gestor" entra como gestor, quem digitar
+// "atendente" entra como atendente. Por baixo dos panos, o app ainda faz um
+// login anônimo no Firebase — isso é só para as regras de segurança do banco
+// liberarem o acesso; a pessoa não vê nem precisa saber disso.
+//
+// Quer um mínimo de proteção (ex: exigir "gestor:1234")? Troque a validação
+// dentro do "loginForm.addEventListener" logo abaixo.
+
+const ROLE_KEY = 'ganso_role';
 const loginScreen = document.getElementById('login-screen');
 const appShell = document.getElementById('app-shell');
 const loginForm = document.getElementById('loginForm');
@@ -522,75 +475,42 @@ const loginMsg = document.getElementById('loginMsg');
 const roleTag = document.getElementById('roleTag');
 
 let currentRole = null;
-let currentUid = null;
 
-loginForm.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const email = e.target.email.value.trim();
-  const senha = e.target.senha.value;
-  const btn = e.target.querySelector('.submit-btn');
-  btn.disabled = true;
-  loginMsg.textContent = 'Entrando…';
-  loginMsg.className = 'form-msg';
-  try{
-    await firebase.auth().signInWithEmailAndPassword(email, senha);
-    // o resto acontece em onAuthStateChanged, abaixo
-  }catch(err){
-    console.error(err);
-    loginMsg.textContent = 'E-mail ou senha incorretos.';
-    loginMsg.className = 'form-msg error';
-    btn.disabled = false;
-  }
-});
+firebase.auth().signInAnonymously().catch(err=>console.error('Erro ao autenticar no Firebase:', err));
 
-document.getElementById('logoutBtn').addEventListener('click', ()=>{
-  firebase.auth().signOut();
-});
-
-firebase.auth().onAuthStateChanged(async (user)=>{
-  const btn = loginForm.querySelector('.submit-btn');
-  if(btn) btn.disabled = false;
-
-  if(!user){
-    currentRole = null;
-    currentUid = null;
-    appShell.style.display = 'none';
-    loginScreen.style.display = 'flex';
-    return;
-  }
-
-  currentUid = user.uid;
-  let papel = null;
-  try{
-    const snap = await db.ref('usuarios/'+user.uid).once('value');
-    papel = snap.exists() ? snap.val().papel : null;
-  }catch(err){
-    console.error(err);
-  }
-
-  if(papel !== 'atendente' && papel !== 'gestor'){
-    loginMsg.textContent = 'Este usuário não tem um papel (atendente/gestor) cadastrado. Peça ao gestor para configurar.';
-    loginMsg.className = 'form-msg error';
-    await firebase.auth().signOut();
-    return;
-  }
-
+function enterAs(papel){
   currentRole = papel;
+  sessionStorage.setItem(ROLE_KEY, papel);
   loginScreen.style.display = 'none';
   appShell.style.display = 'block';
   roleTag.textContent = papel === 'gestor' ? 'Gestor' : 'Atendente';
   roleTag.className = 'role-tag ' + papel;
-
   applyRoleVisibility(papel);
+  if(papel === 'gestor') refreshCount();
+}
 
-  if(papel === 'gestor'){
-    refreshCount();
+loginForm.addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const valor = e.target.papel.value.trim().toLowerCase();
+  if(valor === 'gestor' || valor === 'atendente'){
+    enterAs(valor);
+  }else{
+    loginMsg.textContent = 'Digite "atendente" ou "gestor".';
+    loginMsg.className = 'form-msg error';
   }
 });
 
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  sessionStorage.removeItem(ROLE_KEY);
+  currentRole = null;
+  appShell.style.display = 'none';
+  loginScreen.style.display = 'flex';
+  loginForm.reset();
+  loginMsg.textContent = '';
+});
+
 function applyRoleVisibility(papel){
-  const restrictedTabs = document.querySelectorAll('.tab-btn[data-role="gestor"]');
-  restrictedTabs.forEach(btn=>{
+  document.querySelectorAll('.tab-btn[data-role="gestor"]').forEach(btn=>{
     btn.style.display = (papel === 'gestor') ? '' : 'none';
   });
   const activeTab = document.querySelector('.tab-btn.active');
@@ -599,79 +519,10 @@ function applyRoleVisibility(papel){
   }
 }
 
-// ===================== GESTÃO DE USUÁRIOS (só gestor) =====================
-// Cria a conta de login (Auth) usando uma instância secundária do Firebase,
-// para não deslogar o gestor que está usando o app no momento.
-document.getElementById('userForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const msg = document.getElementById('userFormMsg');
-  const btn = e.target.querySelector('.submit-btn');
-  const nome = e.target.nome_usuario.value.trim();
-  const email = e.target.email_usuario.value.trim();
-  const senha = e.target.senha_usuario.value;
-  const papel = e.target.papel_usuario.value;
-
-  if(!nome || !email || !senha || !papel){
-    msg.textContent = 'Preencha todos os campos.';
-    msg.className = 'form-msg error';
-    return;
-  }
-  if(senha.length < 6){
-    msg.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
-    msg.className = 'form-msg error';
-    return;
-  }
-
-  btn.disabled = true;
-  msg.textContent = 'Criando usuário…';
-  msg.className = 'form-msg';
-
-  let secondaryApp;
-  try{
-    secondaryApp = firebase.initializeApp(firebaseConfig, 'secondary-'+Date.now());
-    const secondaryAuth = secondaryApp.auth();
-    const cred = await secondaryAuth.createUserWithEmailAndPassword(email, senha);
-    const novoUid = cred.user.uid;
-
-    await db.ref('usuarios/'+novoUid).set({ nome, email, papel });
-
-    await secondaryAuth.signOut();
-    await secondaryApp.delete();
-
-    msg.textContent = 'Usuário "'+nome+'" criado como '+papel+'.';
-    msg.className = 'form-msg success';
-    e.target.reset();
-    loadUsersList();
-  }catch(err){
-    console.error(err);
-    let texto = 'Erro ao criar usuário.';
-    if(err.code === 'auth/email-already-in-use') texto = 'Esse e-mail já está cadastrado.';
-    if(err.code === 'auth/invalid-email') texto = 'E-mail inválido.';
-    if(err.code === 'auth/weak-password') texto = 'Senha muito fraca (mínimo 6 caracteres).';
-    msg.textContent = texto;
-    msg.className = 'form-msg error';
-    if(secondaryApp){ try{ await secondaryApp.delete(); }catch(_e){} }
-  }finally{
-    btn.disabled = false;
-  }
-});
-
-async function loadUsersList(){
-  const tbody = document.querySelector('#usersTable tbody');
-  if(!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="3">Carregando…</td></tr>';
-  try{
-    const snap = await db.ref('usuarios').once('value');
-    const rows = [];
-    snap.forEach(child=>{
-      const v = child.val();
-      rows.push(`<tr><td>${v.nome||'—'}</td><td>${v.email||'—'}</td><td>${v.papel||'—'}</td></tr>`);
-    });
-    tbody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="3">Nenhum usuário cadastrado ainda.</td></tr>';
-  }catch(err){
-    console.error(err);
-    tbody.innerHTML = '<tr><td colspan="3">Erro ao carregar usuários.</td></tr>';
-  }
+// Se a pessoa já tinha entrado nessa aba antes (recarregou a página), mantém logado.
+const savedRole = sessionStorage.getItem(ROLE_KEY);
+if(savedRole === 'gestor' || savedRole === 'atendente'){
+  enterAs(savedRole);
 }
 
 </script>
@@ -685,7 +536,6 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
     if(btn.dataset.tab === 'analysis') runAnalysis();
     if(btn.dataset.tab === 'responses') loadResponses();
-    if(btn.dataset.tab === 'users') loadUsersList();
   });
 });
 
@@ -708,7 +558,6 @@ renderPricePills();
 
 document.querySelectorAll('.pills[data-name]').forEach(container=>{
   const name = container.dataset.name;
-  if(name === '_manual') return; // campo de select nativo, não usa pills
   container.addEventListener('click', (e)=>{
     const btn = e.target.closest('.pill');
     if(!btn) return;
