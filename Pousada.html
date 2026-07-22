@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pesquisa de Sensibilidade de Preço — Hospedagem All Inclusive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --lagoon-deep:#0B3B3C;
+  --lagoon:#0F4C4E;
+  --aqua:#2CA8A4;
+  --aqua-light:#8FD4CE;
+  --foam:#F2FAF8;
+  --sand:#F7F3E9;
+  --coral:#F0654A;
+  --gold:#E3A23B;
+  --ink:#0F2624;
+  --ink-soft:#3E5957;
+  --line:#D8E7E4;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{
+  background:var(--foam);
+  color:var(--ink);
+  font-family:'Space Grotesk', sans-serif;
+  line-height:1.5;
+}
+.mono{font-family:'IBM Plex Mono', monospace;}
+
+/* ---------- TOPBAR ---------- */
+.topbar{
+  display:flex; align-items:center; gap:28px;
+  background:var(--lagoon-deep); color:#fff;
+  padding:16px 32px; position:sticky; top:0; z-index:20;
+  flex-wrap:wrap;
+}
+.brand{display:flex; align-items:center; gap:10px; font-family:'Fraunces',serif; font-weight:600; font-size:18px;}
+.brand-dot{width:9px;height:9px;border-radius:50%;background:var(--coral);}
+.brand-sub{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--aqua-light); font-weight:400; margin-left:6px;}
+.tabs{display:flex; gap:4px; flex:1;}
+.tab-btn{
+  background:transparent; border:none; color:#CFE9E5; font-family:'Space Grotesk',sans-serif;
+  font-size:14px; padding:9px 16px; border-radius:8px; cursor:pointer; display:flex; align-items:center; gap:8px;
+}
+.tab-btn:hover{background:rgba(255,255,255,0.08);}
+.tab-btn.active{background:var(--aqua); color:#04211f; font-weight:600;}
+.count-badge{background:rgba(0,0,0,0.18); border-radius:10px; padding:1px 7px; font-size:11px; font-family:'IBM Plex Mono',monospace;}
+.tab-btn.active .count-badge{background:rgba(0,0,0,0.15);}
+.conn-status{font-size:12px; color:var(--aqua-light); display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace;}
+.dot-status{width:7px;height:7px;border-radius:50%; background:#5FD98B;}
+
+/* ---------- LAYOUT ---------- */
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+.panel-wrap{max-width:720px; margin:0 auto; padding:44px 24px 80px;}
+.panel-wrap.wide{max-width:1100px;}
+.panel-header{margin-bottom:32px;}
+.tag{
+  display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:11px;
+  letter-spacing:0.09em; text-transform:uppercase; color:var(--aqua);
+  background:rgba(44,168,164,0.09); border:1px solid rgba(44,168,164,0.25);
+  padding:4px 10px; border-radius:20px; margin-bottom:12px;
+}
+.panel-header h1{font-family:'Fraunces',serif; font-size:28px; font-weight:600; color:var(--lagoon-deep);}
+.panel-header .sub{color:var(--ink-soft); font-size:14.5px; margin-top:8px; max-width:560px;}
+
+/* ---------- FORM ---------- */
+.field-row{margin-bottom:26px;}
+.field-row > label{display:block; font-size:14.5px; font-weight:500; margin-bottom:10px;}
+.field-row .opt{font-weight:400; color:var(--ink-soft); font-size:12.5px;}
+.field-row input[type=text], .field-row textarea{
+  width:100%; border:1px solid var(--line); border-radius:8px; padding:11px 13px;
+  font-family:'Space Grotesk',sans-serif; font-size:14px; background:#fff; color:var(--ink);
+}
+.field-row input:focus, .field-row textarea:focus{outline:2px solid var(--aqua); outline-offset:1px;}
+
+.pills{display:flex; flex-wrap:wrap; gap:8px;}
+.pills.stack{flex-direction:column; align-items:flex-start;}
+.pills.stack .pill{width:100%; text-align:left;}
+.pill{
+  border:1px solid var(--line); background:#fff; color:var(--ink-soft);
+  padding:9px 14px; border-radius:8px; font-family:'Space Grotesk',sans-serif; font-size:13.5px;
+  cursor:pointer; transition:all .12s ease;
+}
+.pill:hover{border-color:var(--aqua);}
+.pill.selected{background:var(--aqua); border-color:var(--aqua); color:#04211f; font-weight:600;}
+.price-pills .pill{font-family:'IBM Plex Mono',monospace; min-width:64px; text-align:center;}
+.price-input{display:flex; align-items:center; gap:0; max-width:220px;}
+.price-input span{
+  background:var(--sand); border:1px solid var(--line); border-right:none;
+  padding:11px 12px; border-radius:8px 0 0 8px; font-family:'IBM Plex Mono',monospace;
+  font-size:14px; color:var(--ink-soft);
+}
+.price-input input{
+  flex:1; border:1px solid var(--line); border-radius:0 8px 8px 0; padding:11px 13px;
+  font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--ink); min-width:0;
+}
+.price-input input:focus{outline:2px solid var(--aqua); outline-offset:1px;}
+
+.read-aloud{
+  background:var(--sand); border-left:3px solid var(--gold); padding:16px 18px;
+  border-radius:6px; margin-bottom:26px;
+}
+.read-aloud p{font-style:italic; color:var(--ink-soft); font-size:14px; margin-top:8px;}
+.script-rules ol{margin:10px 0 0 18px; padding:0;}
+.script-rules li{font-size:13.5px; color:var(--ink-soft); margin-bottom:6px; line-height:1.5;}
+.script-line{
+  font-size:12.5px; color:var(--aqua); background:rgba(44,168,164,0.07);
+  border-left:2px solid var(--aqua); padding:6px 10px; border-radius:4px; margin-bottom:8px;
+}
+
+.form-msg{font-size:13.5px; margin-bottom:14px; min-height:18px;}
+.form-msg.error{color:var(--coral);}
+.form-msg.success{color:#0F7A5B;}
+
+.submit-btn{
+  background:var(--lagoon-deep); color:#fff; border:none; padding:13px 26px; border-radius:9px;
+  font-family:'Space Grotesk',sans-serif; font-size:14.5px; font-weight:600; cursor:pointer; width:100%;
+}
+.submit-btn:hover{background:var(--lagoon);}
+.submit-btn:disabled{opacity:0.5; cursor:not-allowed;}
+
+/* ---------- RESPONSES TABLE ---------- */
+.table-actions{display:flex; gap:10px; margin-bottom:16px;}
+.secondary-btn{
+  background:#fff; border:1px solid var(--line); color:var(--ink); padding:8px 16px;
+  border-radius:8px; font-size:13px; cursor:pointer; font-family:'Space Grotesk',sans-serif;
+}
+.secondary-btn:hover{border-color:var(--aqua);}
+.danger-btn{color:var(--coral); border-color:rgba(240,101,74,0.35);}
+.danger-btn:hover{background:rgba(240,101,74,0.08); border-color:var(--coral);}
+.table-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:#fff;}
+table{border-collapse:collapse; width:100%; font-size:12.5px;}
+thead th{
+  background:var(--sand); text-align:left; padding:10px 12px; white-space:nowrap;
+  font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft);
+  border-bottom:1px solid var(--line);
+}
+tbody td{padding:9px 12px; border-bottom:1px solid var(--line); white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis;}
+tbody tr:hover{background:var(--foam);}
+.empty-state{
+  text-align:center; padding:48px 20px; color:var(--ink-soft); font-size:14px;
+  background:#fff; border:1px dashed var(--line); border-radius:12px;
+}
+
+/* ---------- ANALYSIS ---------- */
+.kpi-strip{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+.kpi{background:#fff; padding:22px 20px;}
+.kpi .num{font-family:'Fraunces',serif; font-size:27px; font-weight:600; color:var(--lagoon-deep); line-height:1;}
+.kpi .lbl{margin-top:8px; font-size:12px; color:var(--ink-soft); line-height:1.4;}
+.card{background:#fff; border:1px solid var(--line); border-radius:14px; padding:24px;}
+.card-title{font-family:'Fraunces',serif; font-size:16px; margin-bottom:14px; color:var(--lagoon-deep);}
+.grid-2{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+.legend-row{display:flex; gap:16px; flex-wrap:wrap; margin-top:14px; font-size:12px; color:var(--ink-soft);}
+.legend-row span{display:inline-flex; align-items:center; gap:6px;}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+
+.theme-bar-row{display:flex; align-items:center; gap:12px; margin-bottom:11px;}
+.theme-label{width:190px; font-size:13px; flex-shrink:0;}
+.theme-track{flex:1; background:#EAF3F1; border-radius:6px; height:20px; overflow:hidden;}
+.theme-fill{height:100%; background:linear-gradient(90deg, var(--aqua), var(--lagoon)); border-radius:6px;}
+.theme-pct{width:44px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft);}
+
+footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
+
+/* ---------- LOGIN ---------- */
+.login-screen{
+  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  background:var(--lagoon-deep); padding:20px;
+}
+.login-card{
+  background:#fff; border-radius:16px; padding:40px 36px; width:100%; max-width:380px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.25);
+}
+.login-card h1{font-family:'Fraunces',serif; font-size:24px; color:var(--lagoon-deep); margin-bottom:6px; text-align:center;}
+.login-card .sub{color:var(--ink-soft); font-size:13.5px; text-align:center; margin-bottom:24px;}
+
+/* ---------- ROLE TAG ---------- */
+.role-tag{
+  font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.06em;
+  padding:4px 10px; border-radius:20px; margin-right:10px;
+}
+.role-tag.gestor{background:rgba(227,162,59,0.18); color:#E3A23B;}
+.role-tag.atendente{background:rgba(44,168,164,0.18); color:#8FD4CE;}
+
+@media (max-width:760px){
+  .topbar{padding:12px 16px;}
+  .tabs{width:100%; order:3; justify-content:space-between;}
+  .kpi-strip{grid-template-columns:repeat(2,1fr);}
+  .grid-2{grid-template-columns:1fr;}
+}
+
+</style>
+</head>
+<body>
+
+<!-- ============ TELA DE LOGIN ============ -->
+<section id="login-screen" class="login-screen">
+  <div class="login-card">
+    <div class="brand" style="justify-content:center;margin-bottom:22px;">
+      <span class="brand-dot"></span>
+      <span>Ganso</span><span class="brand-sub">Sensibilidade de Preço · Hospedagem</span>
+    </div>
+    <h1>Entrar</h1>
+    <p class="sub">Digite sua senha de acesso.</p>
+    <form id="loginForm">
+      <div class="field-row">
+        <label>Senha de acesso</label>
+        <input type="password" name="papel" required autocomplete="off">
+      </div>
+      <div id="loginMsg" class="form-msg"></div>
+      <button type="submit" class="submit-btn">Entrar</button>
+    </form>
+  </div>
+</section>
+
+<!-- ============ APP (fica escondido até logar) ============ -->
+<div id="app-shell" style="display:none;">
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot"></span>
+    <span>Ganso</span><span class="brand-sub">Sensibilidade de Preço · Hospedagem</span>
+  </div>
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="form">Formulário</button>
+    <button class="tab-btn" data-tab="responses" data-role="gestor">Respostas <span id="respCount" class="count-badge">0</span></button>
+    <button class="tab-btn" data-tab="analysis" data-role="gestor">Plano de Análise</button>
+  </nav>
+  <div class="conn-status">
+    <span id="roleTag" class="role-tag"></span>
+    <button id="logoutBtn" class="secondary-btn">Sair</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ ABA FORMULÁRIO ============ -->
+  <section id="tab-form" class="tab-panel active">
+    <div class="panel-wrap">
+      <div class="panel-header">
+        <span class="tag">Ligação com o cliente</span>
+        <h1>Registrar resposta do cliente</h1>
+        <p class="sub">Preencha durante a ligação, na ordem das perguntas. Campos com * são obrigatórios.</p>
+      </div>
+
+      <form id="surveyForm">
+
+        <div class="read-aloud script-rules">
+          <span class="tag">Antes de ligar — regras do roteiro</span>
+          <ol>
+            <li>Leia as perguntas com o texto exato mostrado na tela, na mesma ordem, para todo mundo.</li>
+            <li>Não reaja ao valor que o cliente disser — nem "nossa, tão barato" nem "que bom!". Agradeça de forma neutra ("entendi", "certo") e siga para a próxima.</li>
+            <li>Não repita o valor de uma pergunta como referência para a pergunta seguinte.</li>
+            <li>Se o cliente perguntar "qual é o preço certo?", responda que não existe resposta certa — é só a opinião dele mesmo.</li>
+            <li>Leia todas as opções de múltipla escolha antes de esperar a resposta, sempre na mesma ordem em que aparecem na tela.</li>
+          </ol>
+        </div>
+
+        <div class="field-row">
+          <label>Atendente responsável <span class="opt">(opcional)</span></label>
+          <input type="text" name="atendente" placeholder="Seu nome">
+        </div>
+
+        <div class="field-row">
+          <label>Nome completo do cliente *</label>
+          <input type="text" name="nome" required placeholder="Nome e sobrenome">
+        </div>
+
+        <div class="field-row">
+          <label>Você já se hospedou no Ganso no formato tradicional (pensão completa)? *</label>
+          <div class="pills" data-name="ja_visitou">
+            <button type="button" class="pill">Sim, já me hospedei</button>
+            <button type="button" class="pill">Não, seria minha primeira vez</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="script-line">Leia exatamente: "Quanto você paga, ou pagaria, por noite, por pessoa, na hospedagem tradicional — pensão completa, com bebidas à parte?"</div>
+          <label>Preço por noite, por pessoa, na hospedagem tradicional (pensão completa) *</label>
+          <div class="price-input"><span>R$</span><input type="number" name="preco_tradicional" min="1" step="1" required placeholder="Ex: 350"></div>
+        </div>
+
+        <div class="read-aloud">
+          <span class="tag">Leia para o cliente antes das próximas 4 perguntas</span>
+          <p>"Imagine uma Hospedagem All Inclusive no Ganso, com café da manhã, almoço, jantar e café da tarde, bebidas não alcoólicas inclusas durante as refeições, e acesso à recreação e área de lazer — tudo por noite, sem nenhum custo extra durante a estadia."</p>
+        </div>
+
+        <div class="field-row">
+          <label>A que preço por noite, por pessoa, você consideraria essa Hospedagem All Inclusive <b>barata</b> (uma pechincha)? *</label>
+          <div class="price-input"><span>R$</span><input type="number" name="barato" min="1" step="1" required placeholder="Ex: 400"></div>
+        </div>
+
+        <div class="field-row">
+          <label>A que preço por noite, por pessoa, você consideraria <b>cara</b>, mas ainda assim se hospedaria? *</label>
+          <div class="price-input"><span>R$</span><input type="number" name="caro" min="1" step="1" required placeholder="Ex: 600"></div>
+        </div>
+
+        <div class="field-row">
+          <label>A que preço por noite, por pessoa, você consideraria <b>cara demais</b>, a ponto de não se hospedar? *</label>
+          <div class="price-input"><span>R$</span><input type="number" name="caro_demais" min="1" step="1" required placeholder="Ex: 850"></div>
+        </div>
+
+        <div class="field-row">
+          <div class="script-line">Lembrete: não reaja aos valores anteriores nem repita o que o cliente disse antes desta pergunta.</div>
+          <label>A que preço por noite, por pessoa, você consideraria <b>barata demais</b>, a ponto de desconfiar da qualidade? *</label>
+          <div class="price-input"><span>R$</span><input type="number" name="barato_demais" min="1" step="1" required placeholder="Ex: 250"></div>
+        </div>
+
+        <div class="field-row">
+          <div class="script-line">Leia as 5 opções abaixo, sempre nessa ordem, antes de perguntar qual pesa mais.</div>
+          <label>Dos itens que mudam no all inclusive, qual pesa mais na decisão de pagar por ele? *</label>
+          <div class="pills stack" data-name="o_que_pesa_mais">
+            <button type="button" class="pill">Café da tarde incluso (4ª refeição do dia)</button>
+            <button type="button" class="pill">Bebidas inclusas durante as refeições (sem cobrança à parte)</button>
+            <button type="button" class="pill">Recreação e acesso à área de lazer</button>
+            <button type="button" class="pill">Não ter que se preocupar com consumo durante a estadia</button>
+            <button type="button" class="pill">Nenhum em especial — o que importa é o preço final</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="script-line">Leia as 4 opções abaixo, sempre nessa ordem, antes de esperar a resposta.</div>
+          <label>Comparado à hospedagem tradicional, o all inclusive muda o quanto teria vontade de se hospedar no Ganso? *</label>
+          <div class="pills stack" data-name="muda_interesse">
+            <button type="button" class="pill">Aumenta bastante o interesse</button>
+            <button type="button" class="pill">Aumenta um pouco</button>
+            <button type="button" class="pill">Não muda</button>
+            <button type="button" class="pill">Diminui o interesse (prefiro pagar avulso)</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="script-line">Leia as 4 opções abaixo, sempre nessa ordem, antes de esperar a resposta.</div>
+          <label>Se a Hospedagem All Inclusive existisse, trocaria o formato tradicional por ela na maioria das estadias? *</label>
+          <div class="pills stack" data-name="trocaria_formato">
+            <button type="button" class="pill">Sim, sempre que possível</button>
+            <button type="button" class="pill">Sim, mas só em ocasiões especiais</button>
+            <button type="button" class="pill">Não, prefiro continuar no formato tradicional</button>
+            <button type="button" class="pill">Depende do preço</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Quais são as pessoas com quem mais frequenta o estabelecimento? *</label>
+          <div class="pills" data-name="grupo">
+            <button type="button" class="pill">Casal</button>
+            <button type="button" class="pill">Familiares</button>
+            <button type="button" class="pill">Amigos</button>
+            <button type="button" class="pill">Outro</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="script-line">Pergunte primeiro se o cliente sabe se classificar sozinho — não estime pela voz, forma de falar ou qualquer outra impressão pessoal.</div>
+          <label>Classe socioeconômica do cliente *</label>
+          <p style="font-size:12.5px;color:var(--ink-soft);margin:-4px 0 10px;">
+            Se o cliente não souber se classificar, leia as 5 faixas de renda como referência.
+          </p>
+          <div class="pills stack" data-name="classe_social">
+            <button type="button" class="pill">Classe A — acima de R$28.240</button>
+            <button type="button" class="pill">Classe B — de R$14.120 a R$28.240</button>
+            <button type="button" class="pill">Classe C — de R$5.648 a R$14.120</button>
+            <button type="button" class="pill">Classe D — de R$2.824 a R$5.648</button>
+            <button type="button" class="pill">Classe E — até R$2.824</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>O que faria pagar mais pela Hospedagem All Inclusive do que o valor indicado acima? <span class="opt">(opcional)</span></label>
+          <textarea name="mudanca_texto" rows="3" placeholder="Resposta livre do cliente"></textarea>
+        </div>
+
+        <div id="formMsg" class="form-msg"></div>
+        <button type="submit" class="submit-btn">Salvar resposta</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ ABA RESPOSTAS ============ -->
+  <section id="tab-responses" class="tab-panel">
+    <div class="panel-wrap wide">
+      <div class="panel-header">
+        <span class="tag">Base coletada</span>
+        <h1>Respostas registradas</h1>
+        <p class="sub">Todas as respostas salvas pelos atendentes, mais recentes primeiro.</p>
+      </div>
+      <div class="table-actions">
+        <button id="exportCsvBtn" class="secondary-btn">Exportar CSV</button>
+        <button id="refreshBtn" class="secondary-btn">Atualizar</button>
+        <button id="resetBtn" class="secondary-btn danger-btn">Zerar respostas</button>
+      </div>
+      <div class="table-scroll">
+        <table id="responsesTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="emptyState" class="empty-state" style="display:none;">Nenhuma resposta registrada ainda.</div>
+    </div>
+  </section>
+
+  <!-- ============ ABA PLANO DE ANÁLISE ============ -->
+  <section id="tab-analysis" class="tab-panel">
+    <div class="panel-wrap wide">
+      <div class="panel-header">
+        <span class="tag">Van Westendorp · atualizado em tempo real</span>
+        <h1>Leitura de precificação</h1>
+        <p class="sub">Recalculado automaticamente a cada resposta salva. Com poucas respostas, os números vão oscilar — trate como indicativo até ter uma amostra maior.</p>
+      </div>
+
+      <div id="analysisEmpty" class="empty-state">Ainda não há respostas suficientes. Colete ao menos algumas respostas na aba Formulário para ver os cálculos aqui.</div>
+
+      <div id="analysisContent" style="display:none;">
+        <div class="kpi-strip" id="kpiStrip"></div>
+
+        <div class="card" style="margin-top:24px;">
+          <h3 class="card-title">Curva de sensibilidade de preço (diária por pessoa)</h3>
+          <canvas id="psmChart" height="300"></canvas>
+          <div class="legend-row">
+            <span><span class="dot" style="background:#8FD4CE"></span>Muito barato</span>
+            <span><span class="dot" style="background:#2CA8A4"></span>Barato</span>
+            <span><span class="dot" style="background:#E3A23B"></span>Caro</span>
+            <span><span class="dot" style="background:#F0654A"></span>Caro demais</span>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top:24px;">
+          <div class="card">
+            <h3 class="card-title">Mediana do preço "caro" por grupo de visita</h3>
+            <canvas id="groupChart" height="220"></canvas>
+          </div>
+          <div class="card">
+            <h3 class="card-title">O que mais pesa na decisão de pagar</h3>
+            <canvas id="weightChart" height="220"></canvas>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:24px;">
+          <h3 class="card-title">Temas mais citados nas respostas abertas</h3>
+          <div id="themeBars"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div>Pesquisa de Sensibilidade de Preço — Hospedagem All Inclusive · Método Van Westendorp · Ganso</div>
+</footer>
+
+</div><!-- /app-shell -->
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ================================================================
+//  EDITE AQUI — suas credenciais do Firebase
+// ================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyChacEN8g269PlKT14McgLJMCz0tipbIC8",
+  authDomain: "pesquisa-ff89e.firebaseapp.com",
+  databaseURL: "https://pesquisa-ff89e-default-rtdb.firebaseio.com",
+  projectId: "pesquisa-ff89e",
+  storageBucket: "pesquisa-ff89e.firebasestorage.app",
+  messagingSenderId: "934183303316",
+  appId: "1:934183303316:web:8732de4fdc3b744c691c81"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const RESPONSES_PATH = "respostas_hospedagem_all_inclusive";
+
+// ================================================================
+//  FIM DA ÁREA DE CONFIGURAÇÃO — não precisa mexer no resto do arquivo
+// ================================================================
+</script>
+<script>
+// ===================== LOGIN SIMPLES (por palavra-chave) =====================
+// Sem contas de usuário: quem digitar "gestor" entra como gestor, quem digitar
+// "atendente" entra como atendente. Por baixo dos panos, o app ainda faz um
+// login anônimo no Firebase — isso é só para as regras de segurança do banco
+// liberarem o acesso; a pessoa não vê nem precisa saber disso.
+//
+// Quer um mínimo de proteção (ex: exigir "gestor:1234")? Troque a validação
+// dentro do "loginForm.addEventListener" logo abaixo.
+
+const ROLE_KEY = 'ganso_role';
+const loginScreen = document.getElementById('login-screen');
+const appShell = document.getElementById('app-shell');
+const loginForm = document.getElementById('loginForm');
+const loginMsg = document.getElementById('loginMsg');
+const roleTag = document.getElementById('roleTag');
+
+let currentRole = null;
+
+firebase.auth().signInAnonymously().catch(err=>console.error('Erro ao autenticar no Firebase:', err));
+
+function enterAs(papel){
+  currentRole = papel;
+  sessionStorage.setItem(ROLE_KEY, papel);
+  loginScreen.style.display = 'none';
+  appShell.style.display = 'block';
+  roleTag.textContent = papel === 'gestor' ? 'Gestor' : 'Atendente';
+  roleTag.className = 'role-tag ' + papel;
+  applyRoleVisibility(papel);
+  if(papel === 'gestor') refreshCount();
+}
+
+loginForm.addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const valor = e.target.papel.value.trim().toLowerCase();
+  if(valor === 'gestor' || valor === 'atendente'){
+    enterAs(valor);
+  }else{
+    loginMsg.textContent = 'Senha de acesso inválida.';
+    loginMsg.className = 'form-msg error';
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  sessionStorage.removeItem(ROLE_KEY);
+  currentRole = null;
+  appShell.style.display = 'none';
+  loginScreen.style.display = 'flex';
+  loginForm.reset();
+  loginMsg.textContent = '';
+});
+
+function applyRoleVisibility(papel){
+  document.querySelectorAll('.tab-btn[data-role="gestor"]').forEach(btn=>{
+    btn.style.display = (papel === 'gestor') ? '' : 'none';
+  });
+  const activeTab = document.querySelector('.tab-btn.active');
+  if(papel !== 'gestor' && activeTab && activeTab.dataset.role === 'gestor'){
+    document.querySelector('.tab-btn[data-tab="form"]').click();
+  }
+}
+
+// Se a pessoa já tinha entrado nessa aba antes (recarregou a página), mantém logado.
+const savedRole = sessionStorage.getItem(ROLE_KEY);
+if(savedRole === 'gestor' || savedRole === 'atendente'){
+  enterAs(savedRole);
+}
+
+</script>
+<script>
+// ===================== TABS =====================
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab === 'analysis') runAnalysis();
+    if(btn.dataset.tab === 'responses') loadResponses();
+  });
+});
+
+// ===================== FORM: PILL FIELDS =====================
+const formState = {};
+
+document.querySelectorAll('.pills[data-name]').forEach(container=>{
+  const name = container.dataset.name;
+  container.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.pill');
+    if(!btn) return;
+    container.querySelectorAll('.pill').forEach(p=>p.classList.remove('selected'));
+    btn.classList.add('selected');
+    formState[name] = btn.dataset.value || btn.textContent;
+  });
+});
+
+// ===================== SUBMIT (Formulário de pesquisa) =====================
+const REQUIRED_PILL_FIELDS = ['ja_visitou',
+  'o_que_pesa_mais','muda_interesse','trocaria_formato','grupo','classe_social'];
+
+document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const msg = document.getElementById('formMsg');
+  const submitBtn = e.target.querySelector('.submit-btn');
+  const nome = e.target.nome.value.trim();
+
+  if(!nome){
+    msg.textContent = 'Preencha o nome do cliente.';
+    msg.className = 'form-msg error';
+    return;
+  }
+  const missing = REQUIRED_PILL_FIELDS.filter(f=>!formState[f]);
+  if(missing.length){
+    msg.textContent = 'Faltam perguntas obrigatórias sem resposta selecionada.';
+    msg.className = 'form-msg error';
+    return;
+  }
+
+  const precoTradicional = Number(e.target.preco_tradicional.value);
+  const barato = Number(e.target.barato.value);
+  const caro = Number(e.target.caro.value);
+  const caroDemais = Number(e.target.caro_demais.value);
+  const baratoDemais = Number(e.target.barato_demais.value);
+
+  if(![precoTradicional, barato, caro, caroDemais, baratoDemais].every(v=>Number.isFinite(v) && v > 0)){
+    msg.textContent = 'Preencha os valores de preço com números maiores que zero.';
+    msg.className = 'form-msg error';
+    return;
+  }
+
+  const ordemEsperada = baratoDemais < barato && barato < caro && caro < caroDemais;
+  if(!ordemEsperada){
+    const seguir = confirm(
+      'Os valores fogem da ordem esperada (barato demais < barato < caro < caro demais).\n'+
+      'Confira com o cliente se digitou certo.\n\nSalvar assim mesmo?'
+    );
+    if(!seguir) return;
+  }
+
+  const payload = {
+    atendente: e.target.atendente.value.trim() || null,
+    nome,
+    ja_visitou: formState.ja_visitou,
+    preco_tradicional: precoTradicional,
+    barato,
+    caro,
+    caro_demais: caroDemais,
+    barato_demais: baratoDemais,
+    o_que_pesa_mais: formState.o_que_pesa_mais,
+    muda_interesse: formState.muda_interesse,
+    trocaria_formato: formState.trocaria_formato,
+    grupo: formState.grupo,
+    classe_social: formState.classe_social,
+    mudanca_texto: e.target.mudanca_texto.value.trim() || null,
+    criado_em: firebase.database.ServerValue.TIMESTAMP
+  };
+
+  submitBtn.disabled = true;
+  msg.textContent = 'Salvando…';
+  msg.className = 'form-msg';
+
+  try{
+    await db.ref(RESPONSES_PATH).push(payload);
+    msg.textContent = 'Resposta salva com sucesso.';
+    msg.className = 'form-msg success';
+    e.target.reset();
+    document.querySelectorAll('.pill.selected').forEach(p=>p.classList.remove('selected'));
+    for(const k in formState) delete formState[k];
+    refreshCount();
+  }catch(err){
+    console.error(err);
+    msg.textContent = 'Erro ao salvar. Confira a conexão com o Firebase.';
+    msg.className = 'form-msg error';
+  }finally{
+    submitBtn.disabled = false;
+  }
+});
+
+// ===================== RESPONSES TABLE =====================
+const COLUMNS = [
+  ['criado_em','Data'], ['atendente','Atendente'], ['nome','Nome'],
+  ['ja_visitou','Já se hospedou'], ['preco_tradicional','Preço tradicional (diária/pessoa)'],
+  ['barato','Barato'], ['caro','Caro'], ['caro_demais','Caro demais'], ['barato_demais','Barato demais'],
+  ['o_que_pesa_mais','O que pesa mais'], ['muda_interesse','Muda interesse'],
+  ['trocaria_formato','Trocaria formato'], ['grupo','Grupo'], ['classe_social','Classe social'],
+  ['mudanca_texto','O que faria pagar mais']
+];
+
+let cachedDocs = [];
+
+async function loadResponses(){
+  const thead = document.querySelector('#responsesTable thead');
+  const tbody = document.querySelector('#responsesTable tbody');
+  thead.innerHTML = '<tr>'+COLUMNS.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr>';
+  tbody.innerHTML = '<tr><td colspan="'+COLUMNS.length+'">Carregando…</td></tr>';
+
+  try{
+    const snap = await db.ref(RESPONSES_PATH).orderByChild('criado_em').once('value');
+    const docs = [];
+    snap.forEach(child=>{ docs.push(child.val()); });
+    docs.reverse(); // mais recentes primeiro
+    cachedDocs = docs;
+    refreshCount();
+
+    if(cachedDocs.length === 0){
+      tbody.innerHTML = '';
+      document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('responsesTable').style.display = 'none';
+      return;
+    }
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('responsesTable').style.display = 'table';
+
+    tbody.innerHTML = cachedDocs.map(doc=>{
+      return '<tr>'+COLUMNS.map(([key])=>{
+        let val = doc[key];
+        if(key === 'criado_em' && typeof val === 'number') val = new Date(val).toLocaleString('pt-BR');
+        if(val === null || val === undefined || val === '') val = '—';
+        return '<td>'+String(val)+'</td>';
+      }).join('')+'</tr>';
+    }).join('');
+  }catch(err){
+    console.error(err);
+    tbody.innerHTML = '<tr><td colspan="'+COLUMNS.length+'">Erro ao carregar respostas. Confira o firebase-config.js.</td></tr>';
+  }
+}
+
+async function refreshCount(){
+  try{
+    const snap = await db.ref(RESPONSES_PATH).once('value');
+    document.getElementById('respCount').textContent = snap.numChildren();
+  }catch(err){ /* silencioso — atendentes não têm permissão de leitura, é esperado */ }
+}
+
+document.getElementById('refreshBtn').addEventListener('click', loadResponses);
+
+document.getElementById('resetBtn').addEventListener('click', async ()=>{
+  const total = cachedDocs.length;
+  const confirmacao = prompt(
+    'Isso vai apagar TODAS as '+total+' respostas salvas, sem volta.\n'+
+    'Digite ZERAR (em maiúsculas) para confirmar:'
+  );
+  if(confirmacao !== 'ZERAR'){
+    if(confirmacao !== null) alert('Cancelado — o texto não confere.');
+    return;
+  }
+  try{
+    await db.ref(RESPONSES_PATH).remove();
+    alert('Respostas apagadas.');
+    loadResponses();
+  }catch(err){
+    console.error(err);
+    alert('Erro ao apagar. Confira sua conexão/permissão no Firebase.');
+  }
+});
+
+document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
+  if(!cachedDocs.length){ alert('Não há respostas para exportar ainda.'); return; }
+  const header = COLUMNS.map(c=>c[1]).join(';');
+  const rows = cachedDocs.map(doc=>COLUMNS.map(([key])=>{
+    let val = doc[key];
+    if(key === 'criado_em' && typeof val === 'number') val = new Date(val).toLocaleString('pt-BR');
+    if(val === null || val === undefined) val = '';
+    return '"'+String(val).replace(/"/g,'""')+'"';
+  }).join(';'));
+  const csv = [header, ...rows].join('\n');
+  const blob = new Blob(["\uFEFF"+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'respostas_hospedagem_all_inclusive.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+</script>
+<script>
+// ===================== HELPERS =====================
+function pctGe(arr, p){ if(!arr.length) return 0; return arr.filter(v=>v>=p).length/arr.length*100; }
+function pctLe(arr, p){ if(!arr.length) return 0; return arr.filter(v=>v<=p).length/arr.length*100; }
+function median(arr){
+  if(!arr.length) return null;
+  const s = [...arr].sort((a,b)=>a-b);
+  const mid = Math.floor(s.length/2);
+  return s.length % 2 ? s[mid] : (s[mid-1]+s[mid])/2;
+}
+// linear-interpolated intersection between two curves sampled on the same grid
+function findIntersection(grid, a, b){
+  for(let i=0;i<grid.length-1;i++){
+    const d1 = a[i]-b[i], d2 = a[i+1]-b[i+1];
+    if((d1>=0 && d2<0) || (d1<=0 && d2>0)){
+      const x1=grid[i], x2=grid[i+1];
+      return x1 - d1*(x2-x1)/(d2-d1);
+    }
+  }
+  return null;
+}
+
+const THEME_PATTERNS = {
+  'Comida & Refeições': /comida|caf[eé]|almo[cç]o|jantar|refei[cç][ãa]o|prato|card[aá]pio|bebida/i,
+  'Preço & Valor': /pre[cç]o|valor|caro|barato|desconto|di[aá]ria/i,
+  'Atendimento': /atend|equipe|funcion|educa|simp[aá]t|cordial/i,
+  'Quarto & Conforto': /quarto|cama|ar condicionado|conforto|limpeza|banheiro/i,
+  'Área de lazer & estrutura': /lazer|piscina|estrutura|recrea[cç][ãa]o|brinquedo|[aá]rea/i,
+  'Exclusividade & lotação': /exclusiv|lota[cç][ãa]o|menos gente|p[uú]blico limitado/i,
+  'Já satisfeito': /nada|j[aá] (é|e) bom|nenhuma|satisfeit|n[aã]o mudaria/i,
+};
+
+// ===================== MAIN =====================
+async function runAnalysis(){
+  const emptyEl = document.getElementById('analysisEmpty');
+  const contentEl = document.getElementById('analysisContent');
+
+  let docs;
+  try{
+    const snap = await db.ref(RESPONSES_PATH).once('value');
+    docs = [];
+    snap.forEach(child=>{ docs.push(child.val()); });
+  }catch(err){
+    console.error(err);
+    emptyEl.textContent = 'Erro ao carregar dados do Firebase. Confira o firebase-config.js.';
+    emptyEl.style.display = 'block';
+    contentEl.style.display = 'none';
+    return;
+  }
+
+  if(docs.length < 5){
+    emptyEl.textContent = 'Ainda não há respostas suficientes (mínimo recomendado: 5). Hoje: '+docs.length+'.';
+    emptyEl.style.display = 'block';
+    contentEl.style.display = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  contentEl.style.display = 'block';
+
+  const n = docs.length;
+  const barato = docs.map(d=>d.barato).filter(v=>typeof v === 'number');
+  const caro = docs.map(d=>d.caro).filter(v=>typeof v === 'number');
+  const caroDemais = docs.map(d=>d.caro_demais).filter(v=>typeof v === 'number');
+  const baratoDemais = docs.map(d=>d.barato_demais).filter(v=>typeof v === 'number');
+
+  const maxObservado = Math.max(...barato, ...caro, ...caroDemais, ...baratoDemais, 100);
+  const teto = Math.ceil((maxObservado + 50) / 10) * 10;
+  const grid = [];
+  for(let p=0; p<=teto; p+=5) grid.push(p);
+
+  const tooCheap = grid.map(p=>pctGe(baratoDemais,p));
+  const cheap = grid.map(p=>pctGe(barato,p));
+  const expensive = grid.map(p=>pctLe(caro,p));
+  const tooExpensive = grid.map(p=>pctLe(caroDemais,p));
+
+  const PMC = findIntersection(grid, tooCheap, expensive);
+  const IPP = findIntersection(grid, cheap, expensive);
+  const OPP = findIntersection(grid, tooCheap, tooExpensive);
+  const PME = findIntersection(grid, cheap, tooExpensive);
+
+  // prêmio aceito sobre a diária tradicional
+  const comAncora = docs.filter(d=>d.ja_visitou === 'Sim, já me hospedei' && typeof d.preco_tradicional === 'number');
+  let premio = null;
+  if(comAncora.length && OPP !== null){
+    const media = comAncora.reduce((s,d)=>s+d.preco_tradicional,0)/comAncora.length;
+    premio = OPP - media;
+  }
+
+  renderKpis({n, PMC, IPP, OPP, PME, premio});
+  renderPsmChart(grid, tooCheap, cheap, expensive, tooExpensive);
+  renderGroupChart(docs);
+  renderWeightChart(docs);
+  renderThemes(docs);
+}
+
+function fmtMoney(v){ return v===null ? '—' : 'R$ '+v.toFixed(2).replace('.',','); }
+
+function renderKpis({n, OPP, PMC, PME, premio}){
+  const kpis = [
+    {num:n, lbl:'Respostas coletadas'},
+    {num:fmtMoney(OPP), lbl:'Diária ótima por pessoa (OPP)'},
+    {num: (PMC!==null && PME!==null) ? fmtMoney(PMC)+' – '+fmtMoney(PME) : '—', lbl:'Faixa aceitável (PMC–PME)'},
+    {num: premio!==null ? fmtMoney(premio) : '— (sem respostas com âncora)', lbl:'Prêmio aceito sobre a hospedagem tradicional'},
+  ];
+  document.getElementById('kpiStrip').innerHTML = kpis.map(k=>
+    `<div class="kpi"><div class="num">${k.num}</div><div class="lbl">${k.lbl}</div></div>`
+  ).join('');
+}
+
+let psmChartInstance, groupChartInstance, weightChartInstance;
+
+function renderPsmChart(grid, tooCheap, cheap, expensive, tooExpensive){
+  if(psmChartInstance) psmChartInstance.destroy();
+  Chart.defaults.font.family = "'Space Grotesk', sans-serif";
+  Chart.defaults.color = "#3E5957";
+  psmChartInstance = new Chart(document.getElementById('psmChart'), {
+    type:'line',
+    data:{
+      labels: grid,
+      datasets:[
+        {label:'Muito barato', data:tooCheap, borderColor:'#8FD4CE', pointRadius:0, borderWidth:2, tension:0.15},
+        {label:'Barato', data:cheap, borderColor:'#2CA8A4', pointRadius:0, borderWidth:2, tension:0.15},
+        {label:'Caro', data:expensive, borderColor:'#E3A23B', pointRadius:0, borderWidth:2, tension:0.15},
+        {label:'Caro demais', data:tooExpensive, borderColor:'#F0654A', pointRadius:0, borderWidth:2, tension:0.15},
+      ]
+    },
+    options:{
+      responsive:true,
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{title:(items)=>'R$ '+items[0].label, label:(item)=>item.dataset.label+': '+item.formattedValue+'%'}}
+      },
+      scales:{
+        x:{title:{display:true,text:'Preço por noite, por pessoa (R$)'}, grid:{color:'#EEF5F3'}, ticks:{maxTicksLimit:16}},
+        y:{title:{display:true,text:'% acumulada de respondentes'}, min:0, max:100, grid:{color:'#EEF5F3'}}
+      }
+    }
+  });
+}
+
+function renderGroupChart(docs){
+  const groups = ['Familiares','Casal','Amigos','Outro'];
+  const medians = groups.map(g=>{
+    const vals = docs.filter(d=>d.grupo===g).map(d=>d.caro).filter(v=>typeof v==='number');
+    return median(vals);
+  });
+  if(groupChartInstance) groupChartInstance.destroy();
+  groupChartInstance = new Chart(document.getElementById('groupChart'), {
+    type:'bar',
+    data:{ labels:groups, datasets:[{label:'Preço "caro" (mediana)', data:medians, backgroundColor:'#2CA8A4', borderRadius:6}] },
+    options:{
+      responsive:true,
+      plugins:{legend:{display:false}},
+      scales:{ y:{title:{display:true,text:'R$'}, grid:{color:'#EEF5F3'}}, x:{grid:{display:false}} }
+    }
+  });
+}
+
+function renderWeightChart(docs){
+  const options = [
+    'Café da tarde incluso (4ª refeição do dia)',
+    'Bebidas inclusas durante as refeições (sem cobrança à parte)',
+    'Recreação e acesso à área de lazer',
+    'Não ter que se preocupar com consumo durante a estadia',
+    'Nenhum em especial — o que importa é o preço final'
+  ];
+  const shortLabels = ['Café da tarde','Bebidas inclusas','Área de lazer','Sem preocupação c/ consumo','Só o preço'];
+  const counts = options.map(o=>docs.filter(d=>d.o_que_pesa_mais===o).length);
+  if(weightChartInstance) weightChartInstance.destroy();
+  weightChartInstance = new Chart(document.getElementById('weightChart'), {
+    type:'bar',
+    data:{ labels:shortLabels, datasets:[{label:'Respostas', data:counts, backgroundColor:'#0F4C4E', borderRadius:6}] },
+    options:{
+      indexAxis:'y',
+      responsive:true,
+      plugins:{legend:{display:false}},
+      scales:{ x:{title:{display:true,text:'Nº de respostas'}, grid:{color:'#EEF5F3'}}, y:{grid:{display:false}} }
+    }
+  });
+}
+
+function renderThemes(docs){
+  const texts = docs.map(d=>d.mudanca_texto).filter(Boolean);
+  const total = texts.length;
+  const container = document.getElementById('themeBars');
+  if(total === 0){
+    container.innerHTML = '<p style="color:var(--ink-soft);font-size:13px;">Nenhuma resposta aberta registrada ainda.</p>';
+    return;
+  }
+  const counts = {};
+  for(const theme in THEME_PATTERNS) counts[theme] = 0;
+  texts.forEach(t=>{
+    for(const [theme, pattern] of Object.entries(THEME_PATTERNS)){
+      if(pattern.test(t)) counts[theme]++;
+    }
+  });
+  const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const max = Math.max(...entries.map(e=>e[1]), 1);
+  container.innerHTML = entries.map(([label,count])=>{
+    const pct = (count/total*100).toFixed(1);
+    const width = (count/max*100).toFixed(1);
+    return `<div class="theme-bar-row">
+      <div class="theme-label">${label}</div>
+      <div class="theme-track"><div class="theme-fill" style="width:${width}%"></div></div>
+      <div class="theme-pct">${pct}%</div>
+    </div>`;
+  }).join('');
+}
+
+</script>
+</body>
+</html>
