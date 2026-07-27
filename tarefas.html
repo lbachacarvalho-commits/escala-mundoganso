@@ -2363,7 +2363,7 @@ function viewAdmin(){
     ${todayRow}
     <div class="small" style="margin-top:8px">Fila: ${resp}</div>
     <div class="actions">
-      ${hasToday?`<button class="btn sm ghost" data-act="open-detail" data-iid="${esc(todayIid)}">Ver histórico</button>`:""}
+      ${hasToday?`<button class="btn sm ghost" data-act="open-task-history" data-iid="${esc(todayIid)}">Ver histórico</button>`:""}
       <button class="btn sm" data-act="edit-task" data-tid="${tid}">Editar</button>
       <button class="btn sm danger" data-act="del-task" data-tid="${tid}">Excluir</button>
     </div></div>`;
@@ -3071,7 +3071,7 @@ function taskObservationHistory(taskId){
   return items;
 }
 /* ---- Detalhes da tarefa (clique no card) ---- */
-function openTaskDetail(iid){
+function openTaskDetail(iid,opts={}){
   const ins=INSTANCES[iid];if(!ins)return;
   const task=TASKS[ins.taskId];if(!task)return;
   const resp=(task.responsibles||[]).map((id,i)=>{
@@ -3096,17 +3096,21 @@ function openTaskDetail(iid){
     <div class="section-title" style="margin-top:14px">Checklist ${checklistOk?"✓":`(${task.checklist.filter(it=>(ins.checklistState&&ins.checklistState[it.id])===true).length}/${task.checklist.length})`}</div>
     <div class="resp-list">${task.checklist.map(it=>{
       const checked=(ins.checklistState&&ins.checklistState[it.id])===true;
-      return `<button type="button" class="opt ${checked?"sel":""}" data-act="toggle-check" data-iid="${iid}" data-item="${esc(it.id)}" style="text-align:left">
+      return `<button type="button" class="opt ${checked?"sel":""}" ${opts.readOnly?'disabled style="text-align:left;cursor:default"':`data-act="toggle-check" data-iid="${iid}" data-item="${esc(it.id)}" style="text-align:left"`}>
         <span class="opt-check" style="order:-1">${checked?"☑":"☐"}</span>
         <span class="opt-main"><span class="opt-name" style="${checked?'text-decoration:line-through;color:var(--muted)':''}">${esc(it.text)}</span></span>
       </button>`;
     }).join("")}</div>
-    ${!checklistOk?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
+    ${(!checklistOk&&!opts.readOnly)?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
   `:"";
   const isWatch=(task.nature||"executar")==="continua"||(task.nature||"executar")==="demanda";
-  const actionBtns=isTerminal
-    ?`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`
-    :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>${isWatch?"Fiquei atento nisso hoje":"Concluir"}</button>`;
+  // em modo consulta (ex.: "Ver histórico" na lista do gestor) o modal é só leitura — os botões de
+  // execução pertencem a quem está com a tarefa no dia, na própria lista "Minhas tarefas"
+  const isHolder=state.emp&&[state.emp._key,state.emp.id].filter(v=>v!=null).map(String).includes(String(ins.assignedTo));
+  const actionBtns=(opts.readOnly||!isHolder)?""
+    :(isTerminal
+      ?`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`
+      :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>${isWatch?"Fiquei atento nisso hoje":"Concluir"}</button>`);
   const obsHistory=taskObservationHistory(ins.taskId);
   const obsHtml=obsHistory.length?obsHistory.map(o=>`
     <div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)">
@@ -3548,6 +3552,7 @@ document.addEventListener("click",e=>{
     case"confirm-notdone":{const note=$("#completeNote")?$("#completeNote").value:"";markNotDone(iid,note);closeModal();break}
     case"reopen":reopenTask(iid);closeModal();break;
     case"open-detail":openTaskDetail(iid);break;
+    case"open-task-history":openTaskDetail(iid,{readOnly:true});break;
     case"toggle-check":{
       const itemId=a.dataset.item;
       const ins=INSTANCES[iid];if(!ins||!canAct(ins))break;
