@@ -187,6 +187,11 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 .seg button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;
   padding:10px;font-weight:600;font-size:13px;color:var(--muted)}
 .seg button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.wd-row{display:flex;gap:6px;flex-wrap:wrap}
+.wd-btn{flex:1;min-width:42px;padding:9px 4px;border:1px solid var(--line);background:var(--surface-2);
+  border-radius:10px;font-size:12.5px;font-weight:700;color:var(--ink);cursor:pointer;font-family:inherit}
+.wd-btn.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.wd-presets{display:flex;gap:8px;margin-top:8px}
 
 /* responsibles picker */
 .resp-list{display:flex;flex-direction:column;gap:7px;margin-top:6px}
@@ -735,7 +740,8 @@ function occursOn(task,dKey){
   const rec=task.recurrence||{type:"daily"};
   const interval=Math.max(1,Number(rec.interval)||1);
   if(rec.type==="weekly"){
-    if(weekdayOf(dKey)!==Number(rec.weekday))return false;
+    const days=Array.isArray(rec.weekdays)?rec.weekdays.map(Number):(rec.weekday!=null?[Number(rec.weekday)]:[1]);
+    if(!days.includes(weekdayOf(dKey)))return false;
     if(interval===1)return true;
     return Math.floor(daysBetween(base,dKey)/7)%interval===0;
   }
@@ -762,30 +768,33 @@ function materialize(){
   const today=todayKey();
   const floor=addDays(today,-LOOKBACK_DAYS);
   const updates={};
+
+  // Sob demanda / preocupação contínua: qualquer instância de dia PASSADO ainda pendente/em andamento
+  // expira como não realizada ao virar o dia — não "atrasa" como as de A executar. Roda pra toda
+  // instância existente, não só quando a tarefa tem uma ocorrência nova nascendo no dia seguinte
+  // (senão uma tarefa semanal, por exemplo, ficaria "pendente" parada até a próxima ocorrência).
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||ins.date>=today)continue;
+    if(ins.status!=="pendente"&&ins.status!=="em_andamento")continue;
+    const task=TASKS[ins.taskId];if(!task)continue;
+    const nature=task.nature||"executar";
+    if(nature!=="demanda"&&nature!=="continua")continue;
+    updates[`instances/${iid}/status`]="nao_realizada";
+    updates[`instances/${iid}/autoExpired`]=true;
+    const hist=Array.isArray(ins.history)?ins.history.slice():[];
+    hist.push({type:"nao_realizada",by:"sistema",at:Date.now(),note:"Expirou automaticamente (virou o dia)"});
+    updates[`instances/${iid}/history`]=hist;
+    ins.status="nao_realizada"; // reflete localmente p/ não reprocessar no mesmo ciclo
+    invalidateTerminalIndex();
+  }
+
   for(const tid in TASKS){
     const task=TASKS[tid];if(!task||task.active===false)continue;
-    const nature=task.nature||"executar";
     let d=maxKey(floor,task.createdDate||floor);
     while(d<=today){
       if(occursOn(task,d)){
         const iid=`${tid}__${d}`;
         if(!INSTANCES[iid]){
-          // sob demanda / preocupação contínua: a instância do dia anterior que ficou pendente
-          // ou em andamento não "atrasa" — expira como não realizada antes da nova nascer.
-          if(nature==="demanda"||nature==="continua"){
-            const prevD=addDays(d,-1);
-            const prevIid=`${tid}__${prevD}`;
-            const prevIns=INSTANCES[prevIid];
-            if(prevIns&&(prevIns.status==="pendente"||prevIns.status==="em_andamento")){
-              updates[`instances/${prevIid}/status`]="nao_realizada";
-              updates[`instances/${prevIid}/autoExpired`]=true;
-              const hist=Array.isArray(prevIns.history)?prevIns.history.slice():[];
-              hist.push({type:"nao_realizada",by:"sistema",at:Date.now(),note:"Expirou automaticamente (virou o dia)"});
-              updates[`instances/${prevIid}/history`]=hist;
-              prevIns.status="nao_realizada"; // reflete localmente p/ não reprocessar no mesmo ciclo
-              invalidateTerminalIndex();
-            }
-          }
           updates[`instances/${iid}`]={taskId:tid,date:d,occurrenceDate:d,
             assignedTo:computeAssignee(task,d),autoAssigned:true,status:"pendente",createdAt:Date.now()};
         }
@@ -1690,8 +1699,11 @@ function taskCardMine({iid,ins,task},opts={}){
   }else{
     actions='<div class="actions">';
     if(!isTerminal){
-      if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">Iniciar</button>`;
-      actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+      const isWatch=nature==="continua"||nature==="demanda";
+      const startLabel=isWatch?"Ok, estou atento nisso":"Iniciar";
+      const completeLabel=isWatch?"Fiquei atento nisso hoje":"Concluir";
+      if(ins.status==="pendente")actions+=`<button class="btn primary sm" data-act="start" data-iid="${iid}">${startLabel}</button>`;
+      actions+=`<button class="btn ok sm" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>${completeLabel}</button>`;
       actions+=`<button class="btn ghost sm" data-act="open-notdone" data-iid="${iid}">Não realizada</button>`;
       actions+=`<button class="btn ghost sm" data-act="transfer" data-iid="${iid}">Transferir</button>`;
     }else{
@@ -2341,6 +2353,8 @@ function viewAdmin(){
     }
 
     const discChip=`<span class="chip" data-act="open-discussion" data-type="task" data-id="${esc(tid)}" style="cursor:pointer">💬${threadHasUnread("task",tid)?' <span class="badge-dot"></span>':""}</span>`;
+    const todayIid=`${tid}__${today}`;
+    const hasToday=!!INSTANCES[todayIid];
     h+=`<div class="tcard"><div class="tcard-head"><div>
       <h3>${esc(t.title)}</h3>
       <div class="small">${esc(sectorName(t.sectorId))} · ${recurrenceLabel(t.recurrence||{type:"daily",interval:1})}${t.startTime?` · 🕐 ${esc(t.startTime)}`:""}</div>
@@ -2349,6 +2363,7 @@ function viewAdmin(){
     ${todayRow}
     <div class="small" style="margin-top:8px">Fila: ${resp}</div>
     <div class="actions">
+      ${hasToday?`<button class="btn sm ghost" data-act="open-task-history" data-iid="${esc(todayIid)}">Ver histórico</button>`:""}
       <button class="btn sm" data-act="edit-task" data-tid="${tid}">Editar</button>
       <button class="btn sm danger" data-act="del-task" data-tid="${tid}">Excluir</button>
     </div></div>`;
@@ -2818,7 +2833,8 @@ function renderTaskForm(){
   const rtype=f.recurrence.type||"daily";
   const interval=f.recurrence.interval||1;
   const isWeekly=rtype==="weekly",isMonthly=rtype==="monthly",isDaily=!isWeekly&&!isMonthly;
-  const wkOpts=WEEKDAYS.map((d,i)=>`<option value="${i}" ${isWeekly&&Number(f.recurrence.weekday)===i?"selected":""}>${d}</option>`).join("");
+  const weekdaysArr=Array.isArray(f.recurrence.weekdays)?f.recurrence.weekdays.map(Number):(f.recurrence.weekday!=null?[Number(f.recurrence.weekday)]:[1]);
+  const wkButtons=WEEKDAYS.map((d,i)=>`<button type="button" class="wd-btn ${weekdaysArr.includes(i)?"on":""}" data-act="toggle-weekday" data-i="${i}">${d.slice(0,3)}</button>`).join("");
   const refDay=f.recurrence.day||(parseKey(f.createdDate||todayKey()).getDate());
   const unitLabel=isWeekly?"semana(s)":isMonthly?"mês(es)":"dia(s)";
 
@@ -2861,8 +2877,14 @@ function renderTaskForm(){
           <span class="note" style="margin:0">${unitLabel}</span>
         </div>
       </div>
-      <div class="field ${isWeekly?"":"hidden"}" id="fWeekdayWrap"><label>Dia da semana</label><select id="fWeekday">${wkOpts}</select></div>
       <div class="field ${isMonthly?"":"hidden"}" id="fMonthDayWrap"><label>Dia do mês</label><input id="fMonthDay" type="number" min="1" max="31" value="${refDay}"></div>
+    </div>
+    <div class="field ${isWeekly?"":"hidden"}" id="fWeekdayWrap"><label>Dias da semana</label>
+      <div class="wd-row">${wkButtons}</div>
+      <div class="wd-presets">
+        <button type="button" class="btn sm ghost" data-act="wd-preset" data-preset="weekdays">Seg a sex</button>
+        <button type="button" class="btn sm ghost" data-act="wd-preset" data-preset="all">Todo dia</button>
+      </div>
     </div>
     <p class="note" id="fRecurPreview" style="margin-top:-4px">${recurrenceLabel(f.recurrence)}</p>
     <div class="sheet-actions">
@@ -2871,11 +2893,23 @@ function renderTaskForm(){
     </div>
   `);
 }
+function weekdaysLabel(days){
+  const sorted=[...new Set(days)].sort((a,b)=>a-b);
+  if(sorted.length>=7)return "todos os dias da semana";
+  if(sorted.length===1)return WEEKDAYS[sorted[0]];
+  const isConsecutive=sorted.every((d,i)=>i===0||d===sorted[i-1]+1);
+  if(isConsecutive&&sorted.length>=3)return `${WEEKDAYS[sorted[0]]} a ${WEEKDAYS[sorted[sorted.length-1]]}`;
+  const names=sorted.map(d=>WEEKDAYS[d]);
+  if(names.length===2)return `${names[0]} e ${names[1]}`;
+  return names.slice(0,-1).join(", ")+" e "+names[names.length-1];
+}
 function recurrenceLabel(rec){
   const n=Math.max(1,Number(rec.interval)||1);
   if(rec.type==="weekly"){
-    const dia=WEEKDAYS[Number(rec.weekday)||0];
-    return n===1?`Toda(o) ${dia}.`:`A cada ${n} semanas, ${dia}.`;
+    const days=Array.isArray(rec.weekdays)?rec.weekdays.map(Number):(rec.weekday!=null?[Number(rec.weekday)]:[1]);
+    const lbl=weekdaysLabel(days);
+    const base=days.length===1?`Toda(o) ${lbl}`:lbl.charAt(0).toUpperCase()+lbl.slice(1);
+    return n===1?`${base}.`:`A cada ${n} semanas — ${lbl}.`;
   }
   if(rec.type==="monthly"){
     const d=rec.day||1;
@@ -2888,7 +2922,6 @@ function syncFormInputs(){
   const t=$("#fTitle"),d=$("#fDesc"),s=$("#fSector"),tm=$("#fTime");
   if(t)f.title=t.value;if(d)f.description=d.value;if(s)f.sectorId=s.value;if(tm)f.startTime=tm.value;
   const iv=$("#fInterval");if(iv)f.recurrence.interval=Math.max(1,parseInt(iv.value,10)||1);
-  const wd=$("#fWeekday");if(wd&&f.recurrence.type==="weekly")f.recurrence.weekday=Number(wd.value);
   const md=$("#fMonthDay");if(md&&f.recurrence.type==="monthly")f.recurrence.day=Math.min(31,Math.max(1,parseInt(md.value,10)||1));
 }
 
@@ -3022,8 +3055,23 @@ function openOSCancelModal(osid){
   `);
 }
 
+/* junta as observações deixadas em TODAS as ocorrências passadas dessa tarefa (não só a de hoje),
+   mais recente primeiro — usado no detalhe da tarefa */
+function taskObservationHistory(taskId){
+  const items=[];
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||ins.taskId!==taskId||!ins.completionNote)continue;
+    const hist=Array.isArray(ins.history)?ins.history:[];
+    const entry=hist.slice().reverse().find(h=>h.note&&(h.type==="concluida"||h.type==="nao_realizada"));
+    const by=entry?entry.by:null;
+    const who=by?(by==="sistema"?"Sistema":(by==="gestor"||/gestor/i.test(by)?"Gestor":(empName(employeeByCpf(by))!=="—"?empName(employeeByCpf(by)):by))):"—";
+    items.push({date:ins.date,note:ins.completionNote,who,at:entry?entry.at:(ins.completedAt||0),status:ins.status});
+  }
+  items.sort((a,b)=>a.date<b.date?1:(a.date>b.date?-1:(b.at||0)-(a.at||0)));
+  return items;
+}
 /* ---- Detalhes da tarefa (clique no card) ---- */
-function openTaskDetail(iid){
+function openTaskDetail(iid,opts={}){
   const ins=INSTANCES[iid];if(!ins)return;
   const task=TASKS[ins.taskId];if(!task)return;
   const resp=(task.responsibles||[]).map((id,i)=>{
@@ -3048,16 +3096,27 @@ function openTaskDetail(iid){
     <div class="section-title" style="margin-top:14px">Checklist ${checklistOk?"✓":`(${task.checklist.filter(it=>(ins.checklistState&&ins.checklistState[it.id])===true).length}/${task.checklist.length})`}</div>
     <div class="resp-list">${task.checklist.map(it=>{
       const checked=(ins.checklistState&&ins.checklistState[it.id])===true;
-      return `<button type="button" class="opt ${checked?"sel":""}" data-act="toggle-check" data-iid="${iid}" data-item="${esc(it.id)}" style="text-align:left">
+      return `<button type="button" class="opt ${checked?"sel":""}" ${opts.readOnly?'disabled style="text-align:left;cursor:default"':`data-act="toggle-check" data-iid="${iid}" data-item="${esc(it.id)}" style="text-align:left"`}>
         <span class="opt-check" style="order:-1">${checked?"☑":"☐"}</span>
         <span class="opt-main"><span class="opt-name" style="${checked?'text-decoration:line-through;color:var(--muted)':''}">${esc(it.text)}</span></span>
       </button>`;
     }).join("")}</div>
-    ${!checklistOk?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
+    ${(!checklistOk&&!opts.readOnly)?'<p class="note" style="color:var(--accent)">Marque todos os itens para poder concluir.</p>':""}
   `:"";
-  const actionBtns=isTerminal
-    ?`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`
-    :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>Concluir</button>`;
+  const isWatch=(task.nature||"executar")==="continua"||(task.nature||"executar")==="demanda";
+  // em modo consulta (ex.: "Ver histórico" na lista do gestor) o modal é só leitura — os botões de
+  // execução pertencem a quem está com a tarefa no dia, na própria lista "Minhas tarefas"
+  const isHolder=state.emp&&[state.emp._key,state.emp.id].filter(v=>v!=null).map(String).includes(String(ins.assignedTo));
+  const actionBtns=(opts.readOnly||!isHolder)?""
+    :(isTerminal
+      ?`<button class="btn ghost" data-act="reopen" data-iid="${iid}">Reabrir</button>`
+      :`<button class="btn ghost" data-act="open-notdone" data-iid="${iid}">Não realizada</button><button class="btn ok" data-act="open-complete" data-iid="${iid}" ${checklistOk?"":'disabled title="Marque o checklist primeiro"'}>${isWatch?"Fiquei atento nisso hoje":"Concluir"}</button>`);
+  const obsHistory=taskObservationHistory(ins.taskId);
+  const obsHtml=obsHistory.length?obsHistory.map(o=>`
+    <div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)">
+      <b>${esc(fmtDate(o.date))}</b> — ${esc(o.who)}${o.status==="nao_realizada"?' <span class="chip" style="padding:1px 6px">não realizada</span>':""}
+      <p class="note" style="margin:4px 0 0">"${esc(o.note)}"</p>
+    </div>`).join(""):'<p class="note">Nenhuma observação registrada ainda.</p>';
   openSheet(task.title,`
     <div class="meta" style="margin-bottom:4px">
       <span class="chip sector">${esc(sectorName(task.sectorId))}</span>
@@ -3070,6 +3129,8 @@ function openTaskDetail(iid){
     ${checklistHtml}
     <div class="section-title" style="margin-top:14px">Fila de responsáveis</div>
     <div class="meta">${resp}</div>
+    <div class="section-title">Histórico de observações</div>
+    ${obsHtml}
     <div class="section-title">Movimentações desta ocorrência</div>
     ${histHtml}
     <div class="sheet-actions">
@@ -3107,6 +3168,20 @@ function openNotDoneModal(iid){
 }
 
 /* ---- Co-responsável: tarefas de hoje onde você não é o titular ---- */
+/* qualquer um que esteja na fila R1/R2/R3 de uma tarefa pode puxar a ocorrência de hoje pra si,
+   mesmo sem ser o titular do dia — usado no "Você é co-responsável" */
+function pullTaskToMe(iid){
+  const ins=INSTANCES[iid];if(!ins||!state.emp)return;
+  const task=TASKS[ins.taskId];if(!task)return;
+  const myIds=[state.emp._key,state.emp.id].filter(v=>v!=null).map(String);
+  if(!(task.responsibles||[]).some(id=>myIds.includes(String(id))))return;
+  const me=state.emp._key!=null?state.emp._key:state.emp.id;
+  dbRef(`${PATH.tarefas}/instances/${iid}`).update({assignedTo:String(me),autoAssigned:false,
+    history:pushHistory(iid,{type:"transferida",to:String(me),note:"Puxou a tarefa para si"})}).then(()=>{
+      toast("Tarefa puxada para você ✓");
+      openCorespModal();
+    });
+}
 function openCorespModal(){
   const {coresp}=myInstances();
   const rows=coresp.map(c=>{
@@ -3116,10 +3191,12 @@ function openCorespModal(){
       <div class="rmain"><span class="rtitle">${esc(c.task.title)}</span>
         <div class="rmeta"><span class="chip sector">${esc(sectorName(c.task.sectorId))}</span>
           ${statusBadge(c.ins.status)}<span class="chip">Responsável hoje: ${esc(nm)}</span></div>
-      </div></div>`;
+      </div>
+      <button class="btn sm" data-act="pull-task" data-iid="${c.iid}">Puxar para mim</button>
+      </div>`;
   }).join("");
   openSheet("Você é co-responsável",`
-    <p class="note" style="margin-bottom:12px">Hoje, em ${coresp.length} tarefa(s), você está na fila mas não é o titular do dia.</p>
+    <p class="note" style="margin-bottom:12px">Hoje, em ${coresp.length} tarefa(s), você está na fila mas não é o titular do dia. Pode puxar qualquer uma delas pra você.</p>
     ${rows||'<p class="empty">Nenhuma agora.</p>'}
     <div class="sheet-actions"><button class="btn primary" data-act="close" style="flex:none;width:100%">Fechar</button></div>
   `);
@@ -3334,7 +3411,7 @@ $("#lgUser").addEventListener("input",e=>{
 $("#logoutBtn").addEventListener("click",logout);
 $("#tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;state.view=t.dataset.view;setActiveTab();render()});
 document.addEventListener("input",e=>{
-  if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
+  if(formState&&["fInterval","fMonthDay"].includes(e.target.id)){
     syncFormInputs();
     const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
   }
@@ -3395,7 +3472,7 @@ document.addEventListener("click",e=>{
     if(field==="recurrence"){
       const keepInterval=formState.recurrence.interval||1;
       const rec={type:v,interval:keepInterval};
-      if(v==="weekly")rec.weekday=formState.recurrence.weekday??1;
+      if(v==="weekly")rec.weekdays=Array.isArray(formState.recurrence.weekdays)?formState.recurrence.weekdays.slice():[formState.recurrence.weekday!=null?Number(formState.recurrence.weekday):1];
       if(v==="monthly")rec.day=formState.recurrence.day||parseKey(formState.createdDate||todayKey()).getDate();
       formState.recurrence=rec;
     }
@@ -3412,6 +3489,20 @@ document.addEventListener("click",e=>{
   const act=a.dataset.act,iid=a.dataset.iid,tid=a.dataset.tid,osid=a.dataset.osid;
   switch(act){
     case"close":closeModal();break;
+    case"toggle-weekday":{
+      syncFormInputs();
+      const i=+a.dataset.i;
+      const days=Array.isArray(formState.recurrence.weekdays)?formState.recurrence.weekdays.slice():[];
+      const idx=days.indexOf(i);
+      if(idx>=0){if(days.length>1)days.splice(idx,1)}else{days.push(i)} // sempre deixa pelo menos 1 dia marcado
+      formState.recurrence.weekdays=days;
+      renderTaskForm();break;
+    }
+    case"wd-preset":{
+      syncFormInputs();
+      formState.recurrence.weekdays=a.dataset.preset==="weekdays"?[1,2,3,4,5]:[0,1,2,3,4,5,6];
+      renderTaskForm();break;
+    }
     case"new-task":openTaskForm(null);break;
     case"new-os":openOSForm(null);break;
     case"edit-os":closeModal();openOSForm(osid);break;
@@ -3461,6 +3552,7 @@ document.addEventListener("click",e=>{
     case"confirm-notdone":{const note=$("#completeNote")?$("#completeNote").value:"";markNotDone(iid,note);closeModal();break}
     case"reopen":reopenTask(iid);closeModal();break;
     case"open-detail":openTaskDetail(iid);break;
+    case"open-task-history":openTaskDetail(iid,{readOnly:true});break;
     case"toggle-check":{
       const itemId=a.dataset.item;
       const ins=INSTANCES[iid];if(!ins||!canAct(ins))break;
@@ -3473,6 +3565,7 @@ document.addEventListener("click",e=>{
     }
     case"show-partner":openPartnerTasks(a.dataset.emp);break;
     case"show-coresp":openCorespModal();break;
+    case"pull-task":pullTaskToMe(iid);break;
     case"show-coresp-future":openCorespFutureModal(a.dataset.date);break;
     case"set-mine-offset":state.mineOffset=+a.dataset.off;render();break;
     case"open-report":openDailyReport();break;
@@ -3534,7 +3627,7 @@ document.addEventListener("change",e=>{
   const fteam=e.target.closest("[data-filter-team]");
   if(fteam){state.teamFilter[fteam.dataset.filterTeam]=fteam.value;render();return}
   if(e.target.id==="postDate"&&transferState){transferState.date=e.target.value}
-  if(formState&&["fInterval","fWeekday","fMonthDay"].includes(e.target.id)){
+  if(formState&&["fInterval","fMonthDay"].includes(e.target.id)){
     syncFormInputs();
     const prev=$("#fRecurPreview");if(prev)prev.textContent=recurrenceLabel(formState.recurrence);
   }
