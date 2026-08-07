@@ -556,6 +556,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
     </div>
     <nav>
       <button class="tab active" onclick="switchTab('escala')">📅 Escala</button>
+      <button class="tab" onclick="switchTab('domingos')">🗓️ Domingos</button>
       <button class="tab" onclick="switchTab('colaboradores')">👥 Colaboradores</button>
       <button class="tab" onclick="switchTab('setores')">🏷️ Setores</button>
       <button class="tab" onclick="switchTab('turnos')">🕐 Tipos de Turno</button>
@@ -974,7 +975,65 @@ async function seedGestorIfNeeded(){
   }catch(e){}
 }
 const LOCAL_KEY = 'escala_lazer_html_v1';
-let _ignoreNextSync = false; // evita re-render quando a mudança veio do próprio usuário
+let _ignoreNextSync = false; // (legado) não é mais usado — sync agora reconcilia
+let _lastSynced = null;      // baseline: último estado conhecido do Firebase (para diff incremental)
+let _reconcileTimer = null;  // debounce da reconciliação com o servidor
+
+// ============ ESCRITA INCREMENTAL (só grava o que mudou) ============
+// Motivo: PUT do documento inteiro fazia usuários concorrentes se sobrescreverem.
+// Agora cada save envia apenas os caminhos alterados (PATCH), que o Firebase mescla.
+function _eqData(a,b){ return JSON.stringify(a)===JSON.stringify(b); }
+function _cloneData(o){ return o==null?o:JSON.parse(JSON.stringify(o)); }
+
+// Compara base -> next e retorna { caminho_profundo: valor } (null = apagar).
+// schedule é comparada célula a célula; lockedSectors por data; estruturais por subárvore.
+function buildDataUpdates(base, next){
+  base=base||{}; next=next||{};
+  const up={};
+  const bSch=base.schedule||{}, nSch=next.schedule||{};
+  new Set([...Object.keys(bSch),...Object.keys(nSch)]).forEach(ds=>{
+    const bc=bSch[ds]||{}, nc=nSch[ds]||{};
+    new Set([...Object.keys(bc),...Object.keys(nc)]).forEach(id=>{
+      if(!_eqData(bc[id],nc[id])) up['schedule/'+ds+'/'+id]=(nc[id]===undefined?null:nc[id]);
+    });
+  });
+  const bL=base.lockedSectors||{}, nL=next.lockedSectors||{};
+  new Set([...Object.keys(bL),...Object.keys(nL)]).forEach(ds=>{
+    if(!_eqData(bL[ds],nL[ds])) up['lockedSectors/'+ds]=((nL[ds]&&nL[ds].length)?nL[ds]:null);
+  });
+  if(!_eqData(base.sectors,next.sectors)) up['sectors']=next.sectors;
+  if(!_eqData(base.shiftTypes,next.shiftTypes)) up['shiftTypes']=next.shiftTypes;
+  if(!_eqData(base.employees,next.employees)) up['employees']=next.employees; // array (memória)
+  if(!_eqData(base.weekStartDay,next.weekStartDay)) up['weekStartDay']=(next.weekStartDay==null?null:next.weekStartDay);
+  return up;
+}
+
+// Aplica um mapa de caminhos-profundos (formato memória) sobre um objeto, retornando novo objeto.
+function applyDataUpdates(baseObj, updates){
+  const out=_cloneData(baseObj)||{};
+  Object.entries(updates).forEach(([path,val])=>{
+    const parts=path.split('/');
+    if(parts.length===1){ if(val===null) delete out[parts[0]]; else out[parts[0]]=val; return; }
+    let node=out;
+    for(let i=0;i<parts.length-1;i++){ const k=parts[i]; if(node[k]==null||typeof node[k]!=='object') node[k]={}; node=node[k]; }
+    const last=parts[parts.length-1];
+    if(val===null){
+      delete node[last];
+      if((parts[0]==='schedule'||parts[0]==='lockedSectors')&&parts.length===3){
+        const dObj=out[parts[0]][parts[1]];
+        if(dObj&&!Object.keys(dObj).length) delete out[parts[0]][parts[1]];
+      }
+    } else node[last]=val;
+  });
+  return out;
+}
+
+// Converte o mapa (formato memória) para o payload do Firebase (employees -> objeto com chave estável).
+function updatesToFirebasePayload(updates){
+  const p={...updates};
+  if('employees' in p && p.employees!=null) p.employees=employeesToKeyedObject(p.employees);
+  return p;
+}
 
 // ===================== MIGRATIONS =====================
 // REGRA: Firebase é sempre a fonte da verdade.
@@ -1006,6 +1065,7 @@ function migrateData(parsed, isFromFirebase){
       shiftTypes:     parsed.shiftTypes     ?? DEFAULT.shiftTypes,
       schedule:       parsed.schedule       ?? {},
       lockedSectors:  parsed.lockedSectors  ?? {},
+      weekStartDay:   parsed.weekStartDay   ?? 1,
     };
   }else{
     // Sem Firebase (cache local ou primeira vez) → usa DEFAULT como base
@@ -1015,6 +1075,7 @@ function migrateData(parsed, isFromFirebase){
       shiftTypes:     parsed.shiftTypes     ?? DEFAULT.shiftTypes,
       schedule:       parsed.schedule       ?? {},
       lockedSectors:  parsed.lockedSectors  ?? {},
+      weekStartDay:   parsed.weekStartDay   ?? 1,
     };
   }
 }
@@ -1082,6 +1143,9 @@ async function loadData(){
     showSave('offline');
     setTimeout(()=>showSave('idle'),3000);
   }
+  // Baseline para gravação incremental: só enviaremos deltas em relação a isto.
+  // (Usa o melhor que temos: Firebase se veio; senão o cache. Nunca envia a diferença cache-vs-servidor.)
+  _lastSynced=_cloneData(state.data);
   // Align weekStart with configured start day
   state.weekStart=startOfConfiguredWeek(new Date());
   render();
@@ -1091,25 +1155,39 @@ async function loadData(){
   startRealtimeSync();
 }
 
+// Reconciliação: ao detectar qualquer mudança no servidor, re-busca o documento e
+// mescla a verdade do servidor com as edições locais ainda não gravadas.
+// Não depende do formato exato do evento do Firebase (só do "houve mudança").
+function scheduleReconcile(){
+  clearTimeout(_reconcileTimer);
+  _reconcileTimer=setTimeout(reconcileFromServer,250); // agrupa rajadas de eventos
+}
+async function reconcileFromServer(){
+  try{
+    const res=await fetch(FB_URL+'/data.json');
+    if(!res.ok)return;
+    const fb=await res.json();
+    const serverData=migrateData(fb||{}, true);
+    // edições locais ainda não confirmadas (entre o baseline e o estado atual)
+    const localPending=buildDataUpdates(_lastSynced, state.data);
+    const merged=applyDataUpdates(serverData, localPending);
+    _lastSynced=_cloneData(serverData);
+    if(!_eqData(merged,state.data)){
+      state.data=merged;
+      try{localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data))}catch(e){}
+      render();
+      showSave('updated');
+      setTimeout(()=>showSave('idle'),2000);
+    }
+  }catch(e){}
+}
+
 function startRealtimeSync(){
   try{
     const evtSource=new EventSource(FB_URL+'/data.json');
-    evtSource.addEventListener('put',(e)=>{
-      try{
-        const payload=JSON.parse(e.data);
-        if(_ignoreNextSync){_ignoreNextSync=false;return}
-        if(payload.path==='/'&&payload.data){
-          const newData=migrateData(payload.data, true);
-          if(JSON.stringify(newData)!==JSON.stringify(state.data)){
-            state.data=newData;
-            localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data));
-            render();
-            showSave('updated');
-            setTimeout(()=>showSave('idle'),2500);
-          }
-        }
-      }catch(err){}
-    });
+    const onEvt=()=>scheduleReconcile(); // 'put' e 'patch' apenas disparam a reconciliação
+    evtSource.addEventListener('put',onEvt);
+    evtSource.addEventListener('patch',onEvt);
     evtSource.onerror=()=>{
       // EventSource reconecta automaticamente — só mostra aviso brevemente
       showSave('offline');
@@ -1117,22 +1195,7 @@ function startRealtimeSync(){
     };
   }catch(e){
     // Fallback: polling a cada 30s se SSE não suportado
-    setInterval(async()=>{
-      try{
-        const res=await fetch(FB_URL+'/data.json');
-        if(!res.ok)return;
-        const fbData=await res.json();
-        if(!fbData||_ignoreNextSync){_ignoreNextSync=false;return}
-        const newData=migrateData(fbData, true);
-        if(JSON.stringify(newData)!==JSON.stringify(state.data)){
-          state.data=newData;
-          localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data));
-          render();
-          showSave('updated');
-          setTimeout(()=>showSave('idle'),2500);
-        }
-      }catch(err){}
-    },30000);
+    setInterval(scheduleReconcile,30000);
   }
 }
 
@@ -1141,25 +1204,32 @@ function saveData(){
   clearTimeout(state.saveTimer);
   showSave('saving');
   state.saveTimer=setTimeout(async()=>{
-    _ignoreNextSync=true; // não processa o próprio echo do SSE
     try{
       // Estabiliza a chave de cada funcionário no estado local (persiste _fbKey definitivamente)
       state.data.employees=state.data.employees.map(emp=>({...emp,_fbKey:employeeFbKey(emp)}));
-      const payload={...state.data,employees:employeesToKeyedObject(state.data.employees)};
+      // Se ainda não temos baseline (falha no load), tenta obtê-lo antes de gravar,
+      // para NUNCA sobrescrever o servidor com um documento inteiro.
+      if(_lastSynced==null){
+        try{ const r=await fetch(FB_URL+'/data.json'); if(r.ok){ _lastSynced=migrateData((await r.json())||{}, true); } }catch(_){}
+        if(_lastSynced==null){ showSave('offline'); setTimeout(()=>showSave('idle'),3000); return; }
+      }
+      const snapshot=_cloneData(state.data);                  // exatamente o que estamos gravando
+      const updates=buildDataUpdates(_lastSynced, snapshot);  // só o que mudou desde o último sync
+      if(!Object.keys(updates).length){ showSave('idle'); return; } // nada a gravar
       const res=await fetch(FB_URL+'/data.json',{
-        method:'PUT',
+        method:'PATCH', // mescla no servidor: não toca no que outros usuários alteraram
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(payload)
+        body:JSON.stringify(updatesToFirebasePayload(updates))
       });
       if(res.ok){
+        _lastSynced=snapshot; // baseline avança para o estado que acabou de ser gravado
         showSave('saved');setTimeout(()=>showSave('idle'),1500);
         maybeAutoSnapshot();
         autoSaveBhToday();
       }
-      else{showSave('error');_ignoreNextSync=false}
+      else{ showSave('error'); }
     }catch(e){
       showSave('offline');
-      _ignoreNextSync=false;
       setTimeout(()=>showSave('idle'),3000);
     }
   },600);
@@ -1784,7 +1854,7 @@ function switchTab(tab){
   if(guards[tab]&&!can(guards[tab]))return;
   currentTab=tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  const allTabs=['escala','colaboradores','setores','turnos','resumo','banco','versoes','usuarios'];
+  const allTabs=['escala','domingos','colaboradores','setores','turnos','resumo','banco','versoes','usuarios'];
   const idx=allTabs.indexOf(tab);
   const visibleTabs=document.querySelectorAll('.tab');
   // Find tab button by onclick content
@@ -1799,6 +1869,7 @@ function render(){
   const activeEmps=state.data.employees.filter(e=>e.active).length;
   document.getElementById('header-sub').textContent=`Complexo de Lazer · ${activeEmps} colaboradores`;
   if(currentTab==='escala')main.appendChild(renderSchedule());
+  else if(currentTab==='domingos')main.appendChild(renderSundays());
   else if(currentTab==='colaboradores'&&can('canViewColaboradores'))main.appendChild(renderEmployees());
   else if(currentTab==='setores'&&can('canViewSetores'))main.appendChild(renderSectors());
   else if(currentTab==='turnos'&&can('canViewTurnos'))main.appendChild(renderShiftTypes());
@@ -1814,6 +1885,83 @@ function render(){
 }
 
 // ===================== SCHEDULE =====================
+// Helpers de célula compartilhados entre a aba Escala e a aba Domingos
+// (garantem edição/visual idênticos; ambas gravam na mesma state.data.schedule).
+function buildConcludeCell(ds, sector, emps, shm){
+  const locked=(state.data.lockedSectors[ds]||[]).includes(sector.id);
+  const sectorCounts={};
+  emps.forEach(emp=>{
+    const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
+    const sid=getCellShiftId(rawVal);
+    if(sid)sectorCounts[sid]=(sectorCounts[sid]||0)+1;
+  });
+  const countEntries=Object.entries(sectorCounts);
+  const td=document.createElement('td');
+  td.className='sector-conclude-td';
+  td.style.background=locked?'#f0fdf4':'var(--surface2)';
+  if(countEntries.length){
+    const chipsDiv=document.createElement('div');
+    chipsDiv.className='day-counts';
+    chipsDiv.style.justifyContent='center';
+    chipsDiv.style.marginBottom='3px';
+    countEntries.forEach(([sid,cnt])=>{
+      const st=shm[sid];if(!st)return;
+      const chip=document.createElement('span');
+      chip.className='count-chip';
+      chip.style.cssText=`background:${st.color};color:${contrastText(st.color)}`;
+      chip.textContent=`${st.code}·${cnt}`;
+      chipsDiv.appendChild(chip);
+    });
+    td.appendChild(chipsDiv);
+  }
+  const btn=document.createElement('button');
+  btn.className='conclude-btn';
+  btn.style.background=locked?'#15803d':sector.color;
+  btn.style.opacity=locked?'1':'0.75';
+  btn.textContent=locked?'✓ Editar':'↓ Concluir';
+  btn.onclick=()=>toggleSectorLock(ds,sector.id);
+  td.appendChild(btn);
+  return td;
+}
+
+function buildEmployeeCell(ds, emp, sectorId, shm, today){
+  const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
+  const shiftId=getCellShiftId(rawVal);
+  const note=getCellNote(rawVal);
+  const shift=shiftId?shm[shiftId]:null;
+  const isToday=ds===today;
+  const locked=(state.data.lockedSectors[ds]||[]).includes(sectorId);
+  const td=document.createElement('td');
+  const classes=['cell-td'];
+  if(locked)classes.push('locked');
+  td.className=classes.join(' ');
+  td.style.background=locked?'#f0fdf4':isToday?'#f0f6f2':'var(--surface)';
+  if(!locked)td.onclick=()=>handleCellClick(ds,emp.id,sectorId);
+  const wrap=document.createElement('div');
+  wrap.className='cell-inner-wrap';
+  const inner=document.createElement('div');
+  const innerClasses=['cell-inner'];
+  if(shift)innerClasses.push('filled');
+  if(locked)innerClasses.push('locked');
+  inner.className=innerClasses.join(' ');
+  if(shift){
+    inner.style.background=shift.color;
+    inner.style.color=contrastText(shift.color);
+    inner.textContent=shift.code;
+    if(shift.kind==='time')inner.classList.add('time-shift');
+  } else{inner.style.color='var(--muted)';inner.textContent=locked?'':'+'}
+  if(note){
+    const dot=document.createElement('div');
+    dot.className='cell-note-dot';
+    dot.title=note;
+    dot.innerHTML=`<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b" stroke="#92400e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13" stroke="#92400e" stroke-width="2"/><circle cx="12" cy="17" r="1" fill="#92400e" stroke="none"/></svg>`;
+    inner.appendChild(dot);
+  }
+  wrap.appendChild(inner);
+  td.appendChild(wrap);
+  return td;
+}
+
 function renderSchedule(){
   const div=document.createElement('div');
   const wk=state.weekStart;
@@ -1873,6 +2021,7 @@ function renderSchedule(){
     </div>
     <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="copyPrevWeek()">${svgIcon(ICONS.copy)} Copiar anterior</button>
     <button class="btn btn-danger btn-sm" style="flex:1;justify-content:center" onclick="clearWeek()">${svgIcon(ICONS.refresh)} Limpar</button>
+    <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="exportAllSchedulesPDF(this)" title="Gera um PDF com a escala de todos os setores (cada setor inteiro na mesma pagina), pronto para imprimir e colar">🖨️ Exportar todas (PDF)</button>
   `;
 
   // Stamps bar
@@ -1958,47 +2107,7 @@ function renderSchedule(){
     srow.appendChild(sNameTd);
 
     weekDates.forEach(d=>{
-      const ds=fmtDate(d);
-      const locked=isSectorLocked(ds,sector.id);
-
-      // Count shifts for this sector on this day
-      const sectorCounts={};
-      emps.forEach(emp=>{
-        const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
-        const sid=getCellShiftId(rawVal);
-        if(sid)sectorCounts[sid]=(sectorCounts[sid]||0)+1;
-      });
-      const countEntries=Object.entries(sectorCounts);
-
-      const td=document.createElement('td');
-      td.className='sector-conclude-td';
-      td.style.background=locked?'#f0fdf4':'var(--surface2)';
-
-      // Chips
-      if(countEntries.length){
-        const chipsDiv=document.createElement('div');
-        chipsDiv.className='day-counts';
-        chipsDiv.style.justifyContent='center';
-        chipsDiv.style.marginBottom='3px';
-        countEntries.forEach(([sid,cnt])=>{
-          const st=shm[sid];if(!st)return;
-          const chip=document.createElement('span');
-          chip.className='count-chip';
-          chip.style.cssText=`background:${st.color};color:${contrastText(st.color)}`;
-          chip.textContent=`${st.code}·${cnt}`;
-          chipsDiv.appendChild(chip);
-        });
-        td.appendChild(chipsDiv);
-      }
-
-      const btn=document.createElement('button');
-      btn.className='conclude-btn';
-      btn.style.background=locked?'#15803d':sector.color;
-      btn.style.opacity=locked?'1':'0.75';
-      btn.textContent=locked?'✓ Editar':'↓ Concluir';
-      btn.onclick=()=>toggleSectorLock(ds,sector.id);
-      td.appendChild(btn);
-      srow.appendChild(td);
+      srow.appendChild(buildConcludeCell(fmtDate(d), sector, emps, shm));
     });
     tbody.appendChild(srow);
 
@@ -2016,43 +2125,8 @@ function renderSchedule(){
       nameTd.innerHTML=`<div class="emp-name">${emp.name}${bhHtml}</div>${emp.role||emp.contract?`<div class="emp-role">${emp.role||''}${emp.contract?` ${contractHtml}`:''}</div>`:''}${obsHtml}`;
       row.appendChild(nameTd);
 
-      weekDates.forEach((d,i)=>{
-        const ds=fmtDate(d);
-        const rawVal=state.data.schedule[ds]&&state.data.schedule[ds][emp.id];
-        const shiftId=getCellShiftId(rawVal);
-        const note=getCellNote(rawVal);
-        const shift=shiftId?shm[shiftId]:null;
-        const isToday=ds===today;
-        const locked=isSectorLocked(ds,sector.id);
-        const td=document.createElement('td');
-        const classes=['cell-td'];
-        if(locked)classes.push('locked');
-        td.className=classes.join(' ');
-        td.style.background=locked?'#f0fdf4':isToday?'#f0f6f2':'var(--surface)';
-        if(!locked)td.onclick=()=>handleCellClick(ds,emp.id,sector.id);
-        const wrap=document.createElement('div');
-        wrap.className='cell-inner-wrap';
-        const inner=document.createElement('div');
-        const innerClasses=['cell-inner'];
-        if(shift)innerClasses.push('filled');
-        if(locked)innerClasses.push('locked');
-        inner.className=innerClasses.join(' ');
-        if(shift){
-          inner.style.background=shift.color;
-          inner.style.color=contrastText(shift.color);
-          inner.textContent=shift.code;
-          if(shift.kind==='time')inner.classList.add('time-shift');
-        } else{inner.style.color='var(--muted)';inner.textContent=locked?'':'+'}
-        if(note){
-          const dot=document.createElement('div');
-          dot.className='cell-note-dot';
-          dot.title=note;
-          dot.innerHTML=`<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b" stroke="#92400e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13" stroke="#92400e" stroke-width="2"/><circle cx="12" cy="17" r="1" fill="#92400e" stroke="none"/></svg>`;
-          inner.appendChild(dot);
-        }
-        wrap.appendChild(inner);
-        td.appendChild(wrap);
-        row.appendChild(td);
+      weekDates.forEach(d=>{
+        row.appendChild(buildEmployeeCell(fmtDate(d), emp, sector.id, shm, today));
       });
       tbody.appendChild(row);
     });
@@ -2070,6 +2144,152 @@ function renderSchedule(){
   const hint=document.createElement('p');
   hint.style.cssText='font-size:12px;color:var(--muted);margin-top:12px;padding:0 4px';
   hint.innerHTML='<b style="color:var(--text)">Como usar:</b> clique em qualquer célula para escolher o turno. Selecione um turno na paleta acima para preenchimento rápido em lote.';
+  div.appendChild(hint);
+
+  return div;
+}
+
+// ===================== DOMINGOS DO MÊS =====================
+// Mesma grade da Escala, mas as colunas são os domingos do mês.
+// Grava na MESMA state.data.schedule → reflete direto na escala padrão.
+function getSundaysOfMonth(monthDate){
+  const y=monthDate.getFullYear(), m=monthDate.getMonth();
+  const totalDays=new Date(y,m+1,0).getDate();
+  const out=[];
+  for(let d=1; d<=totalDays; d++){ const dt=new Date(y,m,d); if(dt.getDay()===0) out.push(dt); }
+  return out;
+}
+function prevSundayMonth(){ const m=state.sundayMonth||new Date(); state.sundayMonth=new Date(m.getFullYear(),m.getMonth()-1,1); render(); }
+function nextSundayMonth(){ const m=state.sundayMonth||new Date(); state.sundayMonth=new Date(m.getFullYear(),m.getMonth()+1,1); render(); }
+function sundayMonthToday(){ const n=new Date(); state.sundayMonth=new Date(n.getFullYear(),n.getMonth(),1); render(); }
+
+function renderSundays(){
+  const div=document.createElement('div');
+  if(!state.sundayMonth){ const n=new Date(); state.sundayMonth=new Date(n.getFullYear(),n.getMonth(),1); }
+  const mo=state.sundayMonth;
+  const monthLabel=MONTH_NAMES[mo.getMonth()]+' '+mo.getFullYear();
+  const sundays=getSundaysOfMonth(mo);
+  const today=todayStr();
+  const shm=shiftMap(); const ebs=empsBySector();
+
+  // Navegação por mês
+  const nav=document.createElement('div');
+  nav.className='week-nav';
+  nav.innerHTML=`
+    <button class="nav-btn" onclick="prevSundayMonth()">${svgIcon(ICONS.left)}</button>
+    <div class="week-box"><div class="week-month">${monthLabel}</div><div class="week-range">${sundays.length} domingo${sundays.length!==1?'s':''} no mês</div></div>
+    <button class="nav-btn" onclick="nextSundayMonth()">${svgIcon(ICONS.right)}</button>
+    <button class="today-btn" onclick="sundayMonthToday()">Este mês</button>
+    <div style="margin-left:auto;display:flex;gap:4px">
+      <button id="btn-undo" class="nav-btn" onclick="undo()" title="Desfazer (Ctrl+Z)" style="opacity:${state.undoStack.length?1:.35}">${svgIcon('<path d="M3 7v6h6"/><path d="M3 13C5.33 7.33 10 4 16 4c4.42 0 8 3.58 8 8s-3.58 8-8 8H4"/>')}</button>
+      <button id="btn-redo" class="nav-btn" onclick="redo()" title="Refazer (Ctrl+Shift+Z)" style="opacity:${state.redoStack.length?1:.35}">${svgIcon('<path d="M21 7v6h-6"/><path d="M21 13C18.67 7.33 14 4 8 4c-4.42 0-8 3.58-8 8s3.58 8 8 8h12"/>')}</button>
+    </div>
+  `;
+  div.appendChild(nav);
+
+  if(!sundays.length){
+    const p=document.createElement('p');
+    p.style.cssText='font-size:13px;color:var(--muted);padding:16px 4px';
+    p.textContent='Nenhum domingo neste mês.';
+    div.appendChild(p);
+    return div;
+  }
+
+  // Filtro de setor (reaproveita o dropdown/handlers da Escala)
+  const controls=document.createElement('div');
+  controls.className='controls';
+  controls.innerHTML=`
+    <div class="custom-select" id="sector-dropdown">
+      <button class="custom-select-btn" onclick="toggleSectorDropdown(event)">
+        <span id="sector-label">${state.filterSector==='all'?'Todos os setores':(state.data.sectors.find(s=>s.id===state.filterSector)||{}).name||'Todos os setores'}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="custom-select-menu" id="sector-menu" style="display:none">
+        <div class="custom-select-opt${state.filterSector==='all'?' selected':''}" onclick="pickSector('all')">Todos os setores</div>
+        ${state.data.sectors.slice().sort((a,b)=>a.order-b.order).map(s=>`<div class="custom-select-opt${state.filterSector===s.id?' selected':''}" onclick="pickSector('${s.id}')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:7px"></span>${s.name}</div>`).join('')}
+      </div>
+    </div>
+  `;
+  div.appendChild(controls);
+
+  // Paleta de preenchimento rápido (idêntica à Escala) — útil pra carimbar Folga em vários domingos
+  const stampsBar=document.createElement('div');
+  stampsBar.className='stamps-bar';
+  let stampsHtml=`<div class="stamps-label">Preenchimento rápido</div><div class="stamps">`;
+  state.data.shiftTypes.slice().sort((a,b)=>a.order-b.order).forEach(st=>{
+    const active=state.activeStampId===st.id&&!state.eraseMode;
+    stampsHtml+=`<button class="stamp${active?' active':''}" style="background:${st.color};color:${contrastText(st.color)};border-color:${st.color}" onclick="setStamp('${st.id}')"><span class="stamp-code">${st.code}</span>${st.name}</button>`;
+  });
+  stampsHtml+=`<button class="eraser-btn${state.eraseMode?' active':''}" onclick="toggleErase()">${svgIcon(ICONS.erase)} Apagar</button>`;
+  if(state.activeStampId&&!state.eraseMode){
+    stampsHtml+=`<button class="deselect-btn" onclick="clearStamp()">✕ Desmarcar turno selecionado</button>`;
+  }
+  stampsHtml+=`</div>`;
+  stampsBar.innerHTML=stampsHtml;
+  div.appendChild(stampsBar);
+
+  // Grade
+  const gridWrap=document.createElement('div');
+  gridWrap.className='grid-wrap';
+  const gridScroll=document.createElement('div');
+  gridScroll.className='grid-scroll';
+  const table=document.createElement('table');
+
+  // Cabeçalho: colaborador + um domingo por coluna
+  const thead=document.createElement('thead');
+  const hrow=document.createElement('tr');
+  const thEmp=document.createElement('th');
+  thEmp.textContent='Colaborador';
+  hrow.appendChild(thEmp);
+  sundays.forEach(d=>{
+    const ds=fmtDate(d);
+    const isToday=ds===today;
+    const th=document.createElement('th');
+    th.className='day-th'+(isToday?' today':'');
+    th.innerHTML=`<div class="day-name">Domingo</div><div class="day-num">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</div>`;
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  // Corpo: setores → funcionários (mesmos helpers da Escala)
+  const visibleSectors=state.filterSector==='all'
+    ?state.data.sectors.slice().sort((a,b)=>a.order-b.order)
+    :state.data.sectors.filter(s=>s.id===state.filterSector);
+  const tbody=document.createElement('tbody');
+  visibleSectors.forEach(sector=>{
+    const emps=ebs[sector.id]||[];
+    if(!emps.length)return;
+    const srow=document.createElement('tr');
+    srow.className='sector-hdr';
+    const sNameTd=document.createElement('td');
+    sNameTd.innerHTML=`<div class="sector-hdr-name"><div class="sector-dot" style="background:${sector.color}"></div><span class="sector-name" style="color:${sector.color}">${sector.name}</span><span class="sector-count">· ${emps.length} pessoa${emps.length!==1?'s':''}</span></div>`;
+    srow.appendChild(sNameTd);
+    sundays.forEach(d=>{ srow.appendChild(buildConcludeCell(fmtDate(d), sector, emps, shm)); });
+    tbody.appendChild(srow);
+    emps.forEach(emp=>{
+      const row=document.createElement('tr');
+      row.className='emp-row';
+      const nameTd=document.createElement('td');
+      const bh=emp.bankHours||0;
+      const bhHtml=bh!==0?`<span class="bh-badge ${bh>0?'bh-pos':'bh-neg'}">${fmtBankHours(bh)}</span>`:'';
+      const contractLabels={fixo:'Fixo',pacote:'Pacote',freelancer:'Freelancer'};
+      const contractClasses={fixo:'contract-fixo',pacote:'contract-pacote',freelancer:'contract-freelancer'};
+      const contractHtml=emp.contract&&emp.contract!=='fixo'?`<span class="contract-badge ${contractClasses[emp.contract]||''}">${contractLabels[emp.contract]||emp.contract}</span>`:'';
+      nameTd.innerHTML=`<div class="emp-name">${emp.name}${bhHtml}</div>${emp.role||emp.contract?`<div class="emp-role">${emp.role||''}${emp.contract?` ${contractHtml}`:''}</div>`:''}`;
+      row.appendChild(nameTd);
+      sundays.forEach(d=>{ row.appendChild(buildEmployeeCell(fmtDate(d), emp, sector.id, shm, today)); });
+      tbody.appendChild(row);
+    });
+  });
+  table.appendChild(tbody);
+  gridScroll.appendChild(table);
+  gridWrap.appendChild(gridScroll);
+  div.appendChild(gridWrap);
+
+  const hint=document.createElement('p');
+  hint.style.cssText='font-size:12px;color:var(--muted);margin-top:12px;padding:0 4px';
+  hint.innerHTML='<b style="color:var(--text)">Dica:</b> o que você define aqui já entra na escala normal (é o mesmo dado). Selecione um turno na paleta acima (ex.: Folga) para carimbar vários domingos de uma vez.';
   div.appendChild(hint);
 
   return div;
@@ -2176,21 +2396,21 @@ function clearWeek(){
 }
 
 // ===================== EXPORTAR IMAGEM DO SETOR (Canvas nativo) =====================
-function exportSectorImage(sectorId){
+function renderSectorCanvas(sectorId, dpr){
   const sector=state.data.sectors.find(s=>s.id===sectorId);
-  if(!sector){alert('Setor nao encontrado');return}
+  if(!sector) return null;
   const weekDates=getWeekDates(state.weekStart);
   const today=fmtDate(new Date());
   const shm=shiftMap();
   const ebs=empsBySector();
   const emps=ebs[sectorId]||[];
-  if(!emps.length){alert('Este setor nao tem colaboradores ativos.');return}
+  if(!emps.length) return null;
   const wkEnd=addDays(state.weekStart,6);
   const rangeLabel=fmtBR(state.weekStart)+' a '+fmtBR(wkEnd);
   const isLocked=(ds)=>(state.data.lockedSectors[ds]||[]).includes(sectorId);
 
   // ---- Layout (em px lógicos; multiplica por DPR no fim) ----
-  const DPR=2;
+  const DPR=dpr||2;
   const PAD=28;
   const NAME_W=210;
   const DAY_W=108;
@@ -2304,7 +2524,19 @@ function exportSectorImage(sectorId){
   ctx.font='400 11px "Nunito Sans",sans-serif';ctx.fillStyle='#a89f8c';ctx.textAlign='right';
   ctx.fillText('Escala Operacional · Complexo de Lazer',W-PAD,H-PAD-4);
 
-  // ---- Download ----
+  // ---- Retorna o canvas pronto ----
+  return { canvas, sector, rangeLabel, emps };
+}
+
+// Exporta a escala de UM setor como PNG (usa o canvas montado por renderSectorCanvas)
+function exportSectorImage(sectorId){
+  const sector=state.data.sectors.find(s=>s.id===sectorId);
+  if(!sector){alert('Setor nao encontrado');return}
+  const ebs=empsBySector();
+  if(!(ebs[sectorId]||[]).length){alert('Este setor nao tem colaboradores ativos.');return}
+  const r=renderSectorCanvas(sectorId);
+  if(!r){alert('Erro ao gerar imagem.');return}
+  const {canvas,rangeLabel}=r;
   canvas.toBlob(blob=>{
     if(!blob){alert('Erro ao gerar imagem.');return}
     const url=URL.createObjectURL(blob);
@@ -2314,6 +2546,82 @@ function exportSectorImage(sectorId){
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   },'image/png');
   logAction('Escala exportada',sector.name+' · '+rangeLabel);
+}
+
+// ---- Carregamento tardio da biblioteca de PDF (jsPDF), só quando o usuario clica ----
+let _jspdfLoadPromise=null;
+function loadJsPDF(){
+  if(window.jspdf&&window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if(_jspdfLoadPromise) return _jspdfLoadPromise;
+  _jspdfLoadPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
+    s.onload=()=>{
+      if(window.jspdf&&window.jspdf.jsPDF) resolve(window.jspdf.jsPDF);
+      else { _jspdfLoadPromise=null; reject(new Error('a biblioteca de PDF carregou mas nao expos a API esperada')); }
+    };
+    s.onerror=()=>{ _jspdfLoadPromise=null; reject(new Error('falha ao baixar a biblioteca de PDF (verifique a conexao com a internet)')); };
+    document.head.appendChild(s);
+  });
+  return _jspdfLoadPromise;
+}
+
+// ---- Distribui os setores nas paginas do PDF garantindo que NENHUM setor seja
+//      cortado entre duas paginas. Funcao pura, testavel sem navegador.
+//      items: [{cw,ch}] (dimensoes do canvas em px). Retorna posicoes em mm. ----
+function planPdfLayout(items, opts){
+  const {pageW,pageH,margin:M,gap:GAP}=opts;
+  const usableW=pageW-2*M, usableH=pageH-2*M;
+  const placements=[];
+  let page=0, y=M;
+  items.forEach((it,i)=>{
+    let w=usableW, h=w*it.ch/it.cw;
+    if(h>usableH){ h=usableH; w=h*it.cw/it.ch; } // setor muito alto: reduz p/ caber inteiro numa pagina
+    const gapBefore=(y>M)?GAP:0;
+    if(y+gapBefore+h > M+usableH+0.5){ page++; y=M; } // nao cabe no resto da pagina -> proxima pagina
+    if(y>M) y+=GAP;
+    const x=M+(usableW-w)/2; // centraliza horizontalmente
+    placements.push({page,x,y,w,h,index:i});
+    y+=h;
+  });
+  return placements;
+}
+
+// ---- Exporta TODAS as escalas (todos os setores) num unico PDF pronto p/ imprimir ----
+async function exportAllSchedulesPDF(btn){
+  const sectors=state.data.sectors.slice().sort((a,b)=>(a.order??0)-(b.order??0));
+  // Resolucao alta para impressao nitida (DPR 3 ≈ 410 DPI na largura A4, acima do padrao 300).
+  const PDF_DPR=3;
+  const rendered=[];
+  for(const s of sectors){
+    const r=renderSectorCanvas(s.id, PDF_DPR);
+    if(!r) continue; // pula setores sem colaboradores ativos
+    // Converte para PNG imediatamente e descarta o canvas (evita segurar varios canvases grandes na memoria)
+    rendered.push({ dataURL:r.canvas.toDataURL('image/png'), cw:r.canvas.width, ch:r.canvas.height });
+  }
+  if(!rendered.length){ alert('Nenhum setor com colaboradores ativos para exportar.'); return; }
+  const oldHtml=btn?btn.innerHTML:null;
+  if(btn){ btn.disabled=true; btn.innerHTML='Gerando PDF…'; }
+  try{
+    const jsPDF=await loadJsPDF();
+    const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const pageW=pdf.internal.pageSize.getWidth();
+    const pageH=pdf.internal.pageSize.getHeight();
+    const items=rendered.map(r=>({cw:r.cw,ch:r.ch}));
+    const plan=planPdfLayout(items,{pageW,pageH,margin:10,gap:8});
+    let lastPage=0;
+    plan.forEach(p=>{
+      if(p.page!==lastPage){ pdf.addPage(); lastPage=p.page; }
+      pdf.addImage(rendered[p.index].dataURL,'PNG',p.x,p.y,p.w,p.h,undefined,'FAST');
+    });
+    pdf.save('escalas_'+fmtDate(state.weekStart)+'.pdf');
+    const wkEnd=addDays(state.weekStart,6);
+    logAction('Todas as escalas exportadas (PDF)', rendered.length+' setor(es) · '+fmtBR(state.weekStart)+' a '+fmtBR(wkEnd));
+  }catch(err){
+    alert('Nao foi possivel gerar o PDF: '+((err&&err.message)?err.message:err));
+  }finally{
+    if(btn){ btn.disabled=false; btn.innerHTML=oldHtml; }
+  }
 }
 
 
