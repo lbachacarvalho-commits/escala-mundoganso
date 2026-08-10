@@ -542,6 +542,9 @@ let SERVICE_ORDERS = {};        // /escala_tarefas/serviceOrders/{osid} (O.S. �
 let DISCUSSIONS = {};           // /escala_tarefas/discussions/{task_<id>|os_<id>} (chat único por tarefa/O.S.)
 let state = { user:null, emp:null, admin:false, view:"mine", ready:false, adminFilter:{sector:"",emp:"",status:"",nature:"",level:""}, respFilter:{sector:"",level:""}, perfFilter:{sector:"",emp:"",weeks:4}, osFilter:{status:"",priority:"",sector:""}, discFilter:"active", mineOffset:0, teamFilter:{sector:"",emp:""} };
 let materializing = false;
+/* maior número de instâncias já visto nesta sessão — usado como referência para detectar
+   snapshots degradados antes de materializar (ver trava em materialize()) */
+let _maxInstancesSeen = 0;
 
 /* ===================================================================
    4) UTILIDADES
@@ -764,6 +767,16 @@ function occursOn(task,dKey){
    =================================================================== */
 function materialize(){
   if(materializing||!ESCALA||!state.user)return;
+  // Trava de segurança: se já vimos instâncias antes e agora a lista veio vazia (ou drasticamente
+  // menor) enquanto ainda existem tarefas ativas, os dados locais estão degradados. Materializar
+  // nesse estado recriaria como "pendente" tudo que já foi concluído. Melhor não fazer nada e
+  // esperar o próximo snapshot íntegro.
+  const nInst=Object.keys(INSTANCES).length, nTasks=Object.keys(TASKS).length;
+  if(_maxInstancesSeen>0&&nTasks>0&&nInst<_maxInstancesSeen/2){
+    console.warn(`[materialize] abortado: instâncias caíram de ${_maxInstancesSeen} para ${nInst} — dados possivelmente incompletos`);
+    return;
+  }
+  if(nInst>_maxInstancesSeen)_maxInstancesSeen=nInst;
   materializing=true;
   const today=todayKey();
   const floor=addDays(today,-LOOKBACK_DAYS);
@@ -795,8 +808,16 @@ function materialize(){
       if(occursOn(task,d)){
         const iid=`${tid}__${d}`;
         if(!INSTANCES[iid]){
-          updates[`instances/${iid}`]={taskId:tid,date:d,occurrenceDate:d,
-            assignedTo:computeAssignee(task,d),autoAssigned:true,status:"pendente",createdAt:Date.now()};
+          // Só cria se realmente não existe. `update` com objeto inteiro sobrescreveria uma
+          // instância concluída caso INSTANCES esteja incompleto por qualquer motivo, então
+          // usamos caminhos individuais + createdAt como marcador de "nasceu agora".
+          updates[`instances/${iid}/taskId`]=tid;
+          updates[`instances/${iid}/date`]=d;
+          updates[`instances/${iid}/occurrenceDate`]=d;
+          updates[`instances/${iid}/assignedTo`]=computeAssignee(task,d);
+          updates[`instances/${iid}/autoAssigned`]=true;
+          updates[`instances/${iid}/status`]="pendente";
+          updates[`instances/${iid}/createdAt`]=Date.now();
         }
       }
       d=addDays(d,1);
@@ -3657,7 +3678,24 @@ if(FB_OK){
   },err=>{
     $("#lgStatus").textContent="Erro ao ler a escala: "+err.code+". Verifique as regras do banco.";
   });
-  dbRef(PATH.tarefas).on("value",s=>{const v=s.val()||{};TASKS=v.tasks||{};INSTANCES=v.instances||{};TICKETS=v.tickets||{};WEEKLY_SCORES=v.weeklyScores||{};SCORE_RESET_AT=v.scoreResetAt||null;SERVICE_ORDERS=v.serviceOrders||{};DISCUSSIONS=v.discussions||{};afterData()});
+  dbRef(PATH.tarefas).on("value",s=>{
+    const v=s.val()||{};
+    const novasTasks=v.tasks||{}, novasInst=v.instances||{};
+    // Proteção contra snapshot parcial (mesma lógica do listener da escala): se o nó voltou vazio
+    // ou com muito menos dados do que já tínhamos, é quase certo que foi oscilação de conexão ou
+    // escrita concorrente. Aceitar esse snapshot faria a materialização recriar como "pendente"
+    // instâncias que já estavam concluídas — foi exatamente o bug de "tarefa fechada voltou a abrir".
+    const tinhaTasks=Object.keys(TASKS).length, tinhaInst=Object.keys(INSTANCES).length;
+    const vemTasks=Object.keys(novasTasks).length, vemInst=Object.keys(novasInst).length;
+    if((tinhaTasks>0&&(vemTasks===0||vemTasks<tinhaTasks/2))||(tinhaInst>0&&(vemInst===0||vemInst<tinhaInst/2))){
+      console.warn(`[tarefas] snapshot parcial ignorado: tarefas ${tinhaTasks}→${vemTasks}, instâncias ${tinhaInst}→${vemInst} — aguardando próximo update`);
+      return;
+    }
+    TASKS=novasTasks;INSTANCES=novasInst;TICKETS=v.tickets||{};WEEKLY_SCORES=v.weeklyScores||{};
+    SCORE_RESET_AT=v.scoreResetAt||null;SERVICE_ORDERS=v.serviceOrders||{};DISCUSSIONS=v.discussions||{};
+    invalidateTerminalIndex();
+    afterData();
+  });
 
   /* usuários: opcional agora (login é por CPF). Mantido só para o Diagnóstico. */
   dbRef(PATH.users).once("value").then(s=>{USERS=s.val()||{}}).catch(()=>{USERS={}});
