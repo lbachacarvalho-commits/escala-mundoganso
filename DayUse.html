@@ -134,6 +134,15 @@ body{
 }
 .secondary-btn:hover{border-color:var(--aqua);}
 .danger-btn{color:var(--coral); border-color:rgba(240,101,74,0.35);}
+.edit-banner{
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  background:rgba(227,162,59,0.1); border:1px solid rgba(227,162,59,0.35);
+  color:var(--ink); padding:12px 16px; border-radius:8px; margin-bottom:20px; font-size:13.5px;
+}
+.edit-link-btn{
+  background:none; border:none; color:var(--aqua); font-family:'Space Grotesk',sans-serif;
+  font-size:12.5px; cursor:pointer; text-decoration:underline; padding:0;
+}
 .danger-btn:hover{background:rgba(240,101,74,0.08); border-color:var(--coral);}
 .table-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:#fff;}
 table{border-collapse:collapse; width:100%; font-size:12.5px;}
@@ -252,6 +261,11 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
 
       <form id="surveyForm">
 
+        <div id="editBanner" class="edit-banner" style="display:none;">
+          <span>Editando a resposta de <b id="editBannerNome"></b>.</span>
+          <button type="button" id="cancelEditBtn" class="secondary-btn">Cancelar edição</button>
+        </div>
+
         <div class="read-aloud script-rules">
           <span class="tag">Antes de ligar — regras do roteiro</span>
           <ol>
@@ -295,7 +309,7 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
 
         <div class="read-aloud">
           <span class="tag">Leia para o cliente antes das próximas 4 perguntas</span>
-          <p>"Imagine um Day Use All Inclusive no Ganso, com café da manhã, almoço, café da tarde, acesso à área de lazer e recreação, e bebidas não alcoólicas incluídas durante as refeições — sem nenhum custo extra durante o dia."</p>
+          <p>"Imagine um Day Use All Inclusive no Ganso, com café da manhã, almoço, café da tarde, acesso à área de lazer e recreação, e bebidas não alcoólicas incluídas durante as refeições — tudo isso incluso no ingresso. Atrações à parte, como tirolesa, sorvetes e itens da lojinha, continuariam sendo cobradas separadamente."</p>
         </div>
 
         <div class="field-row">
@@ -452,6 +466,28 @@ footer{text-align:center; padding:24px; color:var(--ink-soft); font-size:12px;}
           <h3 class="card-title">Temas mais citados nas respostas abertas</h3>
           <div id="themeBars"></div>
         </div>
+
+        <div class="grid-2" style="margin-top:24px;">
+          <div class="card">
+            <h3 class="card-title">Classe socioeconômica dos respondentes</h3>
+            <canvas id="classeChart" height="200"></canvas>
+          </div>
+          <div class="card">
+            <h3 class="card-title">Já conhecia o Day Use tradicional?</h3>
+            <canvas id="visitouChart" height="200"></canvas>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top:24px;">
+          <div class="card">
+            <h3 class="card-title">Interesse gerado pelo all inclusive</h3>
+            <canvas id="interesseChart" height="200"></canvas>
+          </div>
+          <div class="card">
+            <h3 class="card-title">Trocaria o formato tradicional?</h3>
+            <canvas id="trocariaChart" height="200"></canvas>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -590,6 +626,8 @@ document.querySelectorAll('.pills[data-name]').forEach(container=>{
 const REQUIRED_PILL_FIELDS = ['ja_visitou','preco_tradicional',
   'o_que_pesa_mais','muda_interesse','trocaria_formato','grupo','classe_social'];
 
+let editingKey = null;
+
 document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const msg = document.getElementById('formMsg');
@@ -642,18 +680,24 @@ document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
     trocaria_formato: formState.trocaria_formato,
     grupo: formState.grupo,
     classe_social: formState.classe_social,
-    mudanca_texto: e.target.mudanca_texto.value.trim() || null,
-    criado_em: firebase.database.ServerValue.TIMESTAMP
+    mudanca_texto: e.target.mudanca_texto.value.trim() || null
   };
+  if(!editingKey) payload.criado_em = firebase.database.ServerValue.TIMESTAMP;
 
   submitBtn.disabled = true;
-  msg.textContent = 'Salvando…';
+  msg.textContent = editingKey ? 'Salvando alterações…' : 'Salvando…';
   msg.className = 'form-msg';
 
   try{
-    await db.ref(RESPONSES_PATH).push(payload);
-    msg.textContent = 'Resposta salva com sucesso.';
+    if(editingKey){
+      await db.ref(RESPONSES_PATH+'/'+editingKey).update(payload);
+      msg.textContent = 'Alterações salvas.';
+    }else{
+      await db.ref(RESPONSES_PATH).push(payload);
+      msg.textContent = 'Resposta salva com sucesso.';
+    }
     msg.className = 'form-msg success';
+    exitEditMode();
     e.target.reset();
     document.querySelectorAll('.pill.selected').forEach(p=>p.classList.remove('selected'));
     for(const k in formState) delete formState[k];
@@ -665,6 +709,51 @@ document.getElementById('surveyForm').addEventListener('submit', async (e)=>{
   }finally{
     submitBtn.disabled = false;
   }
+});
+
+function enterEditMode(doc){
+  editingKey = doc._key;
+  document.querySelector('.tab-btn[data-tab="form"]').click();
+
+  const form = document.getElementById('surveyForm');
+  form.atendente.value = doc.atendente || '';
+  form.nome.value = doc.nome || '';
+  form.barato.value = doc.barato ?? '';
+  form.caro.value = doc.caro ?? '';
+  form.caro_demais.value = doc.caro_demais ?? '';
+  form.barato_demais.value = doc.barato_demais ?? '';
+  form.mudanca_texto.value = doc.mudanca_texto || '';
+
+  for(const k in formState) delete formState[k];
+  document.querySelectorAll('.pills[data-name]').forEach(container=>{
+    const name = container.dataset.name;
+    container.querySelectorAll('.pill').forEach(btn=>{
+      const val = btn.dataset.value || btn.textContent;
+      const match = val === doc[name];
+      btn.classList.toggle('selected', match);
+      if(match) formState[name] = val;
+    });
+  });
+
+  document.getElementById('editBanner').style.display = 'flex';
+  document.getElementById('editBannerNome').textContent = doc.nome || '(sem nome)';
+  form.querySelector('.submit-btn').textContent = 'Salvar alterações';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function exitEditMode(){
+  editingKey = null;
+  document.getElementById('editBanner').style.display = 'none';
+  document.getElementById('surveyForm').querySelector('.submit-btn').textContent = 'Salvar resposta';
+}
+
+document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
+  exitEditMode();
+  const form = document.getElementById('surveyForm');
+  form.reset();
+  document.querySelectorAll('.pill.selected').forEach(p=>p.classList.remove('selected'));
+  for(const k in formState) delete formState[k];
+  document.getElementById('formMsg').textContent = '';
 });
 
 // ===================== RESPONSES TABLE =====================
@@ -682,13 +771,13 @@ let cachedDocs = [];
 async function loadResponses(){
   const thead = document.querySelector('#responsesTable thead');
   const tbody = document.querySelector('#responsesTable tbody');
-  thead.innerHTML = '<tr>'+COLUMNS.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr>';
-  tbody.innerHTML = '<tr><td colspan="'+COLUMNS.length+'">Carregando…</td></tr>';
+  thead.innerHTML = '<tr>'+COLUMNS.map(c=>'<th>'+c[1]+'</th>').join('')+'<th>Ações</th></tr>';
+  tbody.innerHTML = '<tr><td colspan="'+(COLUMNS.length+1)+'">Carregando…</td></tr>';
 
   try{
     const snap = await db.ref(RESPONSES_PATH).orderByChild('criado_em').once('value');
     const docs = [];
-    snap.forEach(child=>{ docs.push(child.val()); });
+    snap.forEach(child=>{ docs.push({_key: child.key, ...child.val()}); });
     docs.reverse(); // mais recentes primeiro
     cachedDocs = docs;
     refreshCount();
@@ -703,16 +792,24 @@ async function loadResponses(){
     document.getElementById('responsesTable').style.display = 'table';
 
     tbody.innerHTML = cachedDocs.map(doc=>{
-      return '<tr>'+COLUMNS.map(([key])=>{
+      const cells = COLUMNS.map(([key])=>{
         let val = doc[key];
         if(key === 'criado_em' && typeof val === 'number') val = new Date(val).toLocaleString('pt-BR');
         if(val === null || val === undefined || val === '') val = '—';
         return '<td>'+String(val)+'</td>';
-      }).join('')+'</tr>';
+      }).join('');
+      return '<tr>'+cells+'<td><button type="button" class="edit-link-btn" data-key="'+doc._key+'">Editar</button></td></tr>';
     }).join('');
+
+    tbody.querySelectorAll('.edit-link-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const doc = cachedDocs.find(d=>d._key === btn.dataset.key);
+        if(doc) enterEditMode(doc);
+      });
+    });
   }catch(err){
     console.error(err);
-    tbody.innerHTML = '<tr><td colspan="'+COLUMNS.length+'">Erro ao carregar respostas. Confira o firebase-config.js.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="'+(COLUMNS.length+1)+'">Erro ao carregar respostas. Confira o firebase-config.js.</td></tr>';
   }
 }
 
@@ -862,6 +959,10 @@ async function runAnalysis(){
   renderGroupChart(docs);
   renderWeightChart(docs);
   renderThemes(docs);
+  renderClasseChart(docs);
+  renderVisitouChart(docs);
+  renderInteresseChart(docs);
+  renderTrocariaChart(docs);
 }
 
 function fmtMoney(v){ return v===null ? '—' : 'R$ '+v.toFixed(2).replace('.',','); }
@@ -878,7 +979,76 @@ function renderKpis({n, OPP, PMC, PME, premio, pctAumentaBastante, pctTrocariaSe
   ).join('');
 }
 
-let psmChartInstance, groupChartInstance, weightChartInstance;
+let psmChartInstance, groupChartInstance, weightChartInstance, classeChartInstance, visitouChartInstance, interesseChartInstance, trocariaChartInstance;
+
+function countBy(docs, field){
+  const counts = {};
+  docs.forEach(d=>{
+    const v = d[field];
+    if(v === undefined || v === null || v === '') return;
+    counts[v] = (counts[v]||0)+1;
+  });
+  return counts;
+}
+
+function renderClasseChart(docs){
+  const order = [
+    'Classe A — acima de R$28.240', 'Classe B — de R$14.120 a R$28.240',
+    'Classe C — de R$5.648 a R$14.120', 'Classe D — de R$2.824 a R$5.648', 'Classe E — até R$2.824'
+  ];
+  const counts = countBy(docs, 'classe_social');
+  const labels = order.map(o=>o.match(/Classe (\w)/)[1]);
+  const data = order.map(o=>counts[o]||0);
+  if(classeChartInstance) classeChartInstance.destroy();
+  classeChartInstance = new Chart(document.getElementById('classeChart'), {
+    type:'bar',
+    data:{ labels, datasets:[{label:'Respostas', data, backgroundColor:'#2CA8A4', borderRadius:6}] },
+    options:{ responsive:true, plugins:{legend:{display:false}},
+      scales:{ y:{title:{display:true,text:'Nº de respostas'}, grid:{color:'#EEF5F3'}}, x:{grid:{display:false}} } }
+  });
+}
+
+function renderVisitouChart(docs){
+  const order = ['Sim, já visitei', 'Não, seria minha primeira vez'];
+  const counts = countBy(docs, 'ja_visitou');
+  const labels = order.filter(o=>counts[o]);
+  const data = labels.map(l=>counts[l]);
+  if(visitouChartInstance) visitouChartInstance.destroy();
+  visitouChartInstance = new Chart(document.getElementById('visitouChart'), {
+    type:'bar',
+    data:{ labels, datasets:[{label:'Respostas', data, backgroundColor:'#E3A23B', borderRadius:6}] },
+    options:{ indexAxis:'y', responsive:true, plugins:{legend:{display:false}},
+      scales:{ x:{title:{display:true,text:'Nº de respostas'}, grid:{color:'#EEF5F3'}}, y:{grid:{display:false}} } }
+  });
+}
+
+function renderInteresseChart(docs){
+  const order = ['Aumenta bastante o interesse','Aumenta um pouco','Não muda','Diminui o interesse (prefiro pagar avulso)'];
+  const shortLabels = ['Aumenta bastante','Aumenta um pouco','Não muda','Diminui'];
+  const counts = countBy(docs, 'muda_interesse');
+  const data = order.map(o=>counts[o]||0);
+  if(interesseChartInstance) interesseChartInstance.destroy();
+  interesseChartInstance = new Chart(document.getElementById('interesseChart'), {
+    type:'bar',
+    data:{ labels:shortLabels, datasets:[{label:'Respostas', data, backgroundColor:'#0F4C4E', borderRadius:6}] },
+    options:{ indexAxis:'y', responsive:true, plugins:{legend:{display:false}},
+      scales:{ x:{title:{display:true,text:'Nº de respostas'}, grid:{color:'#EEF5F3'}}, y:{grid:{display:false}} } }
+  });
+}
+
+function renderTrocariaChart(docs){
+  const order = ['Sim, sempre que possível','Sim, mas só em ocasiões especiais','Não, prefiro continuar no formato avulso','Depende do preço'];
+  const shortLabels = ['Sim, sempre','Sim, ocasiões especiais','Não','Depende do preço'];
+  const counts = countBy(docs, 'trocaria_formato');
+  const data = order.map(o=>counts[o]||0);
+  if(trocariaChartInstance) trocariaChartInstance.destroy();
+  trocariaChartInstance = new Chart(document.getElementById('trocariaChart'), {
+    type:'bar',
+    data:{ labels:shortLabels, datasets:[{label:'Respostas', data, backgroundColor:'#F0654A', borderRadius:6}] },
+    options:{ indexAxis:'y', responsive:true, plugins:{legend:{display:false}},
+      scales:{ x:{title:{display:true,text:'Nº de respostas'}, grid:{color:'#EEF5F3'}}, y:{grid:{display:false}} } }
+  });
+}
 
 function renderPsmChart(grid, tooCheap, cheap, expensive, tooExpensive){
   if(psmChartInstance) psmChartInstance.destroy();
