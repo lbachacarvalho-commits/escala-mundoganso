@@ -2716,22 +2716,29 @@ function bogusBackfillInstances(){
 function cleanBogusBackfill(){
   const list=bogusBackfillInstances();
   if(!list.length){toast("Nenhuma pendência retroativa encontrada.");return}
-  if(!confirm(`Remover ${list.length} pendência(s) retroativa(s) criada(s) indevidamente pelo bug de materialização?\n\nSó são removidas ocorrências de dias passados, ainda pendentes, sem nenhuma movimentação e que nasceram dias depois da própria data. Concluídas e não realizadas não são tocadas.`))return;
+  if(!confirm(`Anular ${list.length} pendência(s) retroativa(s) criada(s) indevidamente?\n\nElas deixam de aparecer como atrasadas e não contam na nota de ninguém. Só são afetadas ocorrências de dias passados, ainda pendentes, sem nenhuma movimentação e que nasceram dias depois da própria data. Concluídas e não realizadas de verdade não são tocadas.`))return;
   const updates={};
   const hoje=todayKey();
   const tarefasAfetadas=new Set();
   for(const it of list){
-    updates[`instances/${it.iid}`]=null;
-    const ins=INSTANCES[it.iid];
-    if(ins&&ins.taskId)tarefasAfetadas.add(ins.taskId);
+    const ins=INSTANCES[it.iid];if(!ins)continue;
+    // IMPORTANTE: não apagar. Um aparelho que ainda esteja com a versão antiga do app em cache
+    // recriaria a ocorrência ausente na próxima materialização — foi por isso que as pendências
+    // "voltavam" logo depois da limpeza. Marcando como terminal, a ocorrência continua existindo
+    // (nenhum cliente a recria), some das atrasadas e, sem responsável, não pesa na nota.
+    updates[`instances/${it.iid}/status`]="nao_realizada";
+    updates[`instances/${it.iid}/assignedTo`]=null;
+    updates[`instances/${it.iid}/autoExpired`]=true;
+    updates[`instances/${it.iid}/voidedBackfill`]=true;
+    const hist=Array.isArray(ins.history)?ins.history.slice():[];
+    hist.push({type:"nao_realizada",by:"sistema",at:Date.now(),note:"Anulada: pendência retroativa criada por erro de materialização"});
+    updates[`instances/${it.iid}/history`]=hist;
+    if(ins.taskId&&TASKS[ins.taskId])tarefasAfetadas.add(ins.taskId);
   }
-  // Marca cada tarefa afetada com um corte a partir de hoje. Sem isso, apagar as instâncias faz a
-  // materialização perder a referência de "até onde já materializou" e recriar tudo do zero a
-  // partir do createdDate — a limpeza aparentava funcionar e as pendências voltavam em seguida.
   for(const tid of tarefasAfetadas)updates[`tasks/${tid}/materializeFrom`]=hoje;
   dbRef(PATH.tarefas).update(updates).then(()=>{
     invalidateTerminalIndex();
-    toast(`${list.length} pendência(s) indevida(s) removida(s) ✓`);
+    toast(`${list.length} pendência(s) indevida(s) anulada(s) ✓`);
   });
 }
 function viewDiag(){
@@ -2835,8 +2842,8 @@ function viewDiag(){
     ${bogus.length?`<table class="diag-t"><tr><th>Tarefa</th><th>Data da ocorrência</th><th>Criada em</th></tr>
       ${bogus.slice(0,20).map(b=>`<tr><td>${esc(b.title)}</td><td>${esc(fmtDate(b.date))}</td><td>${esc(fmtDate(b.criadaEm))}</td></tr>`).join("")}
       </table>${bogus.length>20?`<p class="note">…e mais ${bogus.length-20}.</p>`:""}
-      <div class="actions"><button class="btn sm danger" data-act="clean-bogus-backfill">🧹 Remover ${bogus.length} pendência(s) indevida(s)</button></div>`:""}
-    <p class="note" style="margin-top:8px">Só remove ocorrências <b>passadas, ainda pendentes e sem nenhuma movimentação</b>. Nada concluído ou marcado como não realizado é tocado.</p>
+      <div class="actions"><button class="btn sm danger" data-act="clean-bogus-backfill">🧹 Anular ${bogus.length} pendência(s) indevida(s)</button></div>`:""}
+    <p class="note" style="margin-top:8px">Só afeta ocorrências <b>passadas, ainda pendentes e sem nenhuma movimentação</b>. Elas somem das atrasadas e não contam na nota de ninguém. Nada concluído ou marcado como não realizado é tocado.</p>
   </div>`;
 
   return h;
