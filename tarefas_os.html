@@ -526,6 +526,10 @@ const DISCUSSION_INACTIVE_DAYS = 7;
 const DISCUSSION_INACTIVE_MS = DISCUSSION_INACTIVE_DAYS*24*60*60*1000;
 
 const LOOKBACK_DAYS = 30;       // quantos dias para trás materializar/cobrar atrasos
+/* Teto de criação retroativa: quantos dias para trás o app pode CRIAR ocorrências que faltam.
+   Serve para o caso normal de ninguém abrir o app por um ou dois dias. Acima disso, criar
+   pendências no passado só produz "atrasos" fantasmas que ninguém pode mais executar. */
+const MAX_BACKFILL_DAYS = 2;
 const WEEKDAYS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
 
 /* ===================================================================
@@ -819,8 +823,14 @@ function materialize(){
     const task=TASKS[tid];if(!task||task.active===false)continue;
     let d=maxKey(floor,task.createdDate||floor);
     if(task.recurrenceSince)d=maxKey(d,task.recurrenceSince); // regra nova vale a partir da mudança
+    if(task.materializeFrom)d=maxKey(d,task.materializeFrom); // corte após limpeza de pendências indevidas
     const marca=lastInstanceDate[tid];
     if(marca)d=maxKey(d,marca); // nunca retroceder antes do que a tarefa já materializou
+    // Teto de retroação: mesmo que a tarefa nunca tenha materializado (tarefa recém-criada com
+    // createdDate antigo, ou instâncias apagadas), nunca criar mais que MAX_BACKFILL_DAYS dias
+    // para trás. Sem esse teto, abrir o app depois de um tempo parado gerava dezenas de tarefas
+    // "atrasadas" de dias que já passaram e que ninguém tem como executar.
+    d=maxKey(d,addDays(today,-MAX_BACKFILL_DAYS));
     while(d<=today){
       if(occursOn(task,d)){
         const iid=`${tid}__${d}`;
@@ -2708,7 +2718,17 @@ function cleanBogusBackfill(){
   if(!list.length){toast("Nenhuma pendência retroativa encontrada.");return}
   if(!confirm(`Remover ${list.length} pendência(s) retroativa(s) criada(s) indevidamente pelo bug de materialização?\n\nSó são removidas ocorrências de dias passados, ainda pendentes, sem nenhuma movimentação e que nasceram dias depois da própria data. Concluídas e não realizadas não são tocadas.`))return;
   const updates={};
-  for(const it of list)updates[`instances/${it.iid}`]=null;
+  const hoje=todayKey();
+  const tarefasAfetadas=new Set();
+  for(const it of list){
+    updates[`instances/${it.iid}`]=null;
+    const ins=INSTANCES[it.iid];
+    if(ins&&ins.taskId)tarefasAfetadas.add(ins.taskId);
+  }
+  // Marca cada tarefa afetada com um corte a partir de hoje. Sem isso, apagar as instâncias faz a
+  // materialização perder a referência de "até onde já materializou" e recriar tudo do zero a
+  // partir do createdDate — a limpeza aparentava funcionar e as pendências voltavam em seguida.
+  for(const tid of tarefasAfetadas)updates[`tasks/${tid}/materializeFrom`]=hoje;
   dbRef(PATH.tarefas).update(updates).then(()=>{
     invalidateTerminalIndex();
     toast(`${list.length} pendência(s) indevida(s) removida(s) ✓`);
