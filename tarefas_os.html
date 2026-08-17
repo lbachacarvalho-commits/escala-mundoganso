@@ -801,16 +801,32 @@ function materialize(){
     invalidateTerminalIndex();
   }
 
+  // Marca d'água por tarefa: a data da instância mais recente que já existe.
+  // Regra: nunca criar instância para uma data ANTERIOR a essa marca. Se a tarefa já materializou
+  // até o dia X, qualquer dia anterior a X que esteja faltando foi deliberadamente não criado
+  // (a recorrência da época não cobria aquele dia). Sem isso, editar a recorrência de uma tarefa
+  // antiga — trocar o dia da semana, por exemplo — fazia nascerem dezenas de instâncias PENDENTES
+  // retroativas, que apareciam para o colaborador como "tarefas antigas reabertas/atrasadas".
+  // Dias FUTUROS em relação à marca continuam sendo criados normalmente, então o app segue
+  // recuperando o atraso de quando ninguém abriu o sistema por alguns dias.
+  const lastInstanceDate={};
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||!ins.taskId||!ins.date)continue;
+    if(!lastInstanceDate[ins.taskId]||ins.date>lastInstanceDate[ins.taskId])lastInstanceDate[ins.taskId]=ins.date;
+  }
+
   for(const tid in TASKS){
     const task=TASKS[tid];if(!task||task.active===false)continue;
     let d=maxKey(floor,task.createdDate||floor);
+    if(task.recurrenceSince)d=maxKey(d,task.recurrenceSince); // regra nova vale a partir da mudança
+    const marca=lastInstanceDate[tid];
+    if(marca)d=maxKey(d,marca); // nunca retroceder antes do que a tarefa já materializou
     while(d<=today){
       if(occursOn(task,d)){
         const iid=`${tid}__${d}`;
         if(!INSTANCES[iid]){
-          // Só cria se realmente não existe. `update` com objeto inteiro sobrescreveria uma
-          // instância concluída caso INSTANCES esteja incompleto por qualquer motivo, então
-          // usamos caminhos individuais + createdAt como marcador de "nasceu agora".
+          // Escreve por caminhos individuais (não o objeto inteiro) para nunca sobrescrever
+          // uma instância existente que porventura não esteja no snapshot local.
           updates[`instances/${iid}/taskId`]=tid;
           updates[`instances/${iid}/date`]=d;
           updates[`instances/${iid}/occurrenceDate`]=d;
@@ -1564,12 +1580,20 @@ function saveOS(data,id){
    =================================================================== */
 function saveTask(data,id){
   const tid=id||genId("t");
+  const anterior=id?TASKS[id]:null;
+  // Se a recorrência mudou (ou a tarefa foi reativada), marca a data da mudança. A materialização
+  // não cria ocorrências anteriores a essa data: a regra nova vale daqui pra frente, não retroage.
+  // Sem isso, trocar "toda segunda" por "seg a sex" fazia nascerem pendências nos dias passados.
+  const recMudou=anterior&&JSON.stringify(anterior.recurrence||{})!==JSON.stringify(data.recurrence||{});
+  const reativou=anterior&&anterior.active===false;
+  const recurrenceSince=(!anterior||recMudou||reativou)?todayKey():(anterior.recurrenceSince||anterior.createdDate||todayKey());
   const payload={
     title:data.title.trim(),description:(data.description||"").trim(),sectorId:data.sectorId||"",
     nature:data.nature||"executar",
     startTime:data.startTime||null,responsibles:data.responsibles,
     recurrence:data.recurrence,checklist:data.checklist||[],active:true,
-    createdDate:data.createdDate||todayKey(),createdBy:data.createdBy||state.user.username,updatedAt:Date.now()
+    createdDate:data.createdDate||todayKey(),createdBy:data.createdBy||state.user.username,
+    recurrenceSince,updatedAt:Date.now()
   };
   return dbRef(`${PATH.tarefas}/tasks/${tid}`).set(payload).then(()=>{closeModal();toast(id?"Tarefa atualizada":"Tarefa criada")});
 }
@@ -2660,6 +2684,36 @@ async function fixResponsibles(){
   toast("Responsáveis migrados ✓");
 }
 
+/* Limpeza das pendências retroativas criadas pelo bug de materialização: instâncias de dias
+   passados que nasceram MUITO depois da própria data (createdAt >> date) e nunca foram tocadas
+   por ninguém (sem histórico, ainda pendentes). Uma ocorrência legítima nasce no dia dela ou
+   pouco depois; essas nasceram semanas depois, quando alguém editou a recorrência da tarefa. */
+function bogusBackfillInstances(){
+  const today=todayKey();
+  const out=[];
+  for(const iid in INSTANCES){
+    const ins=INSTANCES[iid];if(!ins||!ins.date||ins.date>=today)continue;
+    if(ins.status!=="pendente")continue;                       // só as que nunca foram resolvidas
+    if(Array.isArray(ins.history)&&ins.history.length)continue; // ninguém mexeu nela
+    if(!ins.createdAt)continue;
+    const criadaEm=dateKey(new Date(ins.createdAt));
+    if(daysBetween(ins.date,criadaEm)<2)continue;              // nasceu no dia dela: legítima
+    out.push({iid,date:ins.date,criadaEm,title:(TASKS[ins.taskId]||{}).title||"(tarefa removida)"});
+  }
+  out.sort((a,b)=>a.date<b.date?1:-1);
+  return out;
+}
+function cleanBogusBackfill(){
+  const list=bogusBackfillInstances();
+  if(!list.length){toast("Nenhuma pendência retroativa encontrada.");return}
+  if(!confirm(`Remover ${list.length} pendência(s) retroativa(s) criada(s) indevidamente pelo bug de materialização?\n\nSó são removidas ocorrências de dias passados, ainda pendentes, sem nenhuma movimentação e que nasceram dias depois da própria data. Concluídas e não realizadas não são tocadas.`))return;
+  const updates={};
+  for(const it of list)updates[`instances/${it.iid}`]=null;
+  dbRef(PATH.tarefas).update(updates).then(()=>{
+    invalidateTerminalIndex();
+    toast(`${list.length} pendência(s) indevida(s) removida(s) ✓`);
+  });
+}
 function viewDiag(){
   const today=todayKey();
   let h=`<div class="section-title">Como o app está lendo seus dados</div>`;
@@ -2753,6 +2807,18 @@ function viewDiag(){
     <div class="actions"><button class="btn sm ghost" data-act="migrate-discussions">🔄 Migrar conversas para Discussões</button></div>
   </div>`;
 
+  const bogus=bogusBackfillInstances();
+  h+=`<div class="diag"><h4>🧹 Pendências retroativas indevidas</h4>
+    <p class="note" style="margin-bottom:10px">${bogus.length
+      ?`Encontrei <b>${bogus.length}</b> ocorrência(s) de dias passados que nasceram bem depois da própria data — resquício do bug em que editar a recorrência de uma tarefa criava pendências no passado. Elas aparecem como "atrasadas" para os colaboradores sem nunca terem existido de verdade.`
+      :"Nenhuma pendência retroativa indevida encontrada."}</p>
+    ${bogus.length?`<table class="diag-t"><tr><th>Tarefa</th><th>Data da ocorrência</th><th>Criada em</th></tr>
+      ${bogus.slice(0,20).map(b=>`<tr><td>${esc(b.title)}</td><td>${esc(fmtDate(b.date))}</td><td>${esc(fmtDate(b.criadaEm))}</td></tr>`).join("")}
+      </table>${bogus.length>20?`<p class="note">…e mais ${bogus.length-20}.</p>`:""}
+      <div class="actions"><button class="btn sm danger" data-act="clean-bogus-backfill">🧹 Remover ${bogus.length} pendência(s) indevida(s)</button></div>`:""}
+    <p class="note" style="margin-top:8px">Só remove ocorrências <b>passadas, ainda pendentes e sem nenhuma movimentação</b>. Nada concluído ou marcado como não realizado é tocado.</p>
+  </div>`;
+
   return h;
 }
 
@@ -2840,8 +2906,11 @@ function openTaskForm(tid){
     nature:t?(t.nature||"executar"):"executar",
     startTime:t?(t.startTime||""):"",
     responsibles:t?(t.responsibles||[]).slice():[],
-    recurrence:t?(t.recurrence||{type:"daily",interval:1}):{type:"daily",interval:1},
-    checklist:t?(t.checklist||[]).slice():[],
+    // cópia profunda: antes o formulário guardava a MESMA referência do objeto da tarefa, então
+    // mexer na recorrência já alterava TASKS[tid] em memória — e a comparação "a recorrência
+    // mudou?" no saveTask nunca detectava diferença nenhuma.
+    recurrence:t?JSON.parse(JSON.stringify(t.recurrence||{type:"daily",interval:1})):{type:"daily",interval:1},
+    checklist:t?(t.checklist||[]).map(it=>({...it})):[],
     createdDate:t?t.createdDate:null,createdBy:t?t.createdBy:null
   };
   if(formState.recurrence.interval==null)formState.recurrence.interval=1; // tarefas antigas
@@ -2958,7 +3027,7 @@ function openOSForm(id){
     priority:o?(o.priority||"normal"):"normal",
     deadline:o?(o.deadline||""):"",
     responsibles:o?(o.responsibles||[]).slice():[],
-    checklist:o?(o.checklist||[]).slice():[]
+    checklist:o?(o.checklist||[]).map(it=>({...it})):[]
   };
   renderOSForm();
 }
@@ -3598,6 +3667,7 @@ document.addEventListener("click",e=>{
     case"reopen-discussion":reopenDiscussionThread(a.dataset.type,a.dataset.id);break;
     case"edit-task-from-discussion":closeModal();openTaskForm(a.dataset.id);break;
     case"migrate-discussions":migrateTicketsToDiscussions();break;
+    case"clean-bogus-backfill":cleanBogusBackfill();break;
     case"transfer":openTransfer(iid);break;
     case"sel-r":transferState.sel={type:"r",empId:a.dataset.to};renderTransfer();break;
     case"sel-day":transferState.sel={type:"day"};renderTransfer();setTimeout(()=>{const el=$("#postDate");if(el)el.focus()},0);break;
