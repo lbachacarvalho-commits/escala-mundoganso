@@ -809,6 +809,55 @@ document.addEventListener('keydown',e=>{
 
 // ===================== FIREBASE CONFIG =====================
 const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
+// Versão desta cópia do arquivo. Ao subir uma versão nova, os outros dispositivos
+// detectam sozinhos e avisam para atualizar — evita ter que recarregar um por um.
+const APP_VERSION = '2026-09-10-1';
+let _updateBannerShown = false;
+async function checkAppVersion(atStartup){
+  try{
+    const res=await fetch(FB_URL+'/app_version.json?_='+Date.now(),{cache:'no-store'});
+    if(!res.ok) return;
+    const remote=await res.json();
+    if(!remote||typeof remote!=='string'||remote<APP_VERSION){
+      // esta cópia é a mais nova: registra para que os outros saibam
+      fetch(FB_URL+'/app_version.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(APP_VERSION)});
+      return;
+    }
+    if(remote>APP_VERSION){
+      // Ao ENTRAR, atualiza sozinho (ninguém está editando ainda, nada se perde).
+      // Com tentativa única: se o servidor insistir em entregar o arquivo antigo,
+      // cai no aviso manual em vez de ficar recarregando em laço.
+      let tentou=false;
+      try{ tentou=sessionStorage.getItem('escala_auto_update')===remote; }catch(e){}
+      const semPendencias=!Object.keys(_pendingWrites||{}).length;
+      if(atStartup&&!tentou&&semPendencias){
+        try{ sessionStorage.setItem('escala_auto_update',remote); }catch(e){}
+        const u=new URL(location.href);
+        u.searchParams.set('v',remote); // força o navegador a buscar o arquivo novo
+        location.replace(u.toString());
+        return;
+      }
+      showUpdateBanner();
+    }
+  }catch(e){}
+}
+function showUpdateBanner(){
+  if(_updateBannerShown) return;
+  _updateBannerShown=true;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#1a3a2a;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;justify-content:center;font-size:14px;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
+  bar.innerHTML='<span>Há uma versão mais nova da escala. Atualize para continuar salvando normalmente.</span>';
+  const btn=document.createElement('button');
+  btn.textContent='Atualizar agora';
+  btn.style.cssText='background:#fff;color:#1a3a2a;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer;white-space:nowrap';
+  btn.onclick=()=>{
+    const u=new URL(location.href);
+    u.searchParams.set('v',Date.now()); // ignora o cache do navegador
+    location.replace(u.toString());
+  };
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+}
 const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
 const FB_BH_HISTORY = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
 const FB_USERS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_users';
@@ -1199,6 +1248,8 @@ async function loadData(){
 
   // 3. Escuta mudanças em tempo real via SSE
   startRealtimeSync();
+  checkAppVersion(true);        // ao entrar: atualiza sozinho se estiver desatualizado
+  setInterval(()=>checkAppVersion(false),300000); // depois: só avisa, para não interromper edição
 }
 
 // Reconciliação: ao detectar qualquer mudança no servidor, re-busca o documento e
@@ -1268,6 +1319,24 @@ function startRealtimeSync(){
 // Envia as edições gravando DIRETAMENTE em cada sub-nó (.../data/schedule, .../data/employees...)
 // em vez de mandar tudo pelo nó pai. Assim o servidor avalia cada escrita no seu próprio
 // endereço — o que permite bloquear, por regra, a reescrita do documento inteiro.
+// Se o servidor recusar a gravação repetidamente, avisa de forma visível.
+// (Antes, o usuário só via um indicador discreto e continuava editando sem salvar.)
+let _writeBlockedCount=0, _writeBlockedShown=false;
+function notifyWriteBlocked(){
+  _writeBlockedCount++;
+  if(_writeBlockedCount<2||_writeBlockedShown) return;
+  _writeBlockedShown=true;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#b91c1c;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;justify-content:center;font-size:14px;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
+  bar.innerHTML='<span><b>Suas alterações não estão sendo salvas.</b> Atualize a página antes de continuar editando.</span>';
+  const btn=document.createElement('button');
+  btn.textContent='Atualizar';
+  btn.style.cssText='background:#fff;color:#b91c1c;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer';
+  btn.onclick=()=>{ const u=new URL(location.href); u.searchParams.set('v',Date.now()); location.replace(u.toString()); };
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+}
+
 async function sendUpdates(updates){
   const payload=updatesToFirebasePayload(updates);
   const whole={};   // campos de nível 1 (employees, sectors, shiftTypes, weekStartDay)
@@ -1319,7 +1388,7 @@ function saveData(){
         maybeAutoSnapshot();
         autoSaveBhToday();
       }
-      else{ showSave('error'); scheduleSaveRetry(); } // não perde a edição: tenta de novo
+      else{ showSave('error'); scheduleSaveRetry(); notifyWriteBlocked(); } // não perde a edição: tenta de novo
     }catch(e){
       showSave('offline');
       setTimeout(()=>showSave('idle'),3000);
