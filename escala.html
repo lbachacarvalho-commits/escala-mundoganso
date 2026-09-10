@@ -978,6 +978,50 @@ const LOCAL_KEY = 'escala_lazer_html_v1';
 let _ignoreNextSync = false; // (legado) não é mais usado — sync agora reconcilia
 let _lastSynced = null;      // baseline: último estado conhecido do Firebase (para diff incremental)
 let _reconcileTimer = null;  // debounce da reconciliação com o servidor
+let _saveGeneration = 0;     // incrementa a cada escrita confirmada (invalida reconciliações obsoletas)
+let _savePending = false;    // há um save aguardando o debounce?
+let _saveInFlight = false;   // há um PATCH em voo?
+let _retryTimer = null;      // reenvio automático quando a escrita falha
+// Escritas já confirmadas pelo servidor, guardadas por alguns segundos.
+// Se uma leitura vier atrasada (réplica/cache) sem elas, reafirmamos —
+// assim uma escala já salva nunca "desaparece" da tela.
+let _recentWrites = {};
+// Só é gravado no servidor aquilo que o usuário realmente editou nesta sessão.
+// (Antes, gravava-se a diferença entre a tela e o servidor — se a tela estivesse
+// com dados velhos de cache, um único toque revertia a semana inteira.)
+let _pendingWrites = {};  // caminhos editados e ainda não confirmados
+let _prevLocal = null;    // última foto local, para detectar o que o usuário mudou
+function captureLocalChanges(){
+  if(!state.data) return;
+  if(_prevLocal==null){ _prevLocal=_cloneData(state.data); return; }
+  const delta=buildDataUpdates(_prevLocal, state.data);
+  if(Object.keys(delta).length) Object.assign(_pendingWrites, delta);
+  _prevLocal=_cloneData(state.data);
+}
+const RECENT_WRITE_TTL = 25000;
+function rememberWrites(updates){
+  const at=Date.now();
+  Object.entries(updates).forEach(([p,v])=>{ _recentWrites[p]={v,at}; });
+}
+function pruneRecentWrites(){
+  const now=Date.now();
+  Object.keys(_recentWrites).forEach(p=>{ if(now-_recentWrites[p].at>RECENT_WRITE_TTL) delete _recentWrites[p]; });
+}
+function applyRecentWrites(obj){
+  pruneRecentWrites();
+  const paths=Object.keys(_recentWrites);
+  if(!paths.length) return obj;
+  const up={}; paths.forEach(p=>{ up[p]=_recentWrites[p].v; });
+  return applyDataUpdates(obj, up);
+}
+
+// Leitura do documento SEM cache do navegador (cache servia versões antigas e
+// fazia a reconciliação apagar edições recém-salvas).
+async function fbGetData(){
+  const res=await fetch(FB_URL+'/data.json?_='+Date.now(),{cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return await res.json();
+}
 
 // ============ ESCRITA INCREMENTAL (só grava o que mudou) ============
 // Motivo: PUT do documento inteiro fazia usuários concorrentes se sobrescreverem.
@@ -1130,22 +1174,24 @@ async function loadData(){
   // 2. Busca inicial do Firebase — fonte da verdade (flag true)
   showSave('sync');
   try{
-    const res=await fetch(FB_URL+'/data.json');
-    if(res.ok){
-      const fbData=await res.json();
-      if(fbData){
-        state.data=migrateData(fbData, true); // Firebase manda, código obedece
-        localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data));
-      }
+    const fbData=await fbGetData();
+    if(fbData&&typeof fbData==='object'){
+      state.data=migrateData(fbData, true); // Firebase manda, código obedece
+      localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data));
+      // Baseline SÓ é definido com leitura confirmada do servidor.
+      // (Se ficasse igual ao cache local, edições feitas offline nunca seriam enviadas.)
+      _lastSynced=_cloneData(state.data);
     }
     showSave('idle');
   }catch(e){
     showSave('offline');
     setTimeout(()=>showSave('idle'),3000);
+    // Leitura falhou: a tela está com cache antigo. Tenta de novo até conseguir
+    // corrigir com os dados reais (sem isso, o dispositivo passava o dia desatualizado).
+    setTimeout(reconcileFromServer,5000);
   }
-  // Baseline para gravação incremental: só enviaremos deltas em relação a isto.
-  // (Usa o melhor que temos: Firebase se veio; senão o cache. Nunca envia a diferença cache-vs-servidor.)
-  _lastSynced=_cloneData(state.data);
+  _prevLocal=_cloneData(state.data); // foto inicial: nada aqui conta como edição do usuário
+  _pendingWrites={};
   // Align weekStart with configured start day
   state.weekStart=startOfConfiguredWeek(new Date());
   render();
@@ -1163,13 +1209,27 @@ function scheduleReconcile(){
   _reconcileTimer=setTimeout(reconcileFromServer,250); // agrupa rajadas de eventos
 }
 async function reconcileFromServer(){
+  // Nunca reconcilia enquanto há edição aguardando gravação ou escrita em voo:
+  // aplicar dados do servidor nesse momento apagaria o que o usuário acabou de fazer.
+  if(_savePending||_saveInFlight){ clearTimeout(_reconcileTimer); _reconcileTimer=setTimeout(reconcileFromServer,800); return; }
+  const genAtStart=_saveGeneration; // se uma escrita for confirmada durante o GET, este resultado fica obsoleto
   try{
-    const res=await fetch(FB_URL+'/data.json');
-    if(!res.ok)return;
-    const fb=await res.json();
-    const serverData=migrateData(fb||{}, true);
-    // edições locais ainda não confirmadas (entre o baseline e o estado atual)
-    const localPending=buildDataUpdates(_lastSynced, state.data);
+    const fb=await fbGetData();
+    // Descarta resultado obsoleto: houve gravação confirmada enquanto líamos,
+    // ou surgiu nova edição. Reagenda para ler de novo já com o dado novo.
+    if(genAtStart!==_saveGeneration||_savePending||_saveInFlight){
+      clearTimeout(_reconcileTimer); _reconcileTimer=setTimeout(reconcileFromServer,800); return;
+    }
+    if(!fb||typeof fb!=='object') return; // leitura vazia/inválida: não toca em nada
+    const serverData=applyRecentWrites(migrateData(fb, true));
+    // Guarda anti-apagão: nunca substitui dados existentes por um documento vazio.
+    const srvCells=Object.keys(serverData.schedule||{}).length;
+    const locCells=Object.keys((state.data&&state.data.schedule)||{}).length;
+    if(srvCells===0&&locCells>0) return;
+    if(!(serverData.sectors||[]).length&&((state.data&&state.data.sectors)||[]).length) return;
+    // edições que o usuário realmente fez e ainda não foram confirmadas
+    captureLocalChanges();
+    const localPending={..._pendingWrites};
     const merged=applyDataUpdates(serverData, localPending);
     _lastSynced=_cloneData(serverData);
     if(!_eqData(merged,state.data)){
@@ -1179,10 +1239,16 @@ async function reconcileFromServer(){
       showSave('updated');
       setTimeout(()=>showSave('idle'),2000);
     }
+    _prevLocal=_cloneData(state.data); // tela passa a ser o servidor + minhas edições pendentes
+    // Se ainda havia edições locais não gravadas, garante que sejam persistidas.
+    if(Object.keys(localPending).length) saveData();
   }catch(e){}
 }
 
 function startRealtimeSync(){
+  // Rede de segurança: mesmo que a conexão em tempo real caia (celular dormindo,
+  // troca de rede), o app confere o servidor periodicamente.
+  setInterval(scheduleReconcile,60000);
   try{
     const evtSource=new EventSource(FB_URL+'/data.json');
     const onEvt=()=>scheduleReconcile(); // 'put' e 'patch' apenas disparam a reconciliação
@@ -1199,41 +1265,102 @@ function startRealtimeSync(){
   }
 }
 
+// Envia as edições gravando DIRETAMENTE em cada sub-nó (.../data/schedule, .../data/employees...)
+// em vez de mandar tudo pelo nó pai. Assim o servidor avalia cada escrita no seu próprio
+// endereço — o que permite bloquear, por regra, a reescrita do documento inteiro.
+async function sendUpdates(updates){
+  const payload=updatesToFirebasePayload(updates);
+  const whole={};   // campos de nível 1 (employees, sectors, shiftTypes, weekStartDay)
+  const groups={};  // caminhos profundos agrupados por sub-nó (schedule, lockedSectors)
+  Object.entries(payload).forEach(([path,val])=>{
+    const i=path.indexOf('/');
+    if(i===-1){ whole[path]=val; return; }
+    const top=path.slice(0,i);
+    (groups[top]=groups[top]||{})[path.slice(i+1)]=val;
+  });
+  const reqs=[];
+  Object.entries(whole).forEach(([key,val])=>{
+    reqs.push(fetch(FB_URL+'/data/'+key+'.json',{
+      method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(val)
+    }));
+  });
+  Object.entries(groups).forEach(([top,obj])=>{
+    reqs.push(fetch(FB_URL+'/data/'+top+'.json',{
+      method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)
+    }));
+  });
+  const results=await Promise.all(reqs);
+  return results.every(r=>r&&r.ok);
+}
+
 function saveData(){
   try{localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data))}catch(e){}
+  captureLocalChanges(); // registra o que o usuário acabou de mudar
   clearTimeout(state.saveTimer);
+  clearTimeout(_retryTimer);
+  _savePending=true; // bloqueia a reconciliação até esta edição ser gravada
   showSave('saving');
   state.saveTimer=setTimeout(async()=>{
+    _savePending=false; _saveInFlight=true;
     try{
       // Estabiliza a chave de cada funcionário no estado local (persiste _fbKey definitivamente)
       state.data.employees=state.data.employees.map(emp=>({...emp,_fbKey:employeeFbKey(emp)}));
-      // Se ainda não temos baseline (falha no load), tenta obtê-lo antes de gravar,
-      // para NUNCA sobrescrever o servidor com um documento inteiro.
-      if(_lastSynced==null){
-        try{ const r=await fetch(FB_URL+'/data.json'); if(r.ok){ _lastSynced=migrateData((await r.json())||{}, true); } }catch(_){}
-        if(_lastSynced==null){ showSave('offline'); setTimeout(()=>showSave('idle'),3000); return; }
-      }
-      const snapshot=_cloneData(state.data);                  // exatamente o que estamos gravando
-      const updates=buildDataUpdates(_lastSynced, snapshot);  // só o que mudou desde o último sync
-      if(!Object.keys(updates).length){ showSave('idle'); return; } // nada a gravar
-      const res=await fetch(FB_URL+'/data.json',{
-        method:'PATCH', // mescla no servidor: não toca no que outros usuários alteraram
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(updatesToFirebasePayload(updates))
-      });
+      captureLocalChanges();
+      const sending={..._pendingWrites};          // SOMENTE o que o usuário editou
+      const keys=Object.keys(sending);
+      if(!keys.length){ showSave('idle'); return; } // nada a gravar
+      const res={ok:await sendUpdates(sending)};
       if(res.ok){
-        _lastSynced=snapshot; // baseline avança para o estado que acabou de ser gravado
+        // remove da fila só o que foi confirmado (edições novas durante o envio permanecem)
+        keys.forEach(k=>{ if(_eqData(_pendingWrites[k],sending[k])) delete _pendingWrites[k]; });
+        rememberWrites(sending); // protege contra leituras atrasadas que ainda não têm esta escrita
+        _saveGeneration++;       // invalida qualquer leitura iniciada antes desta gravação
         showSave('saved');setTimeout(()=>showSave('idle'),1500);
         maybeAutoSnapshot();
         autoSaveBhToday();
       }
-      else{ showSave('error'); }
+      else{ showSave('error'); scheduleSaveRetry(); } // não perde a edição: tenta de novo
     }catch(e){
       showSave('offline');
       setTimeout(()=>showSave('idle'),3000);
-    }
+      scheduleSaveRetry(); // offline/queda de rede: reenvia automaticamente
+    }finally{ _saveInFlight=false; }
   },600);
 }
+
+// Reenvio automático quando a gravação falha (mantém a edição até ser confirmada).
+function scheduleSaveRetry(){
+  clearTimeout(_retryTimer);
+  _retryTimer=setTimeout(()=>{
+    if(!Object.keys(_pendingWrites).length) return; // já gravou
+    saveData();
+  },5000);
+}
+
+// Se o usuário fechar/sair com edição ainda no debounce, grava imediatamente.
+window.addEventListener('beforeunload',()=>{
+  try{
+    captureLocalChanges();
+    const sending={..._pendingWrites};
+    if(!Object.keys(sending).length) return;
+    clearTimeout(state.saveTimer);
+    // keepalive permite a requisição sobreviver ao fechamento da aba
+    const payload=updatesToFirebasePayload(sending);
+    const groups={};
+    Object.entries(payload).forEach(([path,val])=>{
+      const i=path.indexOf('/');
+      if(i===-1){
+        fetch(FB_URL+'/data/'+path+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(val),keepalive:true});
+      } else {
+        const top=path.slice(0,i);
+        (groups[top]=groups[top]||{})[path.slice(i+1)]=val;
+      }
+    });
+    Object.entries(groups).forEach(([top,obj])=>{
+      fetch(FB_URL+'/data/'+top+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj),keepalive:true});
+    });
+  }catch(_){}
+});
 
 function showSave(status){
   const el=document.getElementById('save-badge');
