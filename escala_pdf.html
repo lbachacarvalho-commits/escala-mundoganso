@@ -122,6 +122,17 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .day-th.today .day-num{color:var(--primary-mid)}
 .day-th.done{background:var(--green-light)}
 .day-th.done .day-num{color:var(--green)}
+/* Visão mensal: até 31 colunas — compacta tudo para caber mais dias na tela */
+.month-grid table{min-width:0}
+.month-grid .day-th{min-width:44px;padding:8px 2px}
+.month-grid .day-name{font-size:9px;letter-spacing:.02em}
+.month-grid .day-num{font-size:.8rem;margin-top:1px}
+.month-grid .cell-inner{font-size:11px;min-height:30px;padding:2px}
+.month-grid .cell-inner.time-shift{font-size:9px;line-height:1.1}
+.month-grid .conclude-btn{font-size:9px;padding:3px 4px}
+.month-grid .count-chip{font-size:8px;padding:1px 3px}
+.month-grid .day-th.weekend{background:#f3efe6}
+.month-grid td.weekend-col{background:#faf7f1}
 .done-label{font-size:10px;font-weight:700;color:var(--green);margin-top:2px}
 .day-counts{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin-top:5px}
 .count-chip{font-family:var(--font-mono);font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap}
@@ -556,6 +567,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
     </div>
     <nav>
       <button class="tab active" onclick="switchTab('escala')">📅 Escala</button>
+      <button class="tab" onclick="switchTab('mensal')">📆 Mensal</button>
       <button class="tab" onclick="switchTab('domingos')">🗓️ Domingos</button>
       <button class="tab" onclick="switchTab('colaboradores')">👥 Colaboradores</button>
       <button class="tab" onclick="switchTab('setores')">🏷️ Setores</button>
@@ -809,6 +821,55 @@ document.addEventListener('keydown',e=>{
 
 // ===================== FIREBASE CONFIG =====================
 const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
+// Versão desta cópia do arquivo. Ao subir uma versão nova, os outros dispositivos
+// detectam sozinhos e avisam para atualizar — evita ter que recarregar um por um.
+const APP_VERSION = '2026-10-21-1';
+let _updateBannerShown = false;
+async function checkAppVersion(atStartup){
+  try{
+    const res=await fetch(FB_URL+'/app_version.json?_='+Date.now(),{cache:'no-store'});
+    if(!res.ok) return;
+    const remote=await res.json();
+    if(!remote||typeof remote!=='string'||remote<APP_VERSION){
+      // esta cópia é a mais nova: registra para que os outros saibam
+      fetch(FB_URL+'/app_version.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(APP_VERSION)});
+      return;
+    }
+    if(remote>APP_VERSION){
+      // Ao ENTRAR, atualiza sozinho (ninguém está editando ainda, nada se perde).
+      // Com tentativa única: se o servidor insistir em entregar o arquivo antigo,
+      // cai no aviso manual em vez de ficar recarregando em laço.
+      let tentou=false;
+      try{ tentou=sessionStorage.getItem('escala_auto_update')===remote; }catch(e){}
+      const semPendencias=!Object.keys(_pendingWrites||{}).length;
+      if(atStartup&&!tentou&&semPendencias){
+        try{ sessionStorage.setItem('escala_auto_update',remote); }catch(e){}
+        const u=new URL(location.href);
+        u.searchParams.set('v',remote); // força o navegador a buscar o arquivo novo
+        location.replace(u.toString());
+        return;
+      }
+      showUpdateBanner();
+    }
+  }catch(e){}
+}
+function showUpdateBanner(){
+  if(_updateBannerShown) return;
+  _updateBannerShown=true;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#1a3a2a;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;justify-content:center;font-size:14px;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
+  bar.innerHTML='<span>Há uma versão mais nova da escala. Atualize para continuar salvando normalmente.</span>';
+  const btn=document.createElement('button');
+  btn.textContent='Atualizar agora';
+  btn.style.cssText='background:#fff;color:#1a3a2a;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer;white-space:nowrap';
+  btn.onclick=()=>{
+    const u=new URL(location.href);
+    u.searchParams.set('v',Date.now()); // ignora o cache do navegador
+    location.replace(u.toString());
+  };
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+}
 const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
 const FB_BH_HISTORY = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
 const FB_USERS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_users';
@@ -1199,6 +1260,8 @@ async function loadData(){
 
   // 3. Escuta mudanças em tempo real via SSE
   startRealtimeSync();
+  checkAppVersion(true);        // ao entrar: atualiza sozinho se estiver desatualizado
+  setInterval(()=>checkAppVersion(false),300000); // depois: só avisa, para não interromper edição
 }
 
 // Reconciliação: ao detectar qualquer mudança no servidor, re-busca o documento e
@@ -1268,6 +1331,24 @@ function startRealtimeSync(){
 // Envia as edições gravando DIRETAMENTE em cada sub-nó (.../data/schedule, .../data/employees...)
 // em vez de mandar tudo pelo nó pai. Assim o servidor avalia cada escrita no seu próprio
 // endereço — o que permite bloquear, por regra, a reescrita do documento inteiro.
+// Se o servidor recusar a gravação repetidamente, avisa de forma visível.
+// (Antes, o usuário só via um indicador discreto e continuava editando sem salvar.)
+let _writeBlockedCount=0, _writeBlockedShown=false;
+function notifyWriteBlocked(){
+  _writeBlockedCount++;
+  if(_writeBlockedCount<2||_writeBlockedShown) return;
+  _writeBlockedShown=true;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#b91c1c;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;justify-content:center;font-size:14px;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
+  bar.innerHTML='<span><b>Suas alterações não estão sendo salvas.</b> Atualize a página antes de continuar editando.</span>';
+  const btn=document.createElement('button');
+  btn.textContent='Atualizar';
+  btn.style.cssText='background:#fff;color:#b91c1c;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer';
+  btn.onclick=()=>{ const u=new URL(location.href); u.searchParams.set('v',Date.now()); location.replace(u.toString()); };
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+}
+
 async function sendUpdates(updates){
   const payload=updatesToFirebasePayload(updates);
   const whole={};   // campos de nível 1 (employees, sectors, shiftTypes, weekStartDay)
@@ -1319,7 +1400,7 @@ function saveData(){
         maybeAutoSnapshot();
         autoSaveBhToday();
       }
-      else{ showSave('error'); scheduleSaveRetry(); } // não perde a edição: tenta de novo
+      else{ showSave('error'); scheduleSaveRetry(); notifyWriteBlocked(); } // não perde a edição: tenta de novo
     }catch(e){
       showSave('offline');
       setTimeout(()=>showSave('idle'),3000);
@@ -1981,7 +2062,7 @@ function switchTab(tab){
   if(guards[tab]&&!can(guards[tab]))return;
   currentTab=tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  const allTabs=['escala','domingos','colaboradores','setores','turnos','resumo','banco','versoes','usuarios'];
+  const allTabs=['escala','mensal','domingos','colaboradores','setores','turnos','resumo','banco','versoes','usuarios'];
   const idx=allTabs.indexOf(tab);
   const visibleTabs=document.querySelectorAll('.tab');
   // Find tab button by onclick content
@@ -1997,6 +2078,7 @@ function render(){
   document.getElementById('header-sub').textContent=`Complexo de Lazer · ${activeEmps} colaboradores`;
   if(currentTab==='escala')main.appendChild(renderSchedule());
   else if(currentTab==='domingos')main.appendChild(renderSundays());
+  else if(currentTab==='mensal')main.appendChild(renderMonthly());
   else if(currentTab==='colaboradores'&&can('canViewColaboradores'))main.appendChild(renderEmployees());
   else if(currentTab==='setores'&&can('canViewSetores'))main.appendChild(renderSectors());
   else if(currentTab==='turnos'&&can('canViewTurnos'))main.appendChild(renderShiftTypes());
@@ -2289,6 +2371,154 @@ function getSundaysOfMonth(monthDate){
 function prevSundayMonth(){ const m=state.sundayMonth||new Date(); state.sundayMonth=new Date(m.getFullYear(),m.getMonth()-1,1); render(); }
 function nextSundayMonth(){ const m=state.sundayMonth||new Date(); state.sundayMonth=new Date(m.getFullYear(),m.getMonth()+1,1); render(); }
 function sundayMonthToday(){ const n=new Date(); state.sundayMonth=new Date(n.getFullYear(),n.getMonth(),1); render(); }
+
+// ===================== ESCALA MENSAL =====================
+// Mesma grade da Escala, com TODOS os dias do mês como colunas.
+// Grava na MESMA state.data.schedule → reflete direto na escala semanal.
+function getDaysOfMonth(monthDate){
+  const y=monthDate.getFullYear(), m=monthDate.getMonth();
+  const total=new Date(y,m+1,0).getDate();
+  const out=[];
+  for(let d=1; d<=total; d++) out.push(new Date(y,m,d));
+  return out;
+}
+function prevMonthlyMonth(){ const m=state.monthlyMonth||new Date(); state.monthlyMonth=new Date(m.getFullYear(),m.getMonth()-1,1); render(); }
+function nextMonthlyMonth(){ const m=state.monthlyMonth||new Date(); state.monthlyMonth=new Date(m.getFullYear(),m.getMonth()+1,1); render(); }
+function monthlyMonthToday(){ const n=new Date(); state.monthlyMonth=new Date(n.getFullYear(),n.getMonth(),1); render(); }
+
+function renderMonthly(){
+  const div=document.createElement('div');
+  if(!state.monthlyMonth){ const n=new Date(); state.monthlyMonth=new Date(n.getFullYear(),n.getMonth(),1); }
+  const mo=state.monthlyMonth;
+  const monthLabel=MONTH_NAMES[mo.getMonth()]+' '+mo.getFullYear();
+  const days=getDaysOfMonth(mo);
+  const today=todayStr();
+  const shm=shiftMap(); const ebs=empsBySector();
+  const DOW=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  // Navegação por mês
+  const nav=document.createElement('div');
+  nav.className='week-nav';
+  nav.innerHTML=`
+    <button class="nav-btn" onclick="prevMonthlyMonth()">${svgIcon(ICONS.left)}</button>
+    <div class="week-box"><div class="week-month">${monthLabel}</div><div class="week-range">${days.length} dias</div></div>
+    <button class="nav-btn" onclick="nextMonthlyMonth()">${svgIcon(ICONS.right)}</button>
+    <button class="today-btn" onclick="monthlyMonthToday()">Este mês</button>
+    <div style="margin-left:auto;display:flex;gap:4px">
+      <button id="btn-undo" class="nav-btn" onclick="undo()" title="Desfazer (Ctrl+Z)" style="opacity:${state.undoStack.length?1:.35}">${svgIcon('<path d="M3 7v6h6"/><path d="M3 13C5.33 7.33 10 4 16 4c4.42 0 8 3.58 8 8s-3.58 8-8 8H4"/>')}</button>
+      <button id="btn-redo" class="nav-btn" onclick="redo()" title="Refazer (Ctrl+Shift+Z)" style="opacity:${state.redoStack.length?1:.35}">${svgIcon('<path d="M21 7v6h-6"/><path d="M21 13C18.67 7.33 14 4 8 4c-4.42 0-8 3.58-8 8s3.58 8 8 8h12"/>')}</button>
+    </div>
+  `;
+  div.appendChild(nav);
+
+  // Filtro de setor (mesmo dropdown da Escala)
+  const controls=document.createElement('div');
+  controls.className='controls';
+  controls.innerHTML=`
+    <div class="custom-select" id="sector-dropdown">
+      <button class="custom-select-btn" onclick="toggleSectorDropdown(event)">
+        <span id="sector-label">${state.filterSector==='all'?'Todos os setores':(state.data.sectors.find(s=>s.id===state.filterSector)||{}).name||'Todos os setores'}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="custom-select-menu" id="sector-menu" style="display:none">
+        <div class="custom-select-opt${state.filterSector==='all'?' selected':''}" onclick="pickSector('all')">Todos os setores</div>
+        ${state.data.sectors.slice().sort((a,b)=>a.order-b.order).map(s=>`<div class="custom-select-opt${state.filterSector===s.id?' selected':''}" onclick="pickSector('${s.id}')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:7px"></span>${s.name}</div>`).join('')}
+      </div>
+    </div>
+  `;
+  div.appendChild(controls);
+
+  // Paleta de preenchimento rápido (idêntica à Escala)
+  const stampsBar=document.createElement('div');
+  stampsBar.className='stamps-bar';
+  let stampsHtml=`<div class="stamps-label">Preenchimento rápido</div><div class="stamps">`;
+  state.data.shiftTypes.slice().sort((a,b)=>a.order-b.order).forEach(st=>{
+    const active=state.activeStampId===st.id&&!state.eraseMode;
+    stampsHtml+=`<button class="stamp${active?' active':''}" style="background:${st.color};color:${contrastText(st.color)};border-color:${st.color}" onclick="setStamp('${st.id}')"><span class="stamp-code">${st.code}</span>${st.name}</button>`;
+  });
+  stampsHtml+=`<button class="eraser-btn${state.eraseMode?' active':''}" onclick="toggleErase()">${svgIcon(ICONS.erase)} Apagar</button>`;
+  if(state.activeStampId&&!state.eraseMode){
+    stampsHtml+=`<button class="deselect-btn" onclick="clearStamp()">✕ Desmarcar turno selecionado</button>`;
+  }
+  stampsHtml+=`</div>`;
+  stampsBar.innerHTML=stampsHtml;
+  div.appendChild(stampsBar);
+
+  // Grade (com a classe compacta — são até 31 colunas)
+  const gridWrap=document.createElement('div');
+  gridWrap.className='grid-wrap month-grid';
+  const gridScroll=document.createElement('div');
+  gridScroll.className='grid-scroll';
+  const table=document.createElement('table');
+
+  // Cabeçalho: colaborador + um dia por coluna
+  const thead=document.createElement('thead');
+  const hrow=document.createElement('tr');
+  const thEmp=document.createElement('th');
+  thEmp.textContent='Colaborador';
+  hrow.appendChild(thEmp);
+  days.forEach(d=>{
+    const ds=fmtDate(d);
+    const dow=d.getDay();
+    const isWeekend=(dow===0||dow===6);
+    const th=document.createElement('th');
+    th.className='day-th'+(ds===today?' today':'')+(isWeekend?' weekend':'');
+    th.innerHTML=`<div class="day-name">${DOW[dow]}</div><div class="day-num">${String(d.getDate()).padStart(2,'0')}</div>`;
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  // Corpo: setores → funcionários (mesmos helpers da Escala)
+  const visibleSectors=state.filterSector==='all'
+    ?state.data.sectors.slice().sort((a,b)=>a.order-b.order)
+    :state.data.sectors.filter(s=>s.id===state.filterSector);
+  const tbody=document.createElement('tbody');
+  visibleSectors.forEach(sector=>{
+    const emps=ebs[sector.id]||[];
+    if(!emps.length)return;
+    const srow=document.createElement('tr');
+    srow.className='sector-hdr';
+    const sNameTd=document.createElement('td');
+    sNameTd.innerHTML=`<div class="sector-hdr-name"><div class="sector-dot" style="background:${sector.color}"></div><span class="sector-name" style="color:${sector.color}">${sector.name}</span><span class="sector-count">· ${emps.length} pessoa${emps.length!==1?'s':''}</span></div>`;
+    srow.appendChild(sNameTd);
+    days.forEach(d=>{
+      const td=buildConcludeCell(fmtDate(d), sector, emps, shm);
+      if(d.getDay()===0||d.getDay()===6) td.classList.add('weekend-col');
+      srow.appendChild(td);
+    });
+    tbody.appendChild(srow);
+    emps.forEach(emp=>{
+      const row=document.createElement('tr');
+      row.className='emp-row';
+      const nameTd=document.createElement('td');
+      const bh=emp.bankHours||0;
+      const bhHtml=bh!==0?`<span class="bh-badge ${bh>0?'bh-pos':'bh-neg'}">${fmtBankHours(bh)}</span>`:'';
+      const contractLabels={fixo:'Fixo',pacote:'Pacote',freelancer:'Freelancer'};
+      const contractClasses={fixo:'contract-fixo',pacote:'contract-pacote',freelancer:'contract-freelancer'};
+      const contractHtml=emp.contract&&emp.contract!=='fixo'?`<span class="contract-badge ${contractClasses[emp.contract]||''}">${contractLabels[emp.contract]||emp.contract}</span>`:'';
+      nameTd.innerHTML=`<div class="emp-name">${emp.name}${bhHtml}</div>${emp.role||emp.contract?`<div class="emp-role">${emp.role||''}${emp.contract?` ${contractHtml}`:''}</div>`:''}`;
+      row.appendChild(nameTd);
+      days.forEach(d=>{
+        const td=buildEmployeeCell(fmtDate(d), emp, sector.id, shm, today);
+        if(d.getDay()===0||d.getDay()===6) td.classList.add('weekend-col');
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+  });
+  table.appendChild(tbody);
+  gridScroll.appendChild(table);
+  gridWrap.appendChild(gridScroll);
+  div.appendChild(gridWrap);
+
+  const hint=document.createElement('p');
+  hint.style.cssText='font-size:12px;color:var(--muted);margin-top:12px;padding:0 4px';
+  hint.innerHTML='<b style="color:var(--text)">Dica:</b> o que você define aqui já entra na escala semanal (é o mesmo dado). Arraste a grade para o lado para ver o restante do mês. Sábados e domingos aparecem com fundo destacado.';
+  div.appendChild(hint);
+
+  return div;
+}
 
 function renderSundays(){
   const div=document.createElement('div');
