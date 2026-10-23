@@ -122,6 +122,17 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
 .day-th.today .day-num{color:var(--primary-mid)}
 .day-th.done{background:var(--green-light)}
 .day-th.done .day-num{color:var(--green)}
+/* Visão mensal: até 31 colunas — compacta tudo para caber mais dias na tela */
+.month-grid table{min-width:0}
+.month-grid .day-th{min-width:44px;padding:8px 2px}
+.month-grid .day-name{font-size:9px;letter-spacing:.02em}
+.month-grid .day-num{font-size:.8rem;margin-top:1px}
+.month-grid .cell-inner{font-size:11px;min-height:30px;padding:2px}
+.month-grid .cell-inner.time-shift{font-size:9px;line-height:1.1}
+.month-grid .conclude-btn{font-size:9px;padding:3px 4px}
+.month-grid .count-chip{font-size:8px;padding:1px 3px}
+.month-grid .day-th.weekend{background:#f3efe6}
+.month-grid td.weekend-col{background:#faf7f1}
 .done-label{font-size:10px;font-weight:700;color:var(--green);margin-top:2px}
 .day-counts{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin-top:5px}
 .count-chip{font-family:var(--font-mono);font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap}
@@ -556,6 +567,7 @@ thead th:first-child{text-align:left;padding-left:16px;min-width:170px;position:
     </div>
     <nav>
       <button class="tab active" onclick="switchTab('escala')">📅 Escala</button>
+      <button class="tab" onclick="switchTab('mensal')">📆 Mensal</button>
       <button class="tab" onclick="switchTab('domingos')">🗓️ Domingos</button>
       <button class="tab" onclick="switchTab('colaboradores')">👥 Colaboradores</button>
       <button class="tab" onclick="switchTab('setores')">🏷️ Setores</button>
@@ -811,52 +823,99 @@ document.addEventListener('keydown',e=>{
 const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
 // Versão desta cópia do arquivo. Ao subir uma versão nova, os outros dispositivos
 // detectam sozinhos e avisam para atualizar — evita ter que recarregar um por um.
-const APP_VERSION = '2026-09-10-1';
+const APP_VERSION = '2026-10-23-1';
 let _updateBannerShown = false;
+
+// A versão é registrada POR LINK (endereço desta cópia), nunca num valor único
+// compartilhado. Comparar versões entre links diferentes (produção x teste) não
+// faz sentido: "atualizar" nunca resolveria, porque cada link serve o seu arquivo.
+function appVersionKey(){
+  let raw='';
+  try{ raw=((location.host||'')+(location.pathname||'')).toLowerCase(); }catch(e){}
+  raw=raw.replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  return raw?raw.slice(0,120):'root';
+}
+function appVersionUrl(){ return FB_URL+'/app_version/'+appVersionKey()+'.json'; }
+
+// Já tentamos recarregar para esta versão? Verificado pela própria URL (?v=),
+// que sobrevive mesmo quando o navegador bloqueia o sessionStorage — sem isso,
+// um aparelho com armazenamento bloqueado recarregaria em laço infinito.
+function jaTentouAtualizar(remote){
+  try{ if(new URL(location.href).searchParams.get('v')===remote) return true; }catch(e){}
+  try{ if(sessionStorage.getItem('escala_auto_update')===remote) return true; }catch(e){}
+  return false;
+}
+function marcarTentativaAtualizar(remote){
+  try{ sessionStorage.setItem('escala_auto_update',remote); }catch(e){}
+}
+
 async function checkAppVersion(atStartup){
   try{
-    const res=await fetch(FB_URL+'/app_version.json?_='+Date.now(),{cache:'no-store'});
+    const res=await fetch(appVersionUrl()+'?_='+Date.now(),{cache:'no-store'});
     if(!res.ok) return;
     const remote=await res.json();
-    if(!remote||typeof remote!=='string'||remote<APP_VERSION){
-      // esta cópia é a mais nova: registra para que os outros saibam
-      fetch(FB_URL+'/app_version.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(APP_VERSION)});
+    if(typeof remote!=='string'||remote<APP_VERSION){
+      // este link está servindo a versão mais nova: registra para ESTE link
+      fetch(appVersionUrl(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(APP_VERSION)});
       return;
     }
-    if(remote>APP_VERSION){
-      // Ao ENTRAR, atualiza sozinho (ninguém está editando ainda, nada se perde).
-      // Com tentativa única: se o servidor insistir em entregar o arquivo antigo,
-      // cai no aviso manual em vez de ficar recarregando em laço.
-      let tentou=false;
-      try{ tentou=sessionStorage.getItem('escala_auto_update')===remote; }catch(e){}
-      const semPendencias=!Object.keys(_pendingWrites||{}).length;
-      if(atStartup&&!tentou&&semPendencias){
-        try{ sessionStorage.setItem('escala_auto_update',remote); }catch(e){}
-        const u=new URL(location.href);
-        u.searchParams.set('v',remote); // força o navegador a buscar o arquivo novo
-        location.replace(u.toString());
-        return;
-      }
-      showUpdateBanner();
+    if(remote===APP_VERSION) return;
+    // remote > APP_VERSION: este navegador está com arquivo antigo DESTE MESMO link.
+    if(jaTentouAtualizar(remote)){
+      // Recarregar já não resolveu. Avisar de novo só assustaria sem solução:
+      // fica quieto nesta sessão em vez de exibir um aviso que não dá para resolver.
+      return;
     }
+    if(atStartup&&!Object.keys(_pendingWrites||{}).length){
+      // Ao ENTRAR, atualiza sozinho (ninguém está editando ainda, nada se perde).
+      marcarTentativaAtualizar(remote);
+      const u=new URL(location.href);
+      u.searchParams.set('v',remote); // força o navegador a buscar o arquivo novo
+      location.replace(u.toString());
+      return;
+    }
+    showUpdateBanner(remote);
   }catch(e){}
 }
-function showUpdateBanner(){
+
+// Barra inferior que NÃO cobre a grade: reserva espaço no fim da página.
+function mountBottomBar(bar){
+  document.body.appendChild(bar);
+  try{
+    const h=(bar.offsetHeight||56)+'px';
+    document.body.dataset.prevPadBottom=document.body.style.paddingBottom||'';
+    document.body.style.paddingBottom=h;
+  }catch(e){}
+}
+function unmountBottomBar(bar){
+  try{ bar.remove(); }catch(e){}
+  try{ document.body.style.paddingBottom=document.body.dataset.prevPadBottom||''; }catch(e){}
+}
+
+function showUpdateBanner(remote){
   if(_updateBannerShown) return;
   _updateBannerShown=true;
   const bar=document.createElement('div');
   bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#1a3a2a;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;justify-content:center;font-size:14px;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
-  bar.innerHTML='<span>Há uma versão mais nova da escala. Atualize para continuar salvando normalmente.</span>';
+  // Texto calmo: a versão antiga continua salvando normalmente.
+  bar.innerHTML='<span>Uma versão mais nova da escala está disponível.</span>';
   const btn=document.createElement('button');
-  btn.textContent='Atualizar agora';
+  btn.textContent='Atualizar';
   btn.style.cssText='background:#fff;color:#1a3a2a;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer;white-space:nowrap';
   btn.onclick=()=>{
+    if(remote) marcarTentativaAtualizar(remote);
     const u=new URL(location.href);
-    u.searchParams.set('v',Date.now()); // ignora o cache do navegador
+    u.searchParams.set('v',remote||Date.now()); // ignora o cache do navegador
     location.replace(u.toString());
   };
   bar.appendChild(btn);
-  document.body.appendChild(bar);
+  const fechar=document.createElement('button');
+  fechar.textContent='✕';
+  fechar.title='Dispensar';
+  fechar.style.cssText='background:transparent;color:#fff;border:none;font-size:16px;padding:6px 10px;cursor:pointer;opacity:.75';
+  fechar.onclick=()=>unmountBottomBar(bar);
+  bar.appendChild(fechar);
+  mountBottomBar(bar);
 }
 const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
 const FB_BH_HISTORY = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
@@ -1027,6 +1086,8 @@ const LOCAL_KEY = 'escala_lazer_html_v1';
 let _ignoreNextSync = false; // (legado) não é mais usado — sync agora reconcilia
 let _lastSynced = null;      // baseline: último estado conhecido do Firebase (para diff incremental)
 let _reconcileTimer = null;  // debounce da reconciliação com o servidor
+let _lastSseAt = 0;          // último sinal de vida da conexão em tempo real
+let _lastReconcileAt = 0;    // última leitura completa do servidor (controle de consumo)
 let _saveGeneration = 0;     // incrementa a cada escrita confirmada (invalida reconciliações obsoletas)
 let _savePending = false;    // há um save aguardando o debounce?
 let _saveInFlight = false;   // há um PATCH em voo?
@@ -1249,7 +1310,8 @@ async function loadData(){
   // 3. Escuta mudanças em tempo real via SSE
   startRealtimeSync();
   checkAppVersion(true);        // ao entrar: atualiza sozinho se estiver desatualizado
-  setInterval(()=>checkAppVersion(false),300000); // depois: só avisa, para não interromper edição
+  // depois: só avisa, e só com a aba à vista (nada de consumo em segundo plano)
+  setInterval(()=>{ try{ if(document.hidden) return; }catch(e){} checkAppVersion(false); },300000);
 }
 
 // Reconciliação: ao detectar qualquer mudança no servidor, re-busca o documento e
@@ -1259,6 +1321,57 @@ function scheduleReconcile(){
   clearTimeout(_reconcileTimer);
   _reconcileTimer=setTimeout(reconcileFromServer,250); // agrupa rajadas de eventos
 }
+
+// Mescla um estado de servidor com as edições locais pendentes.
+// Usado tanto pela leitura completa quanto pelo evento em tempo real
+// (que traz só o que mudou, sem baixar a escala inteira).
+function mergeServerState(serverRaw){
+  if(!serverRaw||typeof serverRaw!=='object') return; // leitura vazia/inválida: não toca em nada
+  const serverData=applyRecentWrites(migrateData(serverRaw, true));
+  // Guarda anti-apagão: nunca substitui dados existentes por um documento vazio.
+  const srvCells=Object.keys(serverData.schedule||{}).length;
+  const locCells=Object.keys((state.data&&state.data.schedule)||{}).length;
+  if(srvCells===0&&locCells>0) return;
+  if(!(serverData.sectors||[]).length&&((state.data&&state.data.sectors)||[]).length) return;
+  // edições que o usuário realmente fez e ainda não foram confirmadas
+  captureLocalChanges();
+  const localPending={..._pendingWrites};
+  const merged=applyDataUpdates(serverData, localPending);
+  _lastSynced=_cloneData(serverData);
+  if(!_eqData(merged,state.data)){
+    state.data=merged;
+    try{localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data))}catch(e){}
+    render();
+    showSave('updated');
+    setTimeout(()=>showSave('idle'),2000);
+  }
+  _prevLocal=_cloneData(state.data); // tela passa a ser o servidor + minhas edições pendentes
+  // Se ainda havia edições locais não gravadas, garante que sejam persistidas.
+  if(Object.keys(localPending).length) saveData();
+}
+
+// Aplica uma mudança recebida em tempo real sobre o último estado conhecido do
+// servidor — alguns bytes em vez de baixar o documento inteiro a cada alteração.
+function mergeServerUpdates(up){
+  if(_savePending||_saveInFlight){ setTimeout(()=>mergeServerUpdates(up),800); return; }
+  if(_lastSynced==null){ scheduleReconcile(); return; } // sem base conhecida: lê completo
+  mergeServerState(applyDataUpdates(_lastSynced, up));
+}
+
+// Converte o evento do Firebase em {caminho: valor}, no mesmo formato já usado nas gravações.
+// 'put' substitui aquele nó; 'patch' mescla chaves profundas relativas ao caminho.
+function sseEventToUpdates(type,payload){
+  if(!payload||typeof payload!=='object') return null;
+  const base=String(payload.path==null?'/':payload.path).split('/').filter(Boolean).join('/');
+  if(!base) return null; // '/' = documento inteiro, tratado à parte
+  const d=payload.data;
+  if(type==='put'){ const up={}; up[base]=d; return up; }
+  if(d===null||typeof d!=='object'||Array.isArray(d)) return null;
+  const up={};
+  Object.keys(d).forEach(k=>{ up[base+'/'+k]=d[k]; });
+  return Object.keys(up).length?up:null;
+}
+
 async function reconcileFromServer(){
   // Nunca reconcilia enquanto há edição aguardando gravação ou escrita em voo:
   // aplicar dados do servidor nesse momento apagaria o que o usuário acabou de fazer.
@@ -1271,49 +1384,61 @@ async function reconcileFromServer(){
     if(genAtStart!==_saveGeneration||_savePending||_saveInFlight){
       clearTimeout(_reconcileTimer); _reconcileTimer=setTimeout(reconcileFromServer,800); return;
     }
-    if(!fb||typeof fb!=='object') return; // leitura vazia/inválida: não toca em nada
-    const serverData=applyRecentWrites(migrateData(fb, true));
-    // Guarda anti-apagão: nunca substitui dados existentes por um documento vazio.
-    const srvCells=Object.keys(serverData.schedule||{}).length;
-    const locCells=Object.keys((state.data&&state.data.schedule)||{}).length;
-    if(srvCells===0&&locCells>0) return;
-    if(!(serverData.sectors||[]).length&&((state.data&&state.data.sectors)||[]).length) return;
-    // edições que o usuário realmente fez e ainda não foram confirmadas
-    captureLocalChanges();
-    const localPending={..._pendingWrites};
-    const merged=applyDataUpdates(serverData, localPending);
-    _lastSynced=_cloneData(serverData);
-    if(!_eqData(merged,state.data)){
-      state.data=merged;
-      try{localStorage.setItem(LOCAL_KEY,JSON.stringify(state.data))}catch(e){}
-      render();
-      showSave('updated');
-      setTimeout(()=>showSave('idle'),2000);
-    }
-    _prevLocal=_cloneData(state.data); // tela passa a ser o servidor + minhas edições pendentes
-    // Se ainda havia edições locais não gravadas, garante que sejam persistidas.
-    if(Object.keys(localPending).length) saveData();
+    _lastReconcileAt=Date.now();
+    mergeServerState(fb);
   }catch(e){}
 }
 
 function startRealtimeSync(){
-  // Rede de segurança: mesmo que a conexão em tempo real caia (celular dormindo,
-  // troca de rede), o app confere o servidor periodicamente.
-  setInterval(scheduleReconcile,60000);
   try{
     const evtSource=new EventSource(FB_URL+'/data.json');
-    const onEvt=()=>scheduleReconcile(); // 'put' e 'patch' apenas disparam a reconciliação
-    evtSource.addEventListener('put',onEvt);
-    evtSource.addEventListener('patch',onEvt);
+    const onEvt=(type)=>(e)=>{
+      _lastSseAt=Date.now();
+      let payload=null;
+      try{ payload=JSON.parse(e.data); }catch(_){}
+      if(!payload||typeof payload!=='object'){ scheduleReconcile(); return; }
+      // Documento inteiro (chega na conexão inicial): usa o próprio payload,
+      // em vez de baixar tudo de novo logo em seguida.
+      if(payload.path==null||payload.path==='/'){
+        _lastReconcileAt=Date.now();
+        if(_savePending||_saveInFlight){ setTimeout(()=>mergeServerState(payload.data),800); return; }
+        mergeServerState(payload.data);
+        return;
+      }
+      const up=sseEventToUpdates(type,payload);
+      if(!up){ scheduleReconcile(); return; } // formato inesperado: cai para a leitura completa
+      mergeServerUpdates(up);
+    };
+    evtSource.addEventListener('put',onEvt('put'));
+    evtSource.addEventListener('patch',onEvt('patch'));
+    evtSource.addEventListener('keep-alive',()=>{ _lastSseAt=Date.now(); });
+    evtSource.addEventListener('open',()=>{ _lastSseAt=Date.now(); });
     evtSource.onerror=()=>{
       // EventSource reconecta automaticamente — só mostra aviso brevemente
       showSave('offline');
       setTimeout(()=>showSave('idle'),3000);
     };
   }catch(e){
-    // Fallback: polling a cada 30s se SSE não suportado
-    setInterval(scheduleReconcile,30000);
+    _lastSseAt=0; // sem tempo real: a rede de segurança abaixo assume
   }
+
+  // Rede de segurança — SÓ entra em ação quando a conexão em tempo real parece morta.
+  // (Antes, isto baixava a escala inteira a cada 60s em cada aparelho, o dia todo,
+  //  mesmo sem ninguém mexer em nada: era o que consumia o limite do Firebase.)
+  setInterval(()=>{
+    try{ if(document.hidden) return; }catch(e){}            // aba em segundo plano não gasta
+    if(Date.now()-_lastSseAt < 5*60*1000) return;           // conexão viva: não baixa nada
+    if(Date.now()-_lastReconcileAt < 5*60*1000) return;     // já conferiu há pouco
+    scheduleReconcile();
+  },60000);
+
+  // Ao voltar para a aba, confere uma vez (pega o que passou com o aparelho dormindo).
+  try{
+    document.addEventListener('visibilitychange',()=>{
+      if(document.hidden) return;
+      if(Date.now()-_lastReconcileAt > 60000) scheduleReconcile();
+    });
+  }catch(e){}
 }
 
 // Envia as edições gravando DIRETAMENTE em cada sub-nó (.../data/schedule, .../data/employees...)
@@ -1334,7 +1459,7 @@ function notifyWriteBlocked(){
   btn.style.cssText='background:#fff;color:#b91c1c;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer';
   btn.onclick=()=>{ const u=new URL(location.href); u.searchParams.set('v',Date.now()); location.replace(u.toString()); };
   bar.appendChild(btn);
-  document.body.appendChild(bar);
+  mountBottomBar(bar); // reserva espaço: não cobre a grade
 }
 
 async function sendUpdates(updates){
@@ -1996,19 +2121,41 @@ function renderVersions(){
   return div;
 }
 
+// O id de cada versão é "snap-<momento>", então a data sai da própria chave.
+function snapTimestampFromId(id){ const m=String(id).match(/(\d{10,})/); return m?Number(m[1]):0; }
+
 async function loadVersionsList(){
   const list=document.getElementById('versions-list');
   if(!list)return;
   try{
-    const res=await fetch(`${FB_SNAPSHOTS}.json`);
-    const data=res.ok?await res.json():null;
+    // Só as CHAVES das versões (poucos bytes). Antes, abrir esta tela baixava
+    // as 50 versões INTEIRAS — dezenas de MB de uma vez, por abertura.
+    const res=await fetch(`${FB_SNAPSHOTS}.json?shallow=true`);
+    const keys=res.ok?await res.json():null;
+    const ids=keys?Object.keys(keys):[];
 
-    if(!data||!Object.keys(data).length){
+    if(!ids.length){
       list.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:24px;margin-bottom:8px">📭</div><div>Nenhuma versão salva ainda.<br>Clique em "Salvar versão agora" para criar a primeira.</div></div>`;
       return;
     }
 
-    const snaps=Object.values(data).sort((a,b)=>b.timestamp-a.timestamp);
+    ids.sort((a,b)=>snapTimestampFromId(b)-snapTimestampFromId(a));
+    // Busca só o rótulo e o tipo de cada versão — nunca o conteúdo gravado.
+    const snaps=await Promise.all(ids.slice(0,MAX_SNAPSHOTS).map(async id=>{
+      let label='', type='manual', timestamp=snapTimestampFromId(id);
+      try{
+        const [rl,rt]=await Promise.all([
+          fetch(`${FB_SNAPSHOTS}/${id}/label.json`),
+          fetch(`${FB_SNAPSHOTS}/${id}/type.json`)
+        ]);
+        if(rl.ok) label=(await rl.json())||'';
+        if(rt.ok) type=(await rt.json())||'manual';
+      }catch(e){}
+      if(!timestamp){
+        try{ const rts=await fetch(`${FB_SNAPSHOTS}/${id}/timestamp.json`); if(rts.ok) timestamp=(await rts.json())||0; }catch(e){}
+      }
+      return {id,label,type,timestamp};
+    }));
     list.innerHTML='';
     snaps.forEach(snap=>{
       const item=document.createElement('div');
@@ -2050,7 +2197,7 @@ function switchTab(tab){
   if(guards[tab]&&!can(guards[tab]))return;
   currentTab=tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  const allTabs=['escala','domingos','colaboradores','setores','turnos','resumo','banco','versoes','usuarios'];
+  const allTabs=['escala','mensal','domingos','colaboradores','setores','turnos','resumo','banco','versoes','usuarios'];
   const idx=allTabs.indexOf(tab);
   const visibleTabs=document.querySelectorAll('.tab');
   // Find tab button by onclick content
@@ -2066,6 +2213,7 @@ function render(){
   document.getElementById('header-sub').textContent=`Complexo de Lazer · ${activeEmps} colaboradores`;
   if(currentTab==='escala')main.appendChild(renderSchedule());
   else if(currentTab==='domingos')main.appendChild(renderSundays());
+  else if(currentTab==='mensal')main.appendChild(renderMonthly());
   else if(currentTab==='colaboradores'&&can('canViewColaboradores'))main.appendChild(renderEmployees());
   else if(currentTab==='setores'&&can('canViewSetores'))main.appendChild(renderSectors());
   else if(currentTab==='turnos'&&can('canViewTurnos'))main.appendChild(renderShiftTypes());
@@ -2358,6 +2506,154 @@ function getSundaysOfMonth(monthDate){
 function prevSundayMonth(){ const m=state.sundayMonth||new Date(); state.sundayMonth=new Date(m.getFullYear(),m.getMonth()-1,1); render(); }
 function nextSundayMonth(){ const m=state.sundayMonth||new Date(); state.sundayMonth=new Date(m.getFullYear(),m.getMonth()+1,1); render(); }
 function sundayMonthToday(){ const n=new Date(); state.sundayMonth=new Date(n.getFullYear(),n.getMonth(),1); render(); }
+
+// ===================== ESCALA MENSAL =====================
+// Mesma grade da Escala, com TODOS os dias do mês como colunas.
+// Grava na MESMA state.data.schedule → reflete direto na escala semanal.
+function getDaysOfMonth(monthDate){
+  const y=monthDate.getFullYear(), m=monthDate.getMonth();
+  const total=new Date(y,m+1,0).getDate();
+  const out=[];
+  for(let d=1; d<=total; d++) out.push(new Date(y,m,d));
+  return out;
+}
+function prevMonthlyMonth(){ const m=state.monthlyMonth||new Date(); state.monthlyMonth=new Date(m.getFullYear(),m.getMonth()-1,1); render(); }
+function nextMonthlyMonth(){ const m=state.monthlyMonth||new Date(); state.monthlyMonth=new Date(m.getFullYear(),m.getMonth()+1,1); render(); }
+function monthlyMonthToday(){ const n=new Date(); state.monthlyMonth=new Date(n.getFullYear(),n.getMonth(),1); render(); }
+
+function renderMonthly(){
+  const div=document.createElement('div');
+  if(!state.monthlyMonth){ const n=new Date(); state.monthlyMonth=new Date(n.getFullYear(),n.getMonth(),1); }
+  const mo=state.monthlyMonth;
+  const monthLabel=MONTH_NAMES[mo.getMonth()]+' '+mo.getFullYear();
+  const days=getDaysOfMonth(mo);
+  const today=todayStr();
+  const shm=shiftMap(); const ebs=empsBySector();
+  const DOW=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  // Navegação por mês
+  const nav=document.createElement('div');
+  nav.className='week-nav';
+  nav.innerHTML=`
+    <button class="nav-btn" onclick="prevMonthlyMonth()">${svgIcon(ICONS.left)}</button>
+    <div class="week-box"><div class="week-month">${monthLabel}</div><div class="week-range">${days.length} dias</div></div>
+    <button class="nav-btn" onclick="nextMonthlyMonth()">${svgIcon(ICONS.right)}</button>
+    <button class="today-btn" onclick="monthlyMonthToday()">Este mês</button>
+    <div style="margin-left:auto;display:flex;gap:4px">
+      <button id="btn-undo" class="nav-btn" onclick="undo()" title="Desfazer (Ctrl+Z)" style="opacity:${state.undoStack.length?1:.35}">${svgIcon('<path d="M3 7v6h6"/><path d="M3 13C5.33 7.33 10 4 16 4c4.42 0 8 3.58 8 8s-3.58 8-8 8H4"/>')}</button>
+      <button id="btn-redo" class="nav-btn" onclick="redo()" title="Refazer (Ctrl+Shift+Z)" style="opacity:${state.redoStack.length?1:.35}">${svgIcon('<path d="M21 7v6h-6"/><path d="M21 13C18.67 7.33 14 4 8 4c-4.42 0-8 3.58-8 8s3.58 8 8 8h12"/>')}</button>
+    </div>
+  `;
+  div.appendChild(nav);
+
+  // Filtro de setor (mesmo dropdown da Escala)
+  const controls=document.createElement('div');
+  controls.className='controls';
+  controls.innerHTML=`
+    <div class="custom-select" id="sector-dropdown">
+      <button class="custom-select-btn" onclick="toggleSectorDropdown(event)">
+        <span id="sector-label">${state.filterSector==='all'?'Todos os setores':(state.data.sectors.find(s=>s.id===state.filterSector)||{}).name||'Todos os setores'}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="custom-select-menu" id="sector-menu" style="display:none">
+        <div class="custom-select-opt${state.filterSector==='all'?' selected':''}" onclick="pickSector('all')">Todos os setores</div>
+        ${state.data.sectors.slice().sort((a,b)=>a.order-b.order).map(s=>`<div class="custom-select-opt${state.filterSector===s.id?' selected':''}" onclick="pickSector('${s.id}')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:7px"></span>${s.name}</div>`).join('')}
+      </div>
+    </div>
+  `;
+  div.appendChild(controls);
+
+  // Paleta de preenchimento rápido (idêntica à Escala)
+  const stampsBar=document.createElement('div');
+  stampsBar.className='stamps-bar';
+  let stampsHtml=`<div class="stamps-label">Preenchimento rápido</div><div class="stamps">`;
+  state.data.shiftTypes.slice().sort((a,b)=>a.order-b.order).forEach(st=>{
+    const active=state.activeStampId===st.id&&!state.eraseMode;
+    stampsHtml+=`<button class="stamp${active?' active':''}" style="background:${st.color};color:${contrastText(st.color)};border-color:${st.color}" onclick="setStamp('${st.id}')"><span class="stamp-code">${st.code}</span>${st.name}</button>`;
+  });
+  stampsHtml+=`<button class="eraser-btn${state.eraseMode?' active':''}" onclick="toggleErase()">${svgIcon(ICONS.erase)} Apagar</button>`;
+  if(state.activeStampId&&!state.eraseMode){
+    stampsHtml+=`<button class="deselect-btn" onclick="clearStamp()">✕ Desmarcar turno selecionado</button>`;
+  }
+  stampsHtml+=`</div>`;
+  stampsBar.innerHTML=stampsHtml;
+  div.appendChild(stampsBar);
+
+  // Grade (com a classe compacta — são até 31 colunas)
+  const gridWrap=document.createElement('div');
+  gridWrap.className='grid-wrap month-grid';
+  const gridScroll=document.createElement('div');
+  gridScroll.className='grid-scroll';
+  const table=document.createElement('table');
+
+  // Cabeçalho: colaborador + um dia por coluna
+  const thead=document.createElement('thead');
+  const hrow=document.createElement('tr');
+  const thEmp=document.createElement('th');
+  thEmp.textContent='Colaborador';
+  hrow.appendChild(thEmp);
+  days.forEach(d=>{
+    const ds=fmtDate(d);
+    const dow=d.getDay();
+    const isWeekend=(dow===0||dow===6);
+    const th=document.createElement('th');
+    th.className='day-th'+(ds===today?' today':'')+(isWeekend?' weekend':'');
+    th.innerHTML=`<div class="day-name">${DOW[dow]}</div><div class="day-num">${String(d.getDate()).padStart(2,'0')}</div>`;
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  // Corpo: setores → funcionários (mesmos helpers da Escala)
+  const visibleSectors=state.filterSector==='all'
+    ?state.data.sectors.slice().sort((a,b)=>a.order-b.order)
+    :state.data.sectors.filter(s=>s.id===state.filterSector);
+  const tbody=document.createElement('tbody');
+  visibleSectors.forEach(sector=>{
+    const emps=ebs[sector.id]||[];
+    if(!emps.length)return;
+    const srow=document.createElement('tr');
+    srow.className='sector-hdr';
+    const sNameTd=document.createElement('td');
+    sNameTd.innerHTML=`<div class="sector-hdr-name"><div class="sector-dot" style="background:${sector.color}"></div><span class="sector-name" style="color:${sector.color}">${sector.name}</span><span class="sector-count">· ${emps.length} pessoa${emps.length!==1?'s':''}</span></div>`;
+    srow.appendChild(sNameTd);
+    days.forEach(d=>{
+      const td=buildConcludeCell(fmtDate(d), sector, emps, shm);
+      if(d.getDay()===0||d.getDay()===6) td.classList.add('weekend-col');
+      srow.appendChild(td);
+    });
+    tbody.appendChild(srow);
+    emps.forEach(emp=>{
+      const row=document.createElement('tr');
+      row.className='emp-row';
+      const nameTd=document.createElement('td');
+      const bh=emp.bankHours||0;
+      const bhHtml=bh!==0?`<span class="bh-badge ${bh>0?'bh-pos':'bh-neg'}">${fmtBankHours(bh)}</span>`:'';
+      const contractLabels={fixo:'Fixo',pacote:'Pacote',freelancer:'Freelancer'};
+      const contractClasses={fixo:'contract-fixo',pacote:'contract-pacote',freelancer:'contract-freelancer'};
+      const contractHtml=emp.contract&&emp.contract!=='fixo'?`<span class="contract-badge ${contractClasses[emp.contract]||''}">${contractLabels[emp.contract]||emp.contract}</span>`:'';
+      nameTd.innerHTML=`<div class="emp-name">${emp.name}${bhHtml}</div>${emp.role||emp.contract?`<div class="emp-role">${emp.role||''}${emp.contract?` ${contractHtml}`:''}</div>`:''}`;
+      row.appendChild(nameTd);
+      days.forEach(d=>{
+        const td=buildEmployeeCell(fmtDate(d), emp, sector.id, shm, today);
+        if(d.getDay()===0||d.getDay()===6) td.classList.add('weekend-col');
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+  });
+  table.appendChild(tbody);
+  gridScroll.appendChild(table);
+  gridWrap.appendChild(gridScroll);
+  div.appendChild(gridWrap);
+
+  const hint=document.createElement('p');
+  hint.style.cssText='font-size:12px;color:var(--muted);margin-top:12px;padding:0 4px';
+  hint.innerHTML='<b style="color:var(--text)">Dica:</b> o que você define aqui já entra na escala semanal (é o mesmo dado). Arraste a grade para o lado para ver o restante do mês. Sábados e domingos aparecem com fundo destacado.';
+  div.appendChild(hint);
+
+  return div;
+}
 
 function renderSundays(){
   const div=document.createElement('div');
