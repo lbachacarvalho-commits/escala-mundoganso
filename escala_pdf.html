@@ -823,52 +823,99 @@ document.addEventListener('keydown',e=>{
 const FB_URL = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_lazer';
 // Versão desta cópia do arquivo. Ao subir uma versão nova, os outros dispositivos
 // detectam sozinhos e avisam para atualizar — evita ter que recarregar um por um.
-const APP_VERSION = '2026-10-21-1';
+const APP_VERSION = '2026-10-23-1';
 let _updateBannerShown = false;
+
+// A versão é registrada POR LINK (endereço desta cópia), nunca num valor único
+// compartilhado. Comparar versões entre links diferentes (produção x teste) não
+// faz sentido: "atualizar" nunca resolveria, porque cada link serve o seu arquivo.
+function appVersionKey(){
+  let raw='';
+  try{ raw=((location.host||'')+(location.pathname||'')).toLowerCase(); }catch(e){}
+  raw=raw.replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  return raw?raw.slice(0,120):'root';
+}
+function appVersionUrl(){ return FB_URL+'/app_version/'+appVersionKey()+'.json'; }
+
+// Já tentamos recarregar para esta versão? Verificado pela própria URL (?v=),
+// que sobrevive mesmo quando o navegador bloqueia o sessionStorage — sem isso,
+// um aparelho com armazenamento bloqueado recarregaria em laço infinito.
+function jaTentouAtualizar(remote){
+  try{ if(new URL(location.href).searchParams.get('v')===remote) return true; }catch(e){}
+  try{ if(sessionStorage.getItem('escala_auto_update')===remote) return true; }catch(e){}
+  return false;
+}
+function marcarTentativaAtualizar(remote){
+  try{ sessionStorage.setItem('escala_auto_update',remote); }catch(e){}
+}
+
 async function checkAppVersion(atStartup){
   try{
-    const res=await fetch(FB_URL+'/app_version.json?_='+Date.now(),{cache:'no-store'});
+    const res=await fetch(appVersionUrl()+'?_='+Date.now(),{cache:'no-store'});
     if(!res.ok) return;
     const remote=await res.json();
-    if(!remote||typeof remote!=='string'||remote<APP_VERSION){
-      // esta cópia é a mais nova: registra para que os outros saibam
-      fetch(FB_URL+'/app_version.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(APP_VERSION)});
+    if(typeof remote!=='string'||remote<APP_VERSION){
+      // este link está servindo a versão mais nova: registra para ESTE link
+      fetch(appVersionUrl(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(APP_VERSION)});
       return;
     }
-    if(remote>APP_VERSION){
-      // Ao ENTRAR, atualiza sozinho (ninguém está editando ainda, nada se perde).
-      // Com tentativa única: se o servidor insistir em entregar o arquivo antigo,
-      // cai no aviso manual em vez de ficar recarregando em laço.
-      let tentou=false;
-      try{ tentou=sessionStorage.getItem('escala_auto_update')===remote; }catch(e){}
-      const semPendencias=!Object.keys(_pendingWrites||{}).length;
-      if(atStartup&&!tentou&&semPendencias){
-        try{ sessionStorage.setItem('escala_auto_update',remote); }catch(e){}
-        const u=new URL(location.href);
-        u.searchParams.set('v',remote); // força o navegador a buscar o arquivo novo
-        location.replace(u.toString());
-        return;
-      }
-      showUpdateBanner();
+    if(remote===APP_VERSION) return;
+    // remote > APP_VERSION: este navegador está com arquivo antigo DESTE MESMO link.
+    if(jaTentouAtualizar(remote)){
+      // Recarregar já não resolveu. Avisar de novo só assustaria sem solução:
+      // fica quieto nesta sessão em vez de exibir um aviso que não dá para resolver.
+      return;
     }
+    if(atStartup&&!Object.keys(_pendingWrites||{}).length){
+      // Ao ENTRAR, atualiza sozinho (ninguém está editando ainda, nada se perde).
+      marcarTentativaAtualizar(remote);
+      const u=new URL(location.href);
+      u.searchParams.set('v',remote); // força o navegador a buscar o arquivo novo
+      location.replace(u.toString());
+      return;
+    }
+    showUpdateBanner(remote);
   }catch(e){}
 }
-function showUpdateBanner(){
+
+// Barra inferior que NÃO cobre a grade: reserva espaço no fim da página.
+function mountBottomBar(bar){
+  document.body.appendChild(bar);
+  try{
+    const h=(bar.offsetHeight||56)+'px';
+    document.body.dataset.prevPadBottom=document.body.style.paddingBottom||'';
+    document.body.style.paddingBottom=h;
+  }catch(e){}
+}
+function unmountBottomBar(bar){
+  try{ bar.remove(); }catch(e){}
+  try{ document.body.style.paddingBottom=document.body.dataset.prevPadBottom||''; }catch(e){}
+}
+
+function showUpdateBanner(remote){
   if(_updateBannerShown) return;
   _updateBannerShown=true;
   const bar=document.createElement('div');
   bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#1a3a2a;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;justify-content:center;font-size:14px;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
-  bar.innerHTML='<span>Há uma versão mais nova da escala. Atualize para continuar salvando normalmente.</span>';
+  // Texto calmo: a versão antiga continua salvando normalmente.
+  bar.innerHTML='<span>Uma versão mais nova da escala está disponível.</span>';
   const btn=document.createElement('button');
-  btn.textContent='Atualizar agora';
+  btn.textContent='Atualizar';
   btn.style.cssText='background:#fff;color:#1a3a2a;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer;white-space:nowrap';
   btn.onclick=()=>{
+    if(remote) marcarTentativaAtualizar(remote);
     const u=new URL(location.href);
-    u.searchParams.set('v',Date.now()); // ignora o cache do navegador
+    u.searchParams.set('v',remote||Date.now()); // ignora o cache do navegador
     location.replace(u.toString());
   };
   bar.appendChild(btn);
-  document.body.appendChild(bar);
+  const fechar=document.createElement('button');
+  fechar.textContent='✕';
+  fechar.title='Dispensar';
+  fechar.style.cssText='background:transparent;color:#fff;border:none;font-size:16px;padding:6px 10px;cursor:pointer;opacity:.75';
+  fechar.onclick=()=>unmountBottomBar(bar);
+  bar.appendChild(fechar);
+  mountBottomBar(bar);
 }
 const FB_SNAPSHOTS = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_snapshots';
 const FB_BH_HISTORY = 'https://escala-fb8b7-default-rtdb.firebaseio.com/escala_bh_history';
@@ -1346,7 +1393,7 @@ function notifyWriteBlocked(){
   btn.style.cssText='background:#fff;color:#b91c1c;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer';
   btn.onclick=()=>{ const u=new URL(location.href); u.searchParams.set('v',Date.now()); location.replace(u.toString()); };
   bar.appendChild(btn);
-  document.body.appendChild(bar);
+  mountBottomBar(bar); // reserva espaço: não cobre a grade
 }
 
 async function sendUpdates(updates){
